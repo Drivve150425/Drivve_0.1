@@ -1,0 +1,65 @@
+# =========================
+# React Native / Node
+# =========================
+node_modules/
+npm-debug.log
+yarn-error.log
+*.log
+package-lock.json
+
+# Metro / Cache
+.expo/
+.expo-shared/
+.expo/packager-info.json
+.expo/dev-tools.json
+
+# Android
+android/.gradle/
+android/app/build/
+android/build/
+*.keystore
+*.jks
+
+# iOS
+ios/build/
+ios/Pods/
+*.xcworkspace
+xcuserdata/
+DerivedData/
+
+# =========================
+# Python / FastAPI backend
+# =========================
+
+# Compiled Python files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+venv/
+env/
+.venv/
+.python-version
+
+# Environment variables
+.env
+.env.*
+
+# Cache
+.cache/
+pytest_cache/
+
+# =========================
+# OS / Editor Files
+# =========================
+.vscode/
+.DS_Store
+Thumbs.db
+
+# =========================
+# PostgreSQL / database
+# =========================
+*.db
+*.sql
