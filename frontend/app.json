@@ -21,7 +21,7 @@
       "requireFullScreen": false,
       "config": {
         "usesNonExemptEncryption": false
-    },
+      },
       "infoPlist": {
         "UIViewControllerBasedStatusBarAppearance": true,
         "NSAppTransportSecurity": {
@@ -57,7 +57,8 @@
         {
           "photosPermission": "The app accesses your photos to let you share them with your friends."
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": false

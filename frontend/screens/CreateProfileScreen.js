@@ -351,7 +351,19 @@ export default function CreateProfileScreen({ navigation, route }) {
       };
 
       setSuccessData({ userId: generatedUserId, age: calculateAge(dateOfBirth), profileData });
-      setShowSuccessAlert(true);
+      // Send profile to backend
+      const createResult = await DatabaseService.createUserProfile(profileData);
+      console.log('Create profile result:', createResult);
+
+      if (createResult && createResult.success) {
+        const returnedUserId = createResult.userId || generatedUserId;
+        setSuccessData({ userId: returnedUserId, age: calculateAge(dateOfBirth), profileData: createResult.userData || profileData });
+        setShowSuccessAlert(true);
+      } else {
+        const msg = (createResult && createResult.message) || 'Failed to create profile. Please try again';
+        setAlertMessage(msg);
+        setShowEmailErrorAlert(true);
+      }
 
     } catch (error) {
       setAlertMessage('Failed to create profile. Please try again');

@@ -12,8 +12,10 @@ import {
   Platform,
   LogBox,
   Alert,
-  Animated,
+  Animated
 } from 'react-native';
+import * as Device from "expo-device";
+
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -222,17 +224,35 @@ export default function OTPScreen({ navigation, route }) {
       console.log('🔥 Firebase Verification Result:', result.success ? 'SUCCESS' : 'FAILED');
      
       if (result.success) {
-        console.log('✅ User authenticated:', result.user.uid);
-        console.log('📱 Phone number:', result.phoneNumber);
-       
-        if (Platform.OS !== 'web') {
-          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        }
-       
-        setIsVerifying(false);
-        setShowSuccessAnimation(true);
-       
-      } else {
+  console.log('✅ User authenticated:', result.user.uid);
+  console.log('📱 Phone number:', result.phoneNumber);
+
+  // 🔐 REGISTER DEVICE WITH BACKEND
+  const deviceName = `${Device.brand || "Unknown"} ${Device.modelName || "Device"}`;
+  const deviceType =
+    Device.deviceType === Device.DeviceType.TABLET ? "tablet" : "mobile";
+
+  console.log("📱 Registering device:", deviceName, deviceType);
+
+  await fetch("http://192.168.1.13:8000/api/verify-otp", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      phone_number: fullNumber,
+      otp_code: otpValue,
+      device_name: deviceName,
+      device_type: deviceType,
+    }),
+  });
+
+  if (Platform.OS !== 'web') {
+    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  }
+
+  setIsVerifying(false);
+  setShowSuccessAnimation(true);
+}
+ else {
         setOtpError(result.message);
         setOtpValue('');
         setIsVerifying(false);
@@ -280,6 +300,7 @@ export default function OTPScreen({ navigation, route }) {
               lastName: userCheck.userData.last_name,
               userId: userCheck.userData.user_id,
               userData: userCheck.userData,
+              phoneNumber: fullNumber, 
               isReturningUser: true
             });
           } catch (navError) {

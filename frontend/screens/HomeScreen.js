@@ -171,9 +171,16 @@ export default function HomeScreen({ navigation, route }) {
     }
   };
 
-  const navigateToProfile = () => {
-    navigation.navigate('Profile', { userData, userId, firstName, lastName });
-  };
+ const navigateToProfile = () => {
+  navigation.navigate('ProfileDetails', {
+    phoneNumber: userData.phone_number, // ✅ REQUIRED
+    userData,
+    userId,
+    firstName,
+    lastName,
+  });
+};
+
 
   // Handle bottom navigation
   const handleBottomNavigation = (tabName) => {

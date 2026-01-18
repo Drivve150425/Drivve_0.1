@@ -12,6 +12,39 @@ import DriveScreen from '../screens/DriveScreen';
 import CreateProfileScreen from '../screens/CreateProfileScreen';
 import DriveNextScreen from '../screens/DriveNextScreen';
 import RideNextScreen from '../screens/RideNextScreen';
+import ProfileDetailsScreen from '../screens/ProfileDetailsScreen';
+import myprofilescreen from '../screens/myprofilescreen';
+import shareappscreen from '../screens/shareappscreen';
+import savedaddressscreen from '../screens/savedaddressscreen';
+import addnewvehiclescreen from '../screens/addnewvehiclescreen';
+import myvehiclescreen from '../screens/myvehiclescreen';
+import EmergencyContactsScreen from '../screens/EmergencyContactsScreen';
+import PromotionScreen from '../screens/PromotionsScreen';
+import DCoinScreen from '../screens/DCoinScreen';
+import RewardsScreen from '../screens/RewardsScreen';
+import FAQScreen from '../screens/FAQScreen';
+import HelpSupportScreen from '../screens/HelpSupportScreen';
+import EmailSupportScreen from '../screens/EmailSupportScreen';
+import AboutUsScreen from '../screens/AboutUsScreen';
+import MatchingPreferenceScreen from '../screens/MatchingPreferenceScreen';
+import DocumentVerificationScreen from '../screens/DocumentVerificationScreen';
+import AdminDocumentApprovalScreen from '../screens/AdminDocumentApprovalScreen';
+
+import SettingsScreen from '../screens/SettingsScreen';
+import SecurityPrivacyScreen from '../screens/SecurityPrivacyScreen';
+import AccountManagementScreen from '../screens/AccountManagementScreen';
+import LegalScreen from '../screens/LegalScreen';
+import NotificationScreen from '../screens/NotificationScreen';
+import LoginActivityScreen from '../screens/LoginActivityScreen';
+import BlockedUsersScreen from '../screens/BlockedUsersScreen';
+import PushNotificationsScreen from '../screens/PushNotificationsScreen';
+
+import DeactivateAccountScreen from '../screens/DeactivateAccountScreen';
+import TermsConditionsScreen from '../screens/TermsConditionsScreen';
+import PrivacyPolicyScreen from '../screens/PrivacyPolicyScreen';
+import FeedbackScreen from '../screens/Feedbackscreen';
+import RideFeedbackScreen from '../screens/RideFeedbackScreen';
+// Chat screens are currently disabled
 //import ChatListScreen from '../screens/ChatListScreen';
 //import ChatScreen from '../screens/ChatScreen';
 
@@ -150,7 +183,162 @@ export default function AppNavigator({ user }) {
           component={RideNextScreen}
           options={{ headerShown: false }}
         />
+        <Stack.Screen 
+          name="ProfileDetails" 
+          component={ProfileDetailsScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen 
+          name="myprofilescreen" 
+          component={myprofilescreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen 
+          name="ShareAppScreen" 
+          component={shareappscreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen 
+          name="SavedAddressScreen" 
+          component={savedaddressscreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen 
+          name="AddNewVehicleScreen" 
+          component={addnewvehiclescreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="MyVehicleScreen"
+          component={myvehiclescreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="EmergencyContactsscreen"
+          component={EmergencyContactsScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="PromotionScreen"
+          component={PromotionScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="DCoinScreen"
+          component={DCoinScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="RewardsScreen"
+          component={RewardsScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="FAQScreen"
+          component={FAQScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="HelpSupportScreen"
+          component={HelpSupportScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="EmailSupportScreen"
+          component={EmailSupportScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="AboutUsScreen"
+          component={AboutUsScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="MatchingPreferenceScreen"
+          component={MatchingPreferenceScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="DocumentVerificationScreen"
+          component={DocumentVerificationScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="AdminDocumentApprovalScreen"
+          component={AdminDocumentApprovalScreen}
+          options={{ headerShown: false }}
+        />
 
+
+        <Stack.Screen
+          name="Settings"
+          component={SettingsScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="SecurityPrivacy"
+          component={SecurityPrivacyScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="AccountManagement"
+          component={AccountManagementScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="Legal"
+          component={LegalScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="NotificationSettings"
+          component={NotificationScreen}
+          options={{ headerShown: false }}
+        />
+       
+        <Stack.Screen
+          name="DeviceManagement"
+          component={LoginActivityScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="BlockedUsers"
+          component={BlockedUsersScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="PushNotifications"
+          component={PushNotificationsScreen}
+          options={{ headerShown: false }}
+        />
+       
+      
+      
+        <Stack.Screen
+          name="DeactivateAccount"
+          component={DeactivateAccountScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="TermsConditions"
+          component={TermsConditionsScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="PrivacyPolicy"
+          component={PrivacyPolicyScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="FeedbackScreen"
+          component={FeedbackScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="RideFeedbackScreen"
+          component={RideFeedbackScreen}
+          options={{ headerShown: false }}
+        />
         {/*
         <Stack.Screen 
           name="ChatList"

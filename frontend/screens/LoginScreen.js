@@ -22,6 +22,7 @@ import { getDefaultCountry } from '../constants/CountryData';
 import FirebaseAuthService from '../services/FirebaseAuthService';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import DatabaseService from '../services/DatabaseService';
 
 const { width } = Dimensions.get('window');
 
@@ -135,19 +136,24 @@ export default function LoginScreen({ navigation }) {
       console.log('🔥 Firebase OTP Result:', result.success ? 'SUCCESS' : 'FAILED');
       
       if (result.success) {
-        if (Platform.OS !== 'web') {
-          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        }
-        
-        navigation.navigate('OTP', {
-          phoneNumber: phoneNumber,
-          countryCode: selectedCountry.dial,
-          fullNumber: selectedCountry.dial + phoneNumber,
-          country: selectedCountry,
-          confirmationResult: result.confirmationResult,
-          verificationId: result.verificationId,
-        });
-      } else {
+
+  // 🔐 SAVE OTP IN BACKEND DATABASE (CRITICAL)
+  await DatabaseService.sendOtp(selectedCountry.dial + phoneNumber);
+
+  if (Platform.OS !== 'web') {
+    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  }
+
+  navigation.navigate('OTP', {
+    phoneNumber: phoneNumber,
+    countryCode: selectedCountry.dial,
+    fullNumber: selectedCountry.dial + phoneNumber,
+    country: selectedCountry,
+    confirmationResult: result.confirmationResult,
+    verificationId: result.verificationId,
+  });
+}
+ else {
         setError(result.message);
         if (Platform.OS !== 'web') {
           await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);

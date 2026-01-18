@@ -97,3 +97,5 @@ export const Typography = {
     lineHeight: 22,
   },
 };
+
+export { FontFamily };

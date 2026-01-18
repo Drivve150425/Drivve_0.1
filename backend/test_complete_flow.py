@@ -1,7 +1,7 @@
 import requests
 import json
 
-BASE_URL = "http://192.168.1.3:8000"
+BASE_URL = "http://192.168.1.13:8000"
 
 def test_complete_drivve_flow():
     print("🧪 TESTING COMPLETE DRIVVE API FLOW")
