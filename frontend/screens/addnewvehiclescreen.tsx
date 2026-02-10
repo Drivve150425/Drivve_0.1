@@ -912,7 +912,7 @@ const VEHICLE_MASTER: Record<string, string[]> = {
 };
 
 type ModalType = "vehicle" | "body" | "fuel" | "make" | "model" | null;
-
+const BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 export default function AddNewVehicleScreen({ navigation, route }) {
   const phoneNumber =
     route?.params?.phoneNumber ||
@@ -972,7 +972,7 @@ useEffect(() => {
     setVehiclePhoto(
       editingVehicle.photo_url.startsWith("http")
         ? editingVehicle.photo_url
-        : `http://192.168.1.13:8000/${editingVehicle.photo_url}`
+        : `${BASE_URL}${editingVehicle.photo_url}`
     );
   }
 }, [editingVehicle]);

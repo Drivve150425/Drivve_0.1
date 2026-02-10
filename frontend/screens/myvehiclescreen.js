@@ -21,7 +21,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialIcons, Ionicons } from "@expo/vector-icons";
 import DatabaseService from "../services/DatabaseService";
 
-const BASE_URL = "http://192.168.1.13:8000";
+const BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 
 export default function MyVehicleScreen({ navigation, route }) {
   const phoneNumber =

@@ -22,9 +22,8 @@ import DatabaseService from "../services/DatabaseService";
 const { width, height } = Dimensions.get("window");
 const isSmallScreen = width < 375;
 
-const BASE_URL = __DEV__ 
-  ? 'http://192.168.1.13:8000'
-  : 'https://your-api-domain.com';
+const BASE_URL = process.env.EXPO_PUBLIC_API_URL;
+
 
 export default function AdminApprovalScreen({ navigation, route }) {
   const adminUsername = route?.params?.adminUsername || "Admin";

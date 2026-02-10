@@ -3752,12 +3752,19 @@ def toggle_emergency_contact_status(data: dict, db: Session = Depends(get_db)):
 
     return {"success": True}
 
+from dotenv import load_dotenv
+load_dotenv()
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from datetime import datetime, timezone
-BASE_URL = "http://192.168.1.13:8000"
+import os
+
+BASE_URL = os.getenv(
+    "EXPO_PUBLIC_API_URL",
+    "http://localhost:8000"   # fallback (VERY important)
+)
 
 def build_image_url(path: str | None):
     if not path:
@@ -4480,9 +4487,7 @@ if __name__ == "__main__":
     print("🚀 Starting DRIVVE Working Server...")
     print("🌐 Network accessible on:")
     print("   - http://localhost:8000")
-    print("   - http://192.168.1.13:8000")
-    print("📚 API Docs: http://192.168.1.13:8000/docs")
-    print("❤️ Health: http://192.168.1.13:8000/health")
+
     print("=" * 60)
    
     uvicorn.run(

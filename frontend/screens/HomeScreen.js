@@ -737,6 +737,7 @@ import { useEffect } from 'react';
 
 const { width, height } = Dimensions.get('window');
 const DRAWER_HEIGHT = height * 0.25;
+const BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 
 export default function HomeScreen({ navigation, route }) {
   const { firstName, lastName, userId, userData, isNewUser } = route.params || {};
@@ -760,7 +761,7 @@ export default function HomeScreen({ navigation, route }) {
   const [unreadCount, setUnreadCount] = useState(0);
 const fetchNotificationsAndUnreadCount = async () => {
   try {
-    const url = `http://192.168.1.13:8000/api/v1/notifications?phone_number=${encodeURIComponent(
+    const url = `${BASE_URL}/api/v1/notifications?phone_number=${encodeURIComponent(
       userData.phone_number
     )}&page=1&limit=50`;
 

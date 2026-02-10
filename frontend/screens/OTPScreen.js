@@ -27,6 +27,7 @@ import SuccessAnimation from '../components/SuccessAnimation';
 import FirebaseAuthService from '../services/FirebaseAuthService';
 import DatabaseService from '../services/DatabaseService';
 import * as Haptics from 'expo-haptics';
+const BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 
 
 LogBox.ignoreLogs([
@@ -234,7 +235,7 @@ export default function OTPScreen({ navigation, route }) {
 
   console.log("📱 Registering device:", deviceName, deviceType);
 
-  await fetch("http://192.168.1.13:8000/api/verify-otp", {
+  await fetch(`${BASE_URL}/api/verify-otp`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
