@@ -6,12 +6,11 @@ import { Colors } from '../constants/Colors';
 const NAV_ITEMS = [
   { key: 'home', icon: 'home', label: 'Home' },
   { key: 'myride', icon: 'car-sport', label: 'My Rides' },
-  { key: 'plus', icon: 'add-circle', label: 'Drive' },
   { key: 'chat', icon: 'chatbubbles', label: 'Chat' },
   { key: 'alert', icon: 'notifications', label: 'Alerts' }
 ];
 
-const INDICATOR_SIZE = 36;
+const INDICATOR_SIZE = 38;
 
 const CoolBottomNavigation = ({ activeTab, onNavigate, unreadCount = 0 }) => {
   const indicatorX = useRef(new Animated.Value(0)).current;
@@ -28,8 +27,8 @@ const CoolBottomNavigation = ({ activeTab, onNavigate, unreadCount = 0 }) => {
     if (!tabLayout) return;
     const { x, width } = tabLayout;
 
-    const tabCenter = x + width / 4.5;
-    const indicatorLeft = tabCenter - INDICATOR_SIZE * 4.6;
+    const tabCenter = x + width / 3;
+    const indicatorLeft = tabCenter - INDICATOR_SIZE * 4.5;
     Animated.spring(indicatorX, {
       toValue: indicatorLeft,
       useNativeDriver: true,

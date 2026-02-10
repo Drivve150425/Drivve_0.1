@@ -5,7 +5,6 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from flask import json
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from datetime import UTC, datetime, timedelta, timezone
@@ -3761,10 +3760,7 @@ from sqlalchemy import func
 from datetime import datetime, timezone
 import os
 
-BASE_URL = os.getenv(
-    "EXPO_PUBLIC_API_URL",
-    "http://localhost:8000"   # fallback (VERY important)
-)
+BASE_URL="http://192.168.1.13:8000"
 
 def build_image_url(path: str | None):
     if not path:

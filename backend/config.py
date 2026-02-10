@@ -21,14 +21,14 @@ class Settings:
     POSTGRES_PASSWORD = "Drivve"
     POSTGRES_SERVER = "localhost"
     POSTGRES_PORT = "5432"
-    POSTGRES_DB = "db_drivve"
+    POSTGRES_DB = "drivve_db"
     
     # CORS Settings
     ALLOWED_ORIGINS = [
         "*",  # Allow all for development
         "http://localhost:19000",
-        "http://192.168.1.3:19000",
-        "exp://192.168.1.3:19000"
+        "http://192.168.1.13:19000",
+        "exp://192.168.1.13:19000"
     ]
 
 settings = Settings()

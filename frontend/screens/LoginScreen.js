@@ -184,36 +184,15 @@ export default function LoginScreen({ navigation }) {
   const isValidPhone = phoneNumber.length === 10 && (selectedCountry.code !== 'IN' || validatePhone(phoneNumber));
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
-      
-      {/* Skip Button */}
-      <Animated.View 
-        style={[
-          styles.skipButtonContainer, 
-          { 
-            top: insets.top + 10,
-            opacity: fadeAnim,
-          }
-        ]}
-      >
-        <TouchableOpacity 
-          style={styles.skipButton} 
-          onPress={skipToHome}
-          accessible={true}
-          accessibilityLabel="Skip to home screen"
-          accessibilityRole="button"
-          activeOpacity={0.8}
-        >
-          <Text style={styles.skipButtonText}>SKIP</Text>
-        </TouchableOpacity>
-      </Animated.View>
+    <View style={{ flex: 1 }}>
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
 
-      <KeyboardAvoidingView 
-        style={styles.keyboardContainer} 
-        behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
-      >
+        <KeyboardAvoidingView 
+          style={styles.keyboardContainer} 
+          behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+        >
         <ScrollView 
           contentContainerStyle={styles.scrollContainer}
           showsVerticalScrollIndicator={false}
@@ -385,7 +364,7 @@ export default function LoginScreen({ navigation }) {
                 accessibilityRole="link"
                 activeOpacity={0.7}
               >
-                <Text style={styles.termsLink}> terms of use</Text>
+                <Text style={styles.termsLink}>terms of use</Text>
               </TouchableOpacity>
             </View>
           
@@ -401,10 +380,33 @@ export default function LoginScreen({ navigation }) {
       />
       
       {/* reCAPTCHA container for web */}
-      {Platform.OS === 'web' && (
-        <div id="recaptcha-container" style={{ display: 'none' }}></div>
-      )}
-    </SafeAreaView>
+        {Platform.OS === 'web' && (
+          <div id="recaptcha-container" style={{ display: 'none' }}></div>
+        )}
+      </SafeAreaView>
+
+      {/* Skip Button (rendered outside SafeAreaView to guarantee overlay) */}
+      <View
+        pointerEvents="box-none"
+        style={[
+          styles.skipButtonContainer,
+          {
+            top: insets.top + 10,
+          },
+        ]}
+      >
+        <TouchableOpacity
+          style={styles.skipButton}
+          onPress={skipToHome}
+          accessible={true}
+          accessibilityLabel="Skip to home screen"
+          accessibilityRole="button"
+          activeOpacity={0.8}
+        >
+          <Text style={styles.skipButtonText}>SKIP</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 }
 
@@ -416,7 +418,9 @@ const styles = StyleSheet.create({
   skipButtonContainer: {
     position: 'absolute',
     right: 20,
-    zIndex: 999,
+    zIndex: 10000,
+    elevation: 20,
+    top: 10, // fallback when safe-area insets are not available
   },
   skipButton: {
     backgroundColor: Colors.primary,
@@ -427,10 +431,14 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
-    elevation: 3,
+    elevation: 20,
+    borderWidth: 1,
+    borderColor: '#fff', // debug: visible border on dark bg
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   skipButtonText: {
-    color: Colors.white,
+    color: Colors.secondary,
     fontSize: 12,
     fontWeight: '700',
     letterSpacing: 1,
@@ -496,16 +504,16 @@ const styles = StyleSheet.create({
   },
   phoneInputRow: {
     flexDirection: 'row',
-    borderWidth: 2,
+    borderWidth: 1,
     borderRadius: 20,
     overflow: 'hidden',
     backgroundColor: Colors.white,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    //shadowColor: '#000',
+    //shadowOffset: { width: 0, height: 2 },
+    //shadowOpacity: 0.05,
+    //shadowRadius: 8,
+    //elevation: 2,
   },
   countryButton: {
     flexDirection: 'row',
@@ -517,19 +525,19 @@ const styles = StyleSheet.create({
     borderRightColor: '#E5E7EB',
   },
   flagText: {
-    fontSize: 24,
+    fontSize: Platform.OS === 'ios' ? 24 : 16,
     marginRight: 5,
     verticalAlign: 'middle',
   },
   countryCodeText: {
     ...Typography.input,
-    fontSize: 17,
+    fontSize: Platform.OS === 'ios' ? 17 : 16,
     fontWeight: '700',
     color: Colors.primary,
   },
   phoneInput: {
     ...Typography.input,
-    fontSize: 18,
+    fontSize: Platform.OS === 'ios' ? 18 : 16,
     flex: 1,
     paddingHorizontal: 12,
     paddingVertical: 12,
@@ -541,7 +549,7 @@ const styles = StyleSheet.create({
   messageContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 10,
+    marginTop: 5,
     marginLeft: 4,
   },
   errorText: {

@@ -5,13 +5,13 @@ import os
 
 # Database configuration - CORRECTED
 POSTGRES_USER = "postgres"
-POSTGRES_PASSWORD = "drivve"  # Your actual password ✅
+POSTGRES_PASSWORD = "Drivve"  # Your actual password ✅
 POSTGRES_SERVER = "localhost"  # Changed from "db" to "localhost" 
 POSTGRES_PORT = "5432"
 POSTGRES_DB = "drivve_db"  # Your database name ✅
 
 # Create database URL
-DATABASE_URL = f"postgresql://postgres:drivve@localhost:5432/drivve_db"
+DATABASE_URL = f"postgresql://postgres:Drivve@localhost:5432/drivve_db"
 
 print(f"🔗 DATABASE_URL: {DATABASE_URL}")  # For debugging
 

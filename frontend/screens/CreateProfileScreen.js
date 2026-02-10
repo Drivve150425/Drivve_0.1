@@ -350,8 +350,21 @@ export default function CreateProfileScreen({ navigation, route }) {
         profile_completed: true
       };
 
+     {/*} // Send profile to backend
+      const createResult = await DatabaseService.createUserProfile(profileData);
+      console.log('Create profile result:', createResult);
+
+      if (createResult && createResult.success) {
+        const returnedUserId = createResult.userId || generatedUserId;
+        setSuccessData({ userId: returnedUserId, age: calculateAge(dateOfBirth), profileData: createResult.userData || profileData });
+        setShowSuccessAlert(true);
+      } else {
+        const msg = (createResult && createResult.message) || 'Failed to create profile. Please try again';
+        setAlertMessage(msg);
+        setShowEmailErrorAlert(true);
+      }
       setSuccessData({ userId: generatedUserId, age: calculateAge(dateOfBirth), profileData });
-      // Send profile to backend
+      // Send profile to backend */}
       const createResult = await DatabaseService.createUserProfile(profileData);
       console.log('Create profile result:', createResult);
 
@@ -452,7 +465,7 @@ export default function CreateProfileScreen({ navigation, route }) {
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity style={styles.modernBackButton} onPress={handleBackPress}>
-            <MaterialIcons name="arrow-back-ios" size={28} color={Colors.primary} />
+            <MaterialIcons name="arrow-back-ios" size={28} color={Colors.secondary} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Create Profile</Text>
           <View style={styles.headerSpacer} />
@@ -684,7 +697,7 @@ export default function CreateProfileScreen({ navigation, route }) {
         visible={showGenderModal}
         onClose={() => setShowGenderModal(false)}
         title="Select Gender"
-        data={['Male', 'Female', 'Prefer Not To Say', 'Other']}
+        data={['Male', 'Female', 'Prefer Not To Say']}
         onSelect={setGender}
         selectedValue={gender}
       />

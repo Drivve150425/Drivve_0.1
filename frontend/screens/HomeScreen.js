@@ -726,7 +726,6 @@ import {
   Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { PanGestureHandler, State as GestureState } from 'react-native-gesture-handler';
 import BackgroundAnimation from '../components/BackgroundAnimation';
@@ -851,7 +850,7 @@ useEffect(() => {
         useNativeDriver: true,
       }),
       Animated.timing(contentTranslateY, {
-        toValue: DRAWER_HEIGHT,
+        toValue: DRAWER_HEIGHT-35,
         duration: 300,
         useNativeDriver: true,
       })
@@ -877,14 +876,6 @@ useEffect(() => {
         useNativeDriver: true,
       })
     ]).start();
-  };
-
-  const decreaseSeat = () => {
-    if (seatCount > 1) setSeatCount(seatCount - 1);
-  };
-
-  const increaseSeat = () => {
-    if (seatCount < 8) setSeatCount(seatCount + 1);
   };
 
   const showDateTimePicker = () => {
@@ -962,6 +953,8 @@ const openNotifications = () => {
       return;
     }
 
+    
+
     const rideData = {
       type: activeTab,
       from: fromLocation,
@@ -976,6 +969,12 @@ const openNotifications = () => {
         rideData,
         userData: { userId, firstName, lastName },
       });
+    }
+
+
+
+    const handleRecurring = () => {
+      navigation.navigate('Recurring');
     }
 
     //greetings
@@ -1001,13 +1000,13 @@ const openNotifications = () => {
 
       // Time-based greetings
       if (hour >= 6 && hour < 12) {
-        return `Good morning,/${name}!`;
+        return `Good Morning,/${name}!`;
       } else if (hour >= 12 && hour < 16) {
-        return `Good afternoon,/${name}!`;
-      } else if (hour >= 16 && hour < 21) {
-        return `Good evening,/${name}!`;
+        return `Good Afternoon,/${name}!`;
+      } else if (hour >= 16 && hour < 22) {
+        return `Good Evening,/${name}!`;
       } else {
-        return `Welcome back,/${name}!`;
+        return `Welcome Back,/${name}!`;
       }
     };
 
@@ -1019,28 +1018,21 @@ const openNotifications = () => {
       <StatusBar hidden={true} />
 
       {/* Animated header background (touch-safe, behind everything) */}
-+     <BackgroundAnimation height={360} />
+       <BackgroundAnimation height={360} />
       
 
       <PanGestureHandler onHandlerStateChange={handleGestureStateChange}>
         <Animated.View style={styles.mainContainer}>
-          
-          {/* Header style={styles.greeting}>{getGreeting(firstName || 'User!')}*/}
           <View style={styles.header}>
             <TouchableOpacity style={styles.headerLeft} onPress={toggleDrawer}>
-              <Text style={styles.greeting}>
-                {firstLine}
-                {'\n'}
-                {secondLine}
-                </Text>
+              <Text style={styles.greeting}>{firstLine}{'\n'}</Text>
+              <Text style={styles.greeting1}>{secondLine}</Text>
             </TouchableOpacity>
-            
             <TouchableOpacity style={styles.profileButton} onPress={navigateToProfile}>
               <Ionicons name="person-circle" size={35} color={Colors.white} />
             </TouchableOpacity>
           </View>
 
-          {/* Drawer */}
           <Animated.View 
             style={[
               styles.drawerContainer,
@@ -1057,111 +1049,137 @@ const openNotifications = () => {
             </View>
           </Animated.View>
 
-          {/* Content Card */}
-          <Animated.View 
-            style={[
-              styles.contentCard,
-              { transform: [{ translateY: contentTranslateY }] }
-            ]}
-          >
-            <View style={styles.sleek}>
-              <Ionicons
-                name="remove-outline"
-                size={50}
-                color={Colors.gray}
-              />
-            </View>
-            
-            {/* Title */}
-              <View style={[styles.Titlecontainer]}>
-                <Text style={[styles.TitleText]}>Find a ride</Text>
-              </View>
-
-            {/* Form Content */}
-            <ScrollView 
-              style={styles.scrollView}
-              contentContainerStyle={styles.scrollContent}
-              showsVerticalScrollIndicator={false}
-            >
-              
-              <View style={styles.titleSection}>
-                <Text style={styles.sectionTitle}>where are you going?</Text>
-              </View>
-
-              <View style={styles.locationContainer}>
-                <TextInput
-                  style={styles.locationInput}
-                  placeholder="From"
-                  placeholderTextColor={Colors.gray}
-                  textAlignVertical= 'center'
-                  value={fromLocation}
-                  onChangeText={setFromLocation}
-                />
-                
-                <TextInput
-                  style={styles.locationInput}
-                  placeholder="To"
-                  placeholderTextColor={Colors.gray}
-                  textAlignVertical= 'center'
-                  value={toLocation}
-                  onChangeText={setToLocation}
-                />
-              </View>
-
-              <View style={styles.whenSection}>
-                <Text style={styles.sectionTitle}>When?</Text>
-                <TouchableOpacity style={styles.timeInput} onPress={showDateTimePicker}>
-                  <Text style={styles.timeText}>{formatDateTime()}</Text>
-                  <Ionicons name="calendar" size={20} color={Colors.secondary} />
+          <Animated.View style={[styles.contentCard, { transform: [{ translateY: contentTranslateY }] }]}> 
+              <View style={styles.tabContainer}>
+                <TouchableOpacity
+                  style={[styles.tabButton, activeTab === 'ride' && styles.tabButtonActive]}
+                  onPress={() => setActiveTab('ride')}
+                >
+                  <Text style={[styles.tabButtonText, activeTab === 'ride' && styles.tabButtonTextActive]}>Find a Ride</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.tabButton, activeTab === 'drive' && styles.tabButtonActive]}
+                  onPress={() => setActiveTab('drive')}
+                >
+                  <Text style={[styles.tabButtonText, activeTab === 'drive' && styles.tabButtonTextActive]}>Offer a Ride</Text>
                 </TouchableOpacity>
               </View>
+          <ScrollView 
+            style={styles.scrollView}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+        
 
-              <View style={styles.seatSection}>
-                <Text style={styles.sectionTitle}>Seat needed?</Text>
-                
-                <View style={styles.seatCounter}>
-                  <TouchableOpacity
-                    style={[styles.seatButton, seatCount === 1 && styles.seatButtonDisabled]}
-                    onPress={decreaseSeat}
-                    disabled={seatCount === 1}
-                  >
-                    <Ionicons 
-                      name="remove-circle-outline" 
-                      size={30} 
-                      color={seatCount === 1 ? Colors.gray : Colors.secondary} 
-                    />
-                  </TouchableOpacity>
-                  
-                  <Text style={styles.seatCount}>{seatCount}</Text>
-                  
-                  <TouchableOpacity
-                    style={[styles.seatButton, seatCount === 8 && styles.seatButtonDisabled]}
-                    onPress={increaseSeat}
-                    disabled={seatCount === 8}
-                  >
-                    <Ionicons 
-                      name="add-circle-outline" 
-                      size={30} 
-                      color={seatCount === 8 ? Colors.gray : Colors.secondary} 
-                    />
-                  </TouchableOpacity>
-                </View>
+              <View style={[styles.Titlecontainer]}>
+                <Text style={[styles.TitleText]}>{activeTab === 'ride' ? 'Find a ride' : 'Offer a ride'}</Text>
               </View>
 
-            {/* Action Button */}
-            <View style={styles.actionButtonContainer}>
+              {activeTab === 'ride' ? (
+                <>
+                  <View style={styles.titleSection}>
+                    <Text style={styles.sectionTitle}>Where are you going?</Text>
+                  </View>
+
+                  <View style={styles.locationContainer}>
+                    <Ionicons name="location-sharp" size={20} color={Colors.gray} style={styles.inputIcon} />
+                    <TextInput
+                      style={styles.locationInput}
+                      placeholder="From"
+                      placeholderTextColor={Colors.gray}
+                      textAlign='left'
+                      textAlignVertical='center'
+                      value={fromLocation}
+                      onChangeText={setFromLocation}
+                      editable={true}
+                    />
+                  </View>
+
+                  <View style={styles.locationContainer}>
+                    <Ionicons name="location-sharp" size={20} color={Colors.gray} style={styles.inputIcon} />
+                    <TextInput
+                      style={styles.locationInput}
+                      placeholder="To"
+                      placeholderTextColor={Colors.gray}
+                      textAlign='left'
+                      textAlignVertical='center'
+                      value={toLocation}
+                      onChangeText={setToLocation}
+                      editable={true}
+                    />
+                  </View>
+
+                  <View style={styles.whenSection}>
+                    <Text style={styles.sectionTitle}>When?</Text>
+                    <TouchableOpacity style={styles.timeInput} onPress={showDateTimePicker}>
+                      <Text style={styles.timeText}>{formatDateTime()}</Text>
+                      <Ionicons name="calendar" size={20} color={Colors.secondary} />
+                    </TouchableOpacity>
+                  </View>
+
+                  <View>
+                    <TouchableOpacity
+                      style={[styles.actionButton, { backgroundColor: Colors.primary }]}
+                      onPress={handleAction}
+                    >
+                      <Text style={styles.actionButtonText}>Search</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              ) : (
+                <View style={styles.offerCard}>
+                  <View style={styles.offerIconContainer}>
+                    <Ionicons name="car-sport" size={28} color={Colors.white} />
+                  </View>
+                  <Text style={styles.offerTitle}>Share Your Ride</Text>
+                  <Text style={styles.offerSubtitle}>Offer a ride and help others while saving on fuel costs</Text>
+                  <TouchableOpacity
+                    style={styles.postButton}
+                    onPress={() => navigation.navigate('DriveNext', { userId, userData: { userId, firstName, lastName } })}
+                  >
+                    <Text style={styles.postButtonText}>Post a Ride</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            
+            {/*Extra Info.*/}
+            <View style={styles.seprator}> </View>
+            <Text style={styles.stext}>Quick Actions</Text>
+            <View style={styles.quickaction}> 
               <TouchableOpacity
-                style={[styles.actionButton, { backgroundColor: Colors.primary }]}
-                onPress={handleAction}
+                style={styles.quick} onPress={handleRecurring}
               >
-                <Text style={styles.actionButtonText}>Search</Text>
+                <Ionicons style={styles.qicon} name="calendar-outline" size={25} color={Colors.secondary} />
+                <Text style={[{textAlign: 'center', ...Typography.button, color:Colors.dark}]}>Recurring Rides</Text>
+                <Text style={[{textAlign: 'center', ...Typography.button, color:Colors.gray}]}>Set up daily rides</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={styles.quick1} //onPress={}
+              >
+               {/* <Ionicons style={styles.qicon} name="calendar-outline" size={25} color={Colors.secondary} />*/}
               </TouchableOpacity>
             </View>
 
-            </ScrollView>
+            <View style={styles.quickaction}> 
+              <View style={[styles.quick, {marginTop: 10, backgroundColor: '#9b9a9a1d'}]}>
+                <Text style={[styles.qtext, {color: Colors.dark}]}>Safety First</Text>
+                <Text style={styles.qtext}>
+                  <Ionicons name="ellipse" size={11} color={Colors.secondary} opacity={0.8}/> All drivers are verified</Text>
+                <Text style={styles.qtext}>
+                  <Ionicons name="ellipse" size={11} color={Colors.secondary} opacity={0.8}/> Live GPS Tracking</Text>
+                <Text style={styles.qtext}>
+                  <Ionicons name="ellipse" size={11} color={Colors.secondary} opacity={0.8}/> 24/7 support available</Text>
+              </View>
+            </View>
 
+            <View style={[{marginBottom: 100}]}></View>
 
-          </Animated.View>
+            
+
+          </ScrollView>
+        </Animated.View>
+        
 
         </Animated.View>
       </PanGestureHandler>
@@ -1246,19 +1264,24 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     paddingHorizontal: 20,
     paddingTop: Platform.OS === 'ios' ? 50 : 30,
   },
   headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: 'column',
+    alignItems: 'flex-start',
   },
   greeting: {
-    fontSize: 26,
+    fontSize: 22,
     fontWeight: '600',
     color: Colors.white,
-    marginRight: 8,
+    marginBottom: -30,
+  },
+  greeting1: {
+    fontSize: 28,
+    //fontWeight: '600',
+    color: Colors.white,
   },
   profileButton: {
     padding: 5,
@@ -1306,28 +1329,22 @@ const styles = StyleSheet.create({
     marginTop: Platform.OS === 'ios' ? 50 : 50,
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
-    paddingTop: 0,
+    paddingTop: 10,
     paddingHorizontal: 20,
-    //marginBottom: 90,
   },
   Titlecontainer: {
     flexDirection: 'row',
-    marginBottom: 20,
-    marginTop: -5,
-    alignItems: 'center',
-    justifyContent: 'center',
+    marginTop: 10,
+    marginBottom: -5,
+    alignItems: 'flex-start',
+    justifyContent: 'flex-start',
   },
   TitleText: {
     ...Typography.h1,
-    fontSize: 30,
+    fontSize: 24,
+    fontWeight: 'bold',
     color: Colors.primary,
     textAlign: 'left',
-    fontWeight: 'bold',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
   },
   scrollView: {
     flex: 1,
@@ -1336,35 +1353,33 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
   },
   titleSection: {
-    marginBottom: 5,
+    marginBottom: 2,
   },
-  formTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: Colors.dark,
-    marginBottom: 4,
-  },
-  formSubtitle: {
-    fontSize: 16,
-    color: Colors.gray,
+  inputIcon: {
+    marginRight: -10,
+    marginLeft: 10,
   },
   locationContainer: {
-    marginBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    borderRadius: 14,
+    backgroundColor: '#F9FAFB',
+    marginBottom: 12,
   },
   locationInput: {
-    borderWidth: 1.5,
-    borderColor: Colors.gray,
-    borderRadius: 15,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    flex: 1,
     fontSize: 16,
-    marginBottom: 12,
-    backgroundColor: Colors.white,
     color: Colors.dark,
+    fontWeight: '500',
+    paddingHorizontal: 16,
+    paddingVertical: 15,
     textAlignVertical: 'center',
-  },
+    includeFontPadding: false,
+    },
   whenSection: {
-    marginBottom: 20,
+    marginBottom: 2,
   },
   sectionTitle: {
     fontSize: 18,
@@ -1374,64 +1389,47 @@ const styles = StyleSheet.create({
   },
   timeInput: {
     borderWidth: 1.5,
-    borderColor: Colors.gray,
-    borderRadius: 15,
+    borderColor: '#E5E7EB',
+    borderRadius: 14,
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: Colors.white,
+    paddingVertical: 15,
+    fontSize: 16,
+    color: Colors.dark,
+    fontWeight: '500',
+    marginBottom: 12,
+    backgroundColor: '#F9FAFB',
+    textAlignVertical: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
   timeText: {
+    flex: 1,
     fontSize: 16,
     color: Colors.dark,
-    flex: 1,
-  },
-  seatSection: {
-    marginBottom: 20,
-    alignItems: 'flex-start',
-  },
-  seatCounter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  seatButton: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.white,
-  },
-  seatButtonDisabled: {
-    opacity: 0.5,
-  },
-  seatCount: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: Colors.dark,
-    marginHorizontal: 15,
-  },
-  actionButtonContainer: {
-    paddingTop: 15,
-    paddingBottom: 10,
-    backgroundColor: 'transparent',
+    fontWeight: '500',
+    height: '100%',
+    textAlignVertical: 'center',
   },
   actionButton: {
-    paddingVertical: 12,
-    borderRadius: 25,
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginTop: 15,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 8,
+    paddingVertical: 13,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    justifyContent: 'center',
+    flexDirection: 'row',
   },
   actionButtonText: {
     color: Colors.white,
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   iosPickerContainer: {
     flex: 1,
@@ -1457,6 +1455,147 @@ const styles = StyleSheet.create({
   },
   gradient: {
     flex: 1,
+  },
+  seprator:{
+    marginTop: 15,
+    borderTopColor: Colors.light,
+    borderTopWidth: 1.5,
+  },
+  stext:{
+    ...Typography.label,
+    fontSize: 15,
+    fontWeight: 'regular',
+    color: Colors.dark,
+    paddingLeft: 8,
+    paddingTop: 10,
+  },
+  quickaction:{
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: 350,
+    height: 125,
+    flex: 1,
+    rowGap: 8,
+  },
+  quick:{
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    borderRadius: 14,
+    width: 125,
+    height: 125,
+    flex: 2,
+    gap: 8,
+    marginInline: 5,
+  },
+  quick1:{
+    borderWidth: 1.5,
+    borderColor: Colors.white,
+    borderRadius: 14,
+    width: 125,
+    height: 125,
+    flex: 2,
+    gap: 8,
+    marginInline: 5,
+  },
+  qicon:{
+    backgroundColor: Colors.logoCream,
+    borderRadius: 80,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    width: 45,
+    height: 45,
+    marginTop: 10,
+    marginLeft: 10,
+    marginBottom: 5,
+  },
+  qtext:{
+    textAlign: 'auto',
+    ...Typography.button,
+    color: Colors.gray,
+    marginTop: 15,
+    marginLeft: 15,
+    marginBottom: -12,    
+  },
+  tabContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10,
+    marginBottom: 10,
+    alignSelf: 'center',
+    backgroundColor: Colors.primary,
+    borderRadius: 24,
+    borderColor: Colors.primary,
+    borderWidth: 0.4,
+  },
+  tabButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    marginHorizontal: -1,
+    borderRadius: 24,
+    backgroundColor: 'transparent',
+  },
+  tabButtonActive: {
+    backgroundColor: Colors.white,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 4,
+    borderColor: Colors.primary,
+    borderWidth: 1.5,
+  },
+  tabButtonText: {
+    fontSize: 18,
+    color: Colors.white,
+    fontWeight: '600',
+  },
+  tabButtonTextActive: {
+    color: Colors.primary,
+  },
+  offerCard: {
+    marginTop: 12,
+    backgroundColor: '#17487a',
+    borderRadius: 14,
+    paddingVertical: 24,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+  },
+  offerIconContainer: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  offerTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.white,
+    marginBottom: 6,
+  },
+  offerSubtitle: {
+    fontSize: 14,
+    color: Colors.white,
+    opacity: 0.9,
+    textAlign: 'center',
+    marginBottom: 14,
+  },
+  postButton: {
+    backgroundColor: '#ff8800',
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+    borderRadius: 20,
+  },
+  postButtonText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 16,
   },
  
 

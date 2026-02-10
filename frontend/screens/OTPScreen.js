@@ -27,7 +27,7 @@ import SuccessAnimation from '../components/SuccessAnimation';
 import FirebaseAuthService from '../services/FirebaseAuthService';
 import DatabaseService from '../services/DatabaseService';
 import * as Haptics from 'expo-haptics';
-const BASE_URL = process.env.EXPO_PUBLIC_API_URL;
+const BASE_URL = "http://192.168.1.13:8000"//process.env.EXPO_PUBLIC_API_URL;
 
 
 LogBox.ignoreLogs([
@@ -474,7 +474,7 @@ export default function OTPScreen({ navigation, route }) {
               <MaterialIcons
                 name="arrow-back-ios"
                 size={28}
-                color={Colors.primary}
+                color={Colors.secondary}
               />
             </TouchableOpacity>
           </Animated.View>

@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from 'react';
-import { View, TextInput, StyleSheet } from 'react-native';
+import { View, TextInput, StyleSheet, Dimensions } from 'react-native';
 import { Colors, Typography } from '../constants/Colors';
 
 export default function OTPInputs({ 
@@ -13,6 +13,7 @@ export default function OTPInputs({
 }) {
   const inputRefs = useRef([]);
   const digits = value.split('');
+  const { width } = Dimensions.get('window');
 
   const getBorderColor = (index) => {
     if (error) return Colors.secondary; // Orange for error
@@ -113,7 +114,7 @@ const styles = StyleSheet.create({
       height: 2,
     },
     shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowRadius: 2,
     elevation: 2,
   },
 });

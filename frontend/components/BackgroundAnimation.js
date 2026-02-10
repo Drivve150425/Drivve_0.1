@@ -125,19 +125,20 @@ export default function BackgroundAnimation({
 
   return (
     <View pointerEvents="none" style={[styles.root, { height }]}>
-      {/* Sliding mesh/aurora */}
+      {/* Sliding mesh/aurora*/}
       <AnimatedLG colors={colorsA} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
         style={[styles.strip, { width: STRIP_WIDTH, transform: [{ translateX: reduceMotion ? 0 : txA }] }]} />
       <AnimatedLG colors={colorsB} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
         style={[styles.strip, { width: STRIP_WIDTH, opacity: reduceMotion ? 0 : opB, transform: [{ translateX: reduceMotion ? 0 : txB }] }]} />
 
-      {/* Diagonal shimmer */}
+      {/* Diagonal shimmer 
       {!reduceMotion && (
         <Animated.View style={[styles.shimmer, { opacity: bandOpacity, transform: [{ translateX: shTx }] }]}>
           <LinearGradient colors={["transparent", "white", "transparent"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
             style={{ width: W * 2, height }} />
         </Animated.View>
       )}
+        */}
 
       {/* Waves */}
       <View style={styles.waves}>

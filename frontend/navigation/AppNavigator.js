@@ -8,10 +8,12 @@ import SplashScreen from '../screens/SplashScreen';
 import LoginScreen from '../screens/LoginScreen';
 import OTPScreen from '../screens/OTPScreen';
 import HomeScreen from '../screens/HomeScreen';
-import DriveScreen from '../screens/DriveScreen';
 import CreateProfileScreen from '../screens/CreateProfileScreen';
-import DriveNextScreen from '../screens/DriveNextScreen';
+import DriveNextScreen from '../screens/DriveNext';
 import RideNextScreen from '../screens/RideNextScreen';
+import RecurringRides from '../screens/RecurringRides';
+import ChatListScreen from '../screens/ChatListScreen';
+import ChatScreen from '../screens/ChatScreen';
 import ProfileDetailsScreen from '../screens/ProfileDetailsScreen';
 import myprofilescreen from '../screens/myprofilescreen';
 import shareappscreen from '../screens/shareappscreen';
@@ -160,21 +162,8 @@ export default function AppNavigator({ user }) {
           }}
         />
 
-        <Stack.Screen
-          name="Drive"
-          component={DriveScreen}
-          options={{
-            cardStyle: {backgroundColor: '#FFFFFF'},
-            gestureEnabled: false,
-            ...(Platform.OS === 'ios' && {
-              statusBarStyle: 'dark',
-              contentStyle: {backgroundColor: '#FFFFFF'},
-            })
-          }} 
-        />
-
         <Stack.Screen 
-          name="DriveNext" 
+          name="DriveNext"
           component={DriveNextScreen}
           options={{ headerShown: false }}
         />
@@ -184,6 +173,13 @@ export default function AppNavigator({ user }) {
           component={RideNextScreen}
           options={{ headerShown: false }}
         />
+
+        <Stack.Screen 
+          name="Recurring" 
+          component={RecurringRides}
+          options={{ headerShown: false }}
+        />
+
         <Stack.Screen 
           name="ProfileDetails" 
           component={ProfileDetailsScreen}
@@ -345,7 +341,7 @@ export default function AppNavigator({ user }) {
           component={usetnotificationScreen}
           options={{ headerShown: false }}
         />
-        {/*
+        
         <Stack.Screen 
           name="ChatList"
           component={ChatListScreen}
@@ -357,7 +353,7 @@ export default function AppNavigator({ user }) {
           component={ChatScreen}
           options={{ headerShown: false }}
         />
-        */}
+        
 
       </Stack.Navigator>
     </NavigationContainer>

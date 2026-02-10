@@ -11,6 +11,7 @@ import {
 import Modal from 'react-native-modal';
 import { Colors } from '../constants/Colors';
 import { countries } from '../constants/CountryData';
+import { MaterialIcons } from '@expo/vector-icons';
 
 const { height } = Dimensions.get('window');
 
@@ -46,7 +47,9 @@ export default function CountryPicker({
         <View style={styles.header}>
           <Text style={styles.title}>Select Country</Text>
           <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-            <Text style={styles.closeText}>✕</Text>
+            <MaterialIcons name="close" size={24} color={Colors.primary} />
+            {//<Text style={styles.closeText}>✕</Text>
+}
           </TouchableOpacity>
         </View>
         
@@ -107,7 +110,12 @@ const styles = StyleSheet.create({
     color: Colors.dark,
   },
   closeButton: {
-    padding: 5,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F3F4F6',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   closeText: {
     fontSize: 18,

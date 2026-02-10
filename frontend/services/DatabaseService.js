@@ -4,8 +4,12 @@
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const BASE_URL = process.env.EXPO_PUBLIC_API_URL;
-const API_BASE_URL = `${BASE_URL}/api/v1`;
+const API_BASE_URL = __DEV__ 
+? 'http://192.168.1.13:8000/api/v1' // Your working backend 
+ :  'https://your-api-domain.com/api/v1'; 
+const BASE_URL = __DEV__ 
+? 'http://192.168.1.13:8000' // Base URL for auth endpoints 
+: 'https://your-api-domain.com';
 
 
 console.log('🔗 DatabaseService API_BASE_URL:', API_BASE_URL);
