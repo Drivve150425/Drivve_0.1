@@ -201,8 +201,8 @@ export default function HomeScreen({ navigation, route }) {
         navigation.navigate('ChatList');
         break;
       case 'alert':
-        Alert.alert('Coming Soon', 'Notifications screen will be available soon!');
-        // navigation.navigate('Settings');
+        // Alert.alert('Coming Soon', 'Notifications screen will be available soon!');
+        navigation.navigate('PushNotifications');
         break;
     }
   }; 
