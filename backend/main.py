@@ -24,7 +24,7 @@ from fastapi import Depends, HTTPException, UploadFile, File, Form
 
 # Import your existing modules
 from database import SessionLocal, engine, get_db, Base
-from models import  AccountDeactivation, ActivityLog, City, DocumentType, FeedbackType, PromotionRedemption, Ride, RideFeedback, State, User, OTPVerification, UserFeedback, UserStatus, SavedAddress, ShareActivity, UserType, Vehicle,EmergencyContact,Promotion
+from models import  AccountDeactivation, ActivityLog, City, DocumentType, FeedbackType,UserNotification, LiveLocation, PromotionRedemption, Ride, RideFeedback, State, User, OTPVerification, UserFeedback, UserStatus, SavedAddress, ShareActivity, UserType, Vehicle,EmergencyContact,Promotion
 from user_id_generator import generate_user_id
 from models import ShareActivity,DocumentStatus, VerificationLog,DCoinRedemption,RideRewardMaster,RideBooking,RideReward,FAQ,AboutUs,MatchingPreferenceUser,MatchingPreferenceMaster,DocumentVerification
 from utils.redeem_code import generate_redeem_code
@@ -264,6 +264,13 @@ async def send_otp(phone_data: dict, db: Session = Depends(get_db)):
         # ✅ generate OTP
         otp_code = "123456"
         expires_at = datetime.now(UTC) + timedelta(minutes=10)
+        create_notification(
+            db=db,
+            phone_number=phone_number,
+            title="OTP Sent",
+            message="An OTP has been sent to your registered mobile number.",
+            ntype=NotificationType.SYSTEM
+        )
 
         otp_entry = OTPVerification(
             phone_number=phone_number,
@@ -722,36 +729,7 @@ async def record_share(data: ShareRequest, db: Session = Depends(get_db)):
         "share_count": record.share_count
     }
 
-# @app.post("/api/v1/referral/share")
-# async def record_share(data: ShareRequest, db: Session = Depends(get_db)):
-#     """
-#     Record each share action
-#     - Increment share_count if user already shared
-#     - Otherwise create new record
-#     """
-#     record = db.query(ShareActivity).filter(
-#         ShareActivity.phone_number == data.phone_number,
-#         ShareActivity.referral_code == data.referral_code
-#     ).first()
 
-#     if record:
-#         record.share_count += 1
-#         record.updated_at = datetime.utcnow()
-#     else:
-#         record = ShareActivity(
-#             phone_number=data.phone_number,
-#             referral_code=data.referral_code,
-#             share_count=1
-#         )
-#         db.add(record)
-
-#     db.commit()
-
-#     return {
-#         "success": True,
-#         "message": "Share recorded successfully",
-#         "share_count": record.share_count
-#     }
 @app.get("/api/v1/referral/stats")
 async def referral_stats(phone_number: str, db: Session = Depends(get_db)):
     record = db.query(ShareActivity).filter(
@@ -1045,7 +1023,7 @@ def update_emergency_contact(
 @app.delete("/api/v1/emergency-contacts/{contact_id}")
 def delete_emergency_contact(
     contact_id: int,
-    phone_number: str,
+    phone_number: str = Query(...),   # ✅ REQUIRED QUERY
     db: Session = Depends(get_db)
 ):
     contact = db.query(EmergencyContact).filter(
@@ -1904,6 +1882,10 @@ async def get_document_stats(
         
         # Base query
         query = db.query(DocumentVerification)
+        # .filter(
+        #     DocumentVerification.is_deleted == False
+        # )
+
         
         # Apply time filter
         today = datetime.now(timezone.utc).date()
@@ -1917,12 +1899,31 @@ async def get_document_stats(
             query = query.filter(DocumentVerification.submitted_at >= month_ago)
         
         total = query.count()
-        pending = query.filter(DocumentVerification.status == DocumentStatus.PENDING).count()
+        # pending = query.filter(DocumentVerification.status == DocumentStatus.PENDING).count()
         under_review = query.filter(DocumentVerification.status == DocumentStatus.UNDER_REVIEW).count()
-        approved = query.filter(DocumentVerification.status == DocumentStatus.APPROVED).count()
-        rejected = query.filter(DocumentVerification.status == DocumentStatus.REJECTED).count()
+        pending = query.filter(
+            DocumentVerification.status == DocumentStatus.PENDING,
+            DocumentVerification.is_deleted == False
+        ).count()
+
+        approved = query.filter(
+            DocumentVerification.status == DocumentStatus.APPROVED,
+            DocumentVerification.is_deleted == False
+        ).count()
+
+        rejected = query.filter(
+            DocumentVerification.status == DocumentStatus.REJECTED,
+            DocumentVerification.is_deleted == False
+        ).count()
+
+        deleted_document = query.filter(
+            DocumentVerification.is_deleted == True
+        ).count()
+
+
         expired = query.filter(DocumentVerification.is_expired == True).count()
-        
+        # deleted_document = query.filter(DocumentVerification.is_deleted == True).count()
+        print("📊 Document Stats Query Executed", deleted_document)
         # Get counts by document type
         doc_type_counts = {}
         for doc_type in DocumentType:
@@ -1950,6 +1951,7 @@ async def get_document_stats(
                 "approved": approved,
                 "rejected": rejected,
                 "expired": expired,
+                "deleted": deleted_document,
                 "approval_rate": round((approved / total * 100), 2) if total > 0 else 0,
                 "rejection_rate": round((rejected / total * 100), 2) if total > 0 else 0
             },
@@ -1974,257 +1976,233 @@ async def upload_document(
     issue_date: Optional[str] = Form(None),
     expiry_date: Optional[str] = Form(None),
     vehicle_number: Optional[str] = Form(None),
+
     front_image: UploadFile = File(...),
     back_image: Optional[UploadFile] = File(None),
     selfie_image: UploadFile = File(...),
-    is_reupload: Optional[str] = Form(None),  # Add this parameter
-    reupload_document_id: Optional[int] = Form(None),  # Add this parameter
+
+    is_reupload: Optional[bool] = Form(False),
+    reupload_document_id: Optional[int] = Form(None),
+
     db: Session = Depends(get_db)
 ):
     """
-    Upload document for verification
+    Upload or Re-upload a KYC document
     """
+    front_path = back_path = selfie_path = None
+
     try:
-        print(f"📤 Document upload started for {phone_number}")
-        print(f"🔄 Reupload mode: {is_reupload}, Document ID: {reupload_document_id}")
-        
-        # Validate document number
-        if not validate_document_number(document_type, document_number):
+        # =========================
+        # 1️⃣ NORMALIZE INPUT
+        # =========================
+        phone_number = phone_number.strip()
+        document_number = document_number.strip().replace(" ", "")
+        document_type = document_type.upper()
+
+        # =========================
+        # 2️⃣ VALIDATE DOCUMENT TYPE
+        # =========================
+        try:
+            doc_enum = DocumentType[document_type]
+        except KeyError:
+            raise HTTPException(400, "Invalid document type")
+
+        # =========================
+        # 3️⃣ VALIDATE DOCUMENT NUMBER FORMAT
+        # =========================
+        if not validate_document_number(document_type.lower(), document_number):
             raise HTTPException(
                 status_code=400,
-                detail=f"Invalid {document_type.upper()} number format"
+                detail=f"Invalid {document_type} number format"
             )
-        
-        # Convert document_type to uppercase for enum matching
-        document_type_upper = document_type.upper()
-        
-        # Validate document type exists in enum
-        try:
-            doc_enum = DocumentType[document_type_upper]
-        except KeyError:
+
+        # =========================
+        # 4️⃣ GLOBAL DUPLICATE CHECK (ACTIVE ONLY)
+        # =========================
+        existing = db.query(DocumentVerification).filter(
+            DocumentVerification.document_number == document_number,
+            DocumentVerification.is_deleted == False
+        ).first()
+
+        if existing and not is_reupload:
             raise HTTPException(
-                status_code=400, 
-                detail=f"Invalid document type: {document_type}. Valid types: {[e.value for e in DocumentType]}"
+                status_code=409,
+                detail="This document number is already registered"
             )
-        
-        # Check if document already exists - MODIFIED LOGIC
-        existing_query = db.query(DocumentVerification).filter(
-            and_(
-                DocumentVerification.phone_number == phone_number,
-                DocumentVerification.document_type == doc_enum
+
+        if is_reupload and existing and existing.id != reupload_document_id:
+            raise HTTPException(
+                status_code=409,
+                detail="This document number is already in use"
             )
-        )
-        
-        # If NOT in reupload mode, check for existing pending/approved documents
-        if not is_reupload:
-            existing = existing_query.filter(
-                DocumentVerification.status.in_([
-                    DocumentStatus.PENDING, 
-                    DocumentStatus.UNDER_REVIEW, 
-                    DocumentStatus.APPROVED
-                ])
-            ).first()
-            
-            if existing:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"You already have a {document_type.upper()} document in {existing.status.value} status"
-                )
-        
-        # If in reupload mode, check if the rejected document exists
-        elif is_reupload and reupload_document_id:
-            rejected_doc = db.query(DocumentVerification).filter(
+
+        # =========================
+        # 5️⃣ REUPLOAD VALIDATION
+        # =========================
+        document = None
+        if is_reupload:
+            if not reupload_document_id:
+                raise HTTPException(400, "reupload_document_id required")
+
+            document = db.query(DocumentVerification).filter(
                 DocumentVerification.id == reupload_document_id,
                 DocumentVerification.phone_number == phone_number,
-                DocumentVerification.document_type == doc_enum,
-                DocumentVerification.status == DocumentStatus.REJECTED
+                DocumentVerification.status == DocumentStatus.REJECTED,
+                DocumentVerification.is_deleted == False
             ).first()
-            
-            if not rejected_doc:
-                raise HTTPException(
-                    status_code=404,
-                    detail="Rejected document not found for reupload"
-                )
-            
-            # If reuploading with different document number, check if it conflicts
-            if document_number != rejected_doc.document_number:
-                conflicting = db.query(DocumentVerification).filter(
-                    DocumentVerification.document_number == document_number,
-                    DocumentVerification.status.in_([
-                        DocumentStatus.PENDING, 
-                        DocumentStatus.UNDER_REVIEW, 
-                        DocumentStatus.APPROVED
-                    ])
-                ).first()
-                
-                if conflicting:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Document number already exists in {conflicting.status.value} status"
-                    )
-        
-        # Get user info
-        user = db.query(User).filter(User.phone_number == phone_number).first()
-        user_id = user.user_id if user else None
-        
-        # Prepare document data
-        document_data = {}
-        if vehicle_number:
-            document_data["vehicle_number"] = vehicle_number.strip()
-        
-        # Generate unique identifiers
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        unique_id = str(uuid.uuid4())[:8]
-        
-        # Save images
-        front_image_path = await save_image(
-            front_image, "front", 
-            document_type, document_number, 
-            timestamp, unique_id
-        )
-        
-        back_image_path = None
-        if back_image:
-            back_image_path = await save_image(
-                back_image, "back", 
-                document_type, document_number, 
-                timestamp, unique_id
-            )
-        
-        selfie_image_path = await save_image(
-            selfie_image, "selfie", 
-            document_type, document_number, 
-            timestamp, unique_id
-        )
-        
-        # Parse dates
-        issue_date_obj = None
-        expiry_date_obj = None
-        
-        if issue_date:
-            try:
-                issue_date_obj = datetime.strptime(issue_date, "%Y-%m-%d").date()
-            except ValueError:
-                raise HTTPException(
-                    status_code=400, 
-                    detail="Invalid issue date format. Use YYYY-MM-DD"
-                )
-        
-        if expiry_date:
-            try:
-                expiry_date_obj = datetime.strptime(expiry_date, "%Y-%m-%d").date()
-            except ValueError:
-                raise HTTPException(
-                    status_code=400, 
-                    detail="Invalid expiry date format. Use YYYY-MM-DD"
-                )
-        
-        # Check if expired
-        is_expired = False
-        if expiry_date_obj and expiry_date_obj < date.today():
-            is_expired = True
-        
-        # If in reupload mode, update the rejected document instead of creating new
-        if is_reupload and reupload_document_id:
-            print(f"🔄 Updating rejected document {reupload_document_id}")
-            
-            document = db.query(DocumentVerification).filter(
-                DocumentVerification.id == reupload_document_id
-            ).first()
-            
+
             if not document:
-                raise HTTPException(status_code=404, detail="Document to reupload not found")
-            
-            # Update document fields
+                raise HTTPException(404, "Rejected document not found")
+
+        # =========================
+        # 6️⃣ PARSE DATES
+        # =========================
+        issue_date_obj = (
+            datetime.strptime(issue_date, "%Y-%m-%d").date()
+            if issue_date else None
+        )
+        expiry_date_obj = (
+            datetime.strptime(expiry_date, "%Y-%m-%d").date()
+            if expiry_date else None
+        )
+
+        is_expired = (
+            expiry_date_obj is not None and expiry_date_obj < date.today()
+        )
+
+        # =========================
+        # 7️⃣ SAVE IMAGES
+        # =========================
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        uid = uuid.uuid4().hex[:8]
+
+        front_path = await save_image(
+            front_image, "front",
+            document_type, document_number,
+            timestamp, uid
+        )
+
+        if back_image:
+            back_path = await save_image(
+                back_image, "back",
+                document_type, document_number,
+                timestamp, uid
+            )
+
+        selfie_path = await save_image(
+            selfie_image, "selfie",
+            document_type, document_number,
+            timestamp, uid
+        )
+
+        # =========================
+        # 8️⃣ PREPARE DOCUMENT DATA
+        # =========================
+        doc_data = {}
+        if vehicle_number:
+            doc_data["vehicle_number"] = vehicle_number.strip()
+
+        # =========================
+        # 9️⃣ INSERT / UPDATE RECORD
+        # =========================
+        if is_reupload:
+            create_notification(
+                db=db,
+                phone_number=phone_number,
+                title="Document Re-submitted 📄",
+                message=f"Your {document.document_type.value.upper()} document has been re-submitted and is under review.",
+                ntype=NotificationType.DOCUMENT,
+                action_type="document",
+                action_value=str(document.id)
+            )
             document.document_number = document_number
-            document.document_name = document_name.strip()
-            document.document_data = document_data if document_data else None
-            document.front_image_path = front_image_path
-            document.back_image_path = back_image_path
-            document.selfie_image_path = selfie_image_path
+            document.document_name = document_name
+            document.document_data = doc_data or None
+            document.front_image_path = front_path
+            document.back_image_path = back_path
+            document.selfie_image_path = selfie_path
             document.issue_date = issue_date_obj
             document.expiry_date = expiry_date_obj
             document.is_expired = is_expired
-            document.status = DocumentStatus.PENDING  # Reset to pending
-            document.rejection_reason = None  # Clear rejection reason
-            document.verified_by = None  # Clear verification
-            document.verified_at = None  # Clear verification timestamp
+            document.status = DocumentStatus.PENDING
+            document.rejection_reason = None
+            document.verified_by = None
+            document.verified_at = None
             document.updated_at = datetime.now(timezone.utc)
 
-            
-            # Create verification log for reupload
-            log = VerificationLog(
-                document_id=document.id,
-                admin_id=1,  # User-initiated reupload
-                action="reupload",
-                notes="User reuploaded rejected document"
+            db.add(
+                VerificationLog(
+                    document_id=document.id,
+                    admin_id=1,
+                    action="reupload",
+                    notes="User reuploaded rejected document"
+                )
             )
-            db.add(log)
-            
+
         else:
-            # Create new document record
+            user = db.query(User).filter(User.phone_number == phone_number).first()
+
             document = DocumentVerification(
                 phone_number=phone_number,
-                user_id=user_id,
+                user_id=user.user_id if user else None,
                 document_type=doc_enum,
                 document_number=document_number,
-                document_name=document_name.strip(),
-                document_data=document_data if document_data else None,
-                front_image_path=front_image_path,
-                back_image_path=back_image_path,
-                selfie_image_path=selfie_image_path,
+                document_name=document_name,
+                document_data=doc_data or None,
+                front_image_path=front_path,
+                back_image_path=back_path,
+                selfie_image_path=selfie_path,
                 issue_date=issue_date_obj,
                 expiry_date=expiry_date_obj,
                 is_expired=is_expired,
                 status=DocumentStatus.PENDING,
                 submitted_at=datetime.now(timezone.utc)
-
             )
-            
+            create_notification(
+                db=db,
+                phone_number=phone_number,
+                title="Document Submitted 📄",
+                message=f"Your {document.document_type.value.upper()} document has been submitted successfully and is under review.",
+                ntype=NotificationType.DOCUMENT,
+                action_type="document",
+                action_value=str(document.id)
+            )
+
             db.add(document)
-        
+
+        # =========================
+        # 🔟 COMMIT
+        # =========================
         db.commit()
         db.refresh(document)
-        
-        print(f"✅ Document {'reuploaded' if is_reupload else 'uploaded'} successfully: ID {document.id}")
-        
+
         return {
             "success": True,
-            "message": f"Document {'reuploaded' if is_reupload else 'uploaded'} successfully. Under verification.",
+            "message": "Document submitted successfully",
             "document_id": document.id,
-            "is_reupload": bool(is_reupload),
             "status": document.status.value,
-            "document_type": document_type.upper(),
-            "document_number": document_number,
-            "submitted_at": document.submitted_at.isoformat() if document.submitted_at else None
+            "is_reupload": is_reupload
         }
-        
+
+    # =========================
+    # ❌ CLEAN FAILURES
+    # =========================
     except HTTPException:
         raise
+
     except Exception as e:
-        print(f"❌ Document upload error: {str(e)}")
-        print(traceback.format_exc())
-        
-        # Cleanup uploaded files if document creation failed
-        try:
-            # Get paths from saved images (if they were saved)
-            if 'front_image_path' in locals() and front_image_path and os.path.exists(front_image_path):
-                os.remove(front_image_path)
-                print(f"🗑️ Cleaned up front image: {front_image_path}")
-            if 'back_image_path' in locals() and back_image_path and os.path.exists(back_image_path):
-                os.remove(back_image_path)
-                print(f"🗑️ Cleaned up back image: {back_image_path}")
-            if 'selfie_image_path' in locals() and selfie_image_path and os.path.exists(selfie_image_path):
-                os.remove(selfie_image_path)
-                print(f"🗑️ Cleaned up selfie image: {selfie_image_path}")
-        except Exception as cleanup_error:
-            print(f"⚠️ Cleanup error: {cleanup_error}")
-        
         db.rollback()
+
+        for path in [front_path, back_path, selfie_path]:
+            if path and os.path.exists(path):
+                os.remove(path)
+
+        print("❌ Document upload failed:", str(e))
         raise HTTPException(
             status_code=500,
-            detail=f"Document upload failed. Please try again."
+            detail="Document upload failed. Please try again."
         )
+
 @app.get("/api/v1/documents/user/{phone_number}")
 async def get_user_documents(
     phone_number: str,
@@ -2235,9 +2213,10 @@ async def get_user_documents(
     """
     try:
         documents = db.query(DocumentVerification).filter(
-            DocumentVerification.phone_number == phone_number
+            DocumentVerification.phone_number == phone_number,
+            DocumentVerification.is_deleted == False   # ✅ ADD HERE
         ).order_by(DocumentVerification.created_at.desc()).all()
-        
+
         result = []
         for doc in documents:
             # Get user info
@@ -2252,9 +2231,9 @@ async def get_user_documents(
                 "document_number": doc.document_number,
                 "document_name": doc.document_name,
                 "status": doc.status.value,
-                "front_image_url": f"/{doc.front_image_path}",
-                "back_image_url": f"/{doc.back_image_path}" if doc.back_image_path else None,
-                "selfie_image_url": f"/{doc.selfie_image_path}",
+                "front_image_url": build_image_url(doc.front_image_path),
+            "back_image_url": build_image_url(doc.back_image_path),
+            "selfie_image_url": build_image_url(doc.selfie_image_path),
                 "issue_date": doc.issue_date.isoformat() if doc.issue_date else None,
                 "expiry_date": doc.expiry_date.isoformat() if doc.expiry_date else None,
                 "is_expired": doc.is_expired,
@@ -2296,7 +2275,10 @@ async def get_pending_documents(
     try:
         offset = (page - 1) * limit
         
-        query = db.query(DocumentVerification)
+        query = db.query(DocumentVerification).filter(
+            DocumentVerification.is_deleted == False
+        )
+
         
         # Apply filters
         if status == "pending":
@@ -2360,9 +2342,9 @@ async def get_pending_documents(
                 "document_number": doc.document_number,
                 "document_name": doc.document_name,
                 "status": doc.status.value,
-                "front_image_url": f"/{doc.front_image_path}",
-                "back_image_url": f"/{doc.back_image_path}" if doc.back_image_path else None,
-                "selfie_image_url": f"/{doc.selfie_image_path}",
+                 "front_image_url": build_image_url(doc.front_image_path),
+            "back_image_url": build_image_url(doc.back_image_path),
+            "selfie_image_url": build_image_url(doc.selfie_image_path),
                 "issue_date": doc.issue_date.isoformat() if doc.issue_date else None,
                  "rejection_reason": doc.rejection_reason,   # ✅ ADD THIS
                 "expiry_date": doc.expiry_date.isoformat() if doc.expiry_date else None,
@@ -2400,9 +2382,11 @@ async def search_documents(
     """
     try:
         offset = (filter_data.page - 1) * filter_data.limit
-        
-        query = db.query(DocumentVerification)
-        
+
+        query = db.query(DocumentVerification).filter(
+            DocumentVerification.is_deleted == False
+        )
+
         # Apply filters
         if filter_data.status:
             try:
@@ -2454,7 +2438,9 @@ async def search_documents(
                 "document_number": doc.document_number,
                 "document_name": doc.document_name,
                 "status": doc.status.value,
-                "front_image_url": f"/{doc.front_image_path}",
+               "front_image_url": build_image_url(doc.front_image_path),
+            "back_image_url": build_image_url(doc.back_image_path),
+            "selfie_image_url": build_image_url(doc.selfie_image_path),
                 "submitted_at": doc.submitted_at.isoformat() if doc.submitted_at else None,
                 "verified_by": doc.verified_by,
                 "verified_at": doc.verified_at.isoformat() if doc.verified_at else None
@@ -2477,82 +2463,46 @@ async def search_documents(
             status_code=500,
             detail=f"Failed to search documents: {str(e)}"
         )
-
 @app.delete("/api/v1/documents/{document_id}")
 async def delete_document(
     document_id: int,
     request: Request,
     db: Session = Depends(get_db)
 ):
-    """
-    Delete document - User can delete any of their documents
-    """
-    try:
-        # Parse request body
-        try:
-            body = await request.json()
-            reason = body.get("reason", "User requested deletion")
-        except:
-            reason = "User requested deletion"
-        
-        document = db.query(DocumentVerification).filter(
-            DocumentVerification.id == document_id
-        ).first()
-        
-        if not document:
-            raise HTTPException(status_code=404, detail="Document not found")
-        
-        # ✅ SOLUTION: Delete verification logs first
-        db.query(VerificationLog).filter(
-            VerificationLog.document_id == document_id
-        ).delete()
-        
-        # Store document info for logging before deletion
-        doc_info = {
-            "id": document.id,
-            "phone_number": document.phone_number,
-            "document_type": document.document_type.value,
-            "document_number": document.document_number,
-            "status": document.status.value
-        }
-        
-        # Delete associated files
-        try:
-            if document.front_image_path and os.path.exists(document.front_image_path):
-                os.remove(document.front_image_path)
-                print(f"🗑️ Deleted front image: {document.front_image_path}")
-            if document.back_image_path and os.path.exists(document.back_image_path):
-                os.remove(document.back_image_path)
-                print(f"🗑️ Deleted back image: {document.back_image_path}")
-            if document.selfie_image_path and os.path.exists(document.selfie_image_path):
-                os.remove(document.selfie_image_path)
-                print(f"🗑️ Deleted selfie image: {document.selfie_image_path}")
-        except Exception as e:
-            print(f"⚠️ File deletion error: {e}")
-            # Continue with deletion even if file cleanup fails
-        
-        # ✅ No need to create log since we're deleting everything
-        # Delete the document
-        db.delete(document)
-        db.commit()
-        
-        print(f"✅ Document deleted: ID {doc_info['id']}, Type: {doc_info['document_type']}, Status: {doc_info['status']}")
-        
-        return {
-            "success": True,
-            "message": "Document deleted successfully"
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"❌ Delete document error: {str(e)}")
-        print(traceback.format_exc())
-        db.rollback()
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to delete document: {str(e)}"
+    document = db.query(DocumentVerification).filter(
+        DocumentVerification.id == document_id,
+        DocumentVerification.is_deleted == False
+    ).first()
+
+    if not document:
+        raise HTTPException(404, "Document not found")
+
+    # 🔥 SOFT DELETE
+    document.is_deleted = True
+    document.deleted_at = datetime.now(timezone.utc)
+    document.deleted_by = "user"
+    document.updated_at = datetime.now(timezone.utc)
+
+    # Optional: force status
+    document.status = DocumentStatus.REJECTED
+
+    # Audit log
+    db.add(
+        VerificationLog(
+            document_id=document.id,
+            admin_id=1,  # system
+            action="soft_delete",
+            notes="Document deleted by user"
         )
+    )
+
+    db.commit()
+
+    return {
+        "success": True,
+        "message": "Document deleted successfully"
+    }
+
 @app.put("/api/v1/documents/status")
 async def update_document_status(
     data: DocumentUpdateStatus,
@@ -2688,90 +2638,6 @@ async def request_document_review(
             status_code=500,
             detail=f"Failed to request document review: {str(e)}"
         )
-# @app.delete("/api/v1/documents/{document_id}")
-# async def delete_document(
-#     document_id: int,
-#     request: Request,
-#     db: Session = Depends(get_db)
-# ):
-#     """
-#     Delete document - User can delete any of their documents
-#     """
-#     try:
-#         # Parse request body
-#         try:
-#             body = await request.json()
-#             reason = body.get("reason", "User requested deletion")
-#         except:
-#             reason = "User requested deletion"
-        
-#         document = db.query(DocumentVerification).filter(
-#             DocumentVerification.id == document_id
-#         ).first()
-        
-#         if not document:
-#             raise HTTPException(status_code=404, detail="Document not found")
-        
-#         # NOTE: Users can delete ANY document, including approved ones
-#         # No restrictions on status
-        
-#         # Store document info for logging before deletion
-#         doc_info = {
-#             "id": document.id,
-#             "phone_number": document.phone_number,
-#             "document_type": document.document_type.value,
-#             "document_number": document.document_number,
-#             "status": document.status.value
-#         }
-        
-#         # Delete associated files
-#         try:
-#             if document.front_image_path and os.path.exists(document.front_image_path):
-#                 os.remove(document.front_image_path)
-#                 print(f"🗑️ Deleted front image: {document.front_image_path}")
-#             if document.back_image_path and os.path.exists(document.back_image_path):
-#                 os.remove(document.back_image_path)
-#                 print(f"🗑️ Deleted back image: {document.back_image_path}")
-#             if document.selfie_image_path and os.path.exists(document.selfie_image_path):
-#                 os.remove(document.selfie_image_path)
-#                 print(f"🗑️ Deleted selfie image: {document.selfie_image_path}")
-#         except Exception as e:
-#             print(f"⚠️ File deletion error: {e}")
-#             # Continue with deletion even if file cleanup fails
-        
-#         # Create deletion log
-#         try:
-#             log = VerificationLog(
-#                 document_id=document.id,
-#                 admin_id=None,
-#                 action="user_delete",
-#                 notes=f"Document deleted by user. Status: {doc_info['status']}. Reason: {reason}"
-#             )
-#             db.add(log)
-#         except Exception as log_error:
-#             print(f"⚠️ Log creation error: {log_error}")
-        
-#         # Delete the document
-#         db.delete(document)
-#         db.commit()
-        
-#         print(f"✅ Document deleted: ID {doc_info['id']}, Type: {doc_info['document_type']}, Status: {doc_info['status']}")
-        
-#         return {
-#             "success": True,
-#             "message": "Document deleted successfully"
-#         }
-        
-#     except HTTPException:
-#         raise
-#     except Exception as e:
-#         print(f"❌ Delete document error: {str(e)}")
-#         print(traceback.format_exc())
-#         db.rollback()
-#         raise HTTPException(
-#             status_code=500,
-#             detail=f"Failed to delete document: {str(e)}"
-#         )
 
 @app.get("/api/v1/documents/expiring-soon")
 async def get_expiring_documents(
@@ -2789,7 +2655,8 @@ async def get_expiring_documents(
             DocumentVerification.expiry_date.isnot(None),
             DocumentVerification.expiry_date >= today,
             DocumentVerification.expiry_date <= threshold_date,
-            DocumentVerification.status == DocumentStatus.APPROVED
+            DocumentVerification.status == DocumentStatus.APPROVED,
+            DocumentVerification.is_deleted == False   # ✅ ADD
         ).order_by(DocumentVerification.expiry_date.asc()).all()
         
         result = []
@@ -3906,72 +3773,6 @@ from fastapi import Query, HTTPException
 from sqlalchemy.orm import Session
 from models import DocumentVerification, DocumentStatus
 from database import get_db
-# @app.get("/api/v1/admin/documents")
-# def admin_list_documents(
-#     status: str = Query("pending"),
-#     page: int = 1,
-#     limit: int = 20,
-#     db: Session = Depends(get_db)
-# ):
-#     offset = (page - 1) * limit
-
-#     query = db.query(DocumentVerification)
-
-#     # ✅ ENUM SAFE FILTER
-#     if status != "all":
-#         try:
-#             query = query.filter(
-#                 DocumentVerification.status == DocumentStatus(status)
-#             )
-#         except ValueError:
-#             raise HTTPException(400, "Invalid status")
-
-#     total = query.count()
-
-#     documents = (
-#         query.order_by(desc(DocumentVerification.submitted_at))
-#         .offset(offset)
-#         .limit(limit)
-#         .all()
-#     )
-
-#     result = []
-#     for doc in documents:
-#         user = db.query(User).filter(
-#             User.phone_number == doc.phone_number
-#         ).first()
-
-#         result.append({
-#             "id": doc.id,
-#             "phone_number": doc.phone_number,
-#             "user_name": f"{user.first_name} {user.last_name}" if user else "Unknown",
-#             "document_type": doc.document_type.value,
-#             "document_number": doc.document_number,
-#             "document_name": doc.document_name,
-#             "status": doc.status.value,
-#             "front_image_url": build_image_url(doc.front_image_path),
-#             "back_image_url": build_image_url(doc.back_image_path),
-#             "selfie_image_url": build_image_url(doc.selfie_image_path),
-#             "issue_date": doc.issue_date.isoformat() if doc.issue_date else None,
-#             "expiry_date": doc.expiry_date.isoformat() if doc.expiry_date else None,
-#             "is_expired": doc.is_expired,
-#             "submitted_at": doc.submitted_at.isoformat(),
-#             "verified_by": doc.verified_by,
-#             "verified_at": doc.verified_at.isoformat() if doc.verified_at else None,
-#             "rejection_reason": doc.rejection_reason,
-#             "document_data": doc.document_data
-#         })
-
-#     return {
-#         "success": True,
-#         "documents": result,
-#         "pagination": {
-#             "page": page,
-#             "limit": limit,
-#             "total": total,
-#             "pages": (total + limit - 1) // limit
-#         }
-#     }
 
 @app.get("/api/v1/admin/documents")
 def admin_list_documents(
@@ -3980,15 +3781,14 @@ def admin_list_documents(
     limit: int = 50,
     db: Session = Depends(get_db)
 ):
-    query = db.query(DocumentVerification)
+    query = db.query(DocumentVerification).filter(
+        DocumentVerification.is_deleted == False
+    )
 
     if status != "all":
-        try:
-            query = query.filter(
-                DocumentVerification.status == DocumentStatus(status)
-            )
-        except ValueError:
-            raise HTTPException(400, "Invalid status")
+        query = query.filter(
+            DocumentVerification.status == DocumentStatus(status)
+        )
 
     total = query.count()
 
@@ -4427,6 +4227,253 @@ def admin_user_stats(db: Session = Depends(get_db)):
             "suspended_users": suspended_users,
             "daily_rides": daily_rides
         }
+    }
+from fastapi import Depends, HTTPException, Query
+from sqlalchemy.orm import Session
+from datetime import datetime
+from typing import Optional
+
+@app.get("/api/v1/admin/documents/deleted")
+def admin_list_deleted_documents(
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=100),
+    document_type: Optional[str] = None,
+    phone_number: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Admin: Get ONLY deleted documents
+    """
+
+    query = db.query(DocumentVerification).filter(
+        DocumentVerification.is_deleted == True
+    )
+
+    # 🔹 Optional filters
+    if document_type:
+        try:
+            query = query.filter(
+                DocumentVerification.document_type == DocumentType(document_type.upper())
+            )
+        except ValueError:
+            raise HTTPException(400, "Invalid document type")
+
+    if phone_number:
+        query = query.filter(DocumentVerification.phone_number.contains(phone_number))
+
+    if start_date:
+        try:
+            query = query.filter(
+                DocumentVerification.deleted_at >= datetime.strptime(start_date, "%Y-%m-%d")
+            )
+        except ValueError:
+            raise HTTPException(400, "Invalid start_date format (YYYY-MM-DD)")
+
+    if end_date:
+        try:
+            query = query.filter(
+                DocumentVerification.deleted_at <= datetime.strptime(end_date, "%Y-%m-%d")
+            )
+        except ValueError:
+            raise HTTPException(400, "Invalid end_date format (YYYY-MM-DD)")
+    
+    total = query.count()
+
+    docs = (
+        query
+        .order_by(DocumentVerification.deleted_at.desc())
+        .offset((page - 1) * limit)
+        .limit(limit)
+        .all()
+    )
+
+    result = []
+    for doc in docs:
+        user = db.query(User).filter(
+            User.phone_number == doc.phone_number
+        ).first()
+
+        result.append({
+            "id": doc.id,
+            "phone_number": doc.phone_number,
+            "user_name": f"{user.first_name} {user.last_name}" if user else "Unknown",
+            "document_type": doc.document_type.value,
+            "document_number": doc.document_number,
+            "status": "deleted",
+            "deleted_at": doc.deleted_at.isoformat() if doc.deleted_at else None,
+            "deleted_by": doc.deleted_by,
+            "submitted_at": doc.submitted_at.isoformat() if doc.submitted_at else None,
+            "front_image_url": build_image_url(doc.front_image_path),
+            "back_image_url": build_image_url(doc.back_image_path),
+            "selfie_image_url": build_image_url(doc.selfie_image_path),
+            "rejection_reason": doc.rejection_reason
+        })
+
+    return {
+        "success": True,
+        "documents": result,
+        "pagination": {
+            "page": page,
+            "limit": limit,
+            "total": total,
+            "pages": (total + limit - 1) // limit
+        }
+    }
+# utils/notifications.py
+from sqlalchemy.orm import Session
+from models import UserNotification, NotificationType
+
+@app.get("/api/v1/notifications")
+def get_notifications(
+    phone_number: str,
+    page: int = 1,
+    limit: int = 20,
+    db: Session = Depends(get_db)
+):
+    offset = (page - 1) * limit
+
+    notifications = (
+        db.query(UserNotification)
+        .filter(
+            UserNotification.phone_number == phone_number,
+            UserNotification.is_deleted == False
+        )
+        .order_by(UserNotification.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
+    return {
+        "success": True,
+        "notifications": notifications
+    }
+
+def create_notification(
+    db: Session,
+    phone_number: str,
+    title: str,
+    message: str,
+    ntype: NotificationType,
+    action_type: str | None = None,
+    action_value: str | None = None
+):
+    notif = UserNotification(
+        phone_number=phone_number,
+        title=title,
+        message=message,
+        type=ntype,
+        action_type=action_type,
+        action_value=action_value
+    )
+    db.add(notif)
+    db.commit()
+# @app.get("/api/v1/notifications")
+# def get_notifications(
+#     phone_number: str,
+#     page: int = 1,
+#     limit: int = 20,
+#     db: Session = Depends(get_db)
+# ):
+#     offset = (page - 1) * limit
+
+#     query = db.query(UserNotification).filter(
+#         UserNotification.phone_number == phone_number,
+#         UserNotification.is_deleted == False
+#     )
+
+#     total = query.count()
+
+#     notifications = (
+#         query.order_by(UserNotification.created_at.desc())
+#         .offset(offset)
+#         .limit(limit)
+#         .all()
+#     )
+
+#     return {
+#         "success": True,
+#         "notifications": [
+#             {
+#                 "id": n.id,
+#                 "title": n.title,
+#                 "message": n.message,
+#                 "type": n.type.value,
+#                 "is_read": n.is_read,
+#                 "action_type": n.action_type,
+#                 "action_value": n.action_value,
+#                 "created_at": n.created_at.isoformat()
+#             }
+#             for n in notifications
+#         ],
+#         "pagination": {
+#             "page": page,
+#             "limit": limit,
+#             "total": total
+#         }
+#     }
+@app.post("/api/v1/notifications/read")
+def mark_notification_read(data: dict, db: Session = Depends(get_db)):
+    notif = db.query(UserNotification).filter(
+        UserNotification.id == data["id"]
+    ).first()
+
+    if not notif:
+        raise HTTPException(404, "Notification not found")
+
+    notif.is_read = True
+    db.commit()
+
+    return {"success": True}
+@app.post("/api/v1/notifications/clear")
+def clear_notifications(phone_number: str, db: Session = Depends(get_db)):
+    db.query(UserNotification).filter(
+        UserNotification.phone_number == phone_number
+    ).update({"is_deleted": True})
+
+    db.commit()
+    return {"success": True}
+
+
+class LiveLocationPayload(BaseModel):
+    contact_id: int
+    lat: float
+    lng: float
+
+
+@app.post("/api/v1/live-location/update")
+def update_live_location(
+    payload: LiveLocationPayload,
+    db: Session = Depends(get_db)
+):
+    location = (
+        db.query(LiveLocation)
+        .filter(LiveLocation.contact_id == payload.contact_id)
+        .first()
+    )
+
+    if location:
+        location.lat = payload.lat
+        location.lng = payload.lng
+        location.updated_at = datetime.utcnow()
+    else:
+        location = LiveLocation(
+            contact_id=payload.contact_id,
+            lat=payload.lat,
+            lng=payload.lng,
+            updated_at=datetime.utcnow(),
+        )
+        db.add(location)
+
+    db.commit()
+
+    return {
+        "success": True,
+        "contact_id": payload.contact_id,
+        "lat": payload.lat,
+        "lng": payload.lng,
     }
 
 if __name__ == "__main__":

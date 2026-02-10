@@ -44,6 +44,7 @@ import TermsConditionsScreen from '../screens/TermsConditionsScreen';
 import PrivacyPolicyScreen from '../screens/PrivacyPolicyScreen';
 import FeedbackScreen from '../screens/Feedbackscreen';
 import RideFeedbackScreen from '../screens/RideFeedbackScreen';
+import usetnotificationScreen from '../screens/usernotificationscreen';
 // Chat screens are currently disabled
 //import ChatListScreen from '../screens/ChatListScreen';
 //import ChatScreen from '../screens/ChatScreen';
@@ -337,6 +338,11 @@ export default function AppNavigator({ user }) {
         <Stack.Screen
           name="RideFeedbackScreen"
           component={RideFeedbackScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="UserNotificationScreen"
+          component={usetnotificationScreen}
           options={{ headerShown: false }}
         />
         {/*

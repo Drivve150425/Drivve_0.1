@@ -13,7 +13,7 @@ const NAV_ITEMS = [
 
 const INDICATOR_SIZE = 36;
 
-const CoolBottomNavigation = ({ activeTab, onNavigate }) => {
+const CoolBottomNavigation = ({ activeTab, onNavigate, unreadCount = 0 }) => {
   const indicatorX = useRef(new Animated.Value(0)).current;
   const [tabLayouts, setTabLayouts] = useState(Array(NAV_ITEMS.length).fill(null));
   const [barLayout, setBarLayout] = useState(null);
@@ -80,12 +80,29 @@ const CoolBottomNavigation = ({ activeTab, onNavigate }) => {
                 });
               }}
             >
-              <Ionicons
+              {/* <Ionicons
                 name={item.icon}
                 size={27}
                 color={isActive ? Colors.white : Colors.gray}//'#9CA3AF'}
                 style={styles.icon}
-              />
+              /> */}
+              <View style={{ position: 'relative' }}>
+  <Ionicons
+    name={item.icon}
+    size={27}
+    color={isActive ? Colors.white : Colors.gray}
+    style={styles.icon}
+  />
+
+  {item.key === 'alert' && unreadCount > 0 && (
+    <View style={styles.badge}>
+      <Animated.Text style={styles.badgeText}>
+        {unreadCount > 9 ? '9+' : unreadCount}
+      </Animated.Text>
+    </View>
+  )}
+</View>
+
               <Animated.Text style={[
                 styles.label,
                 {
@@ -165,6 +182,25 @@ const styles = StyleSheet.create({
     marginBottom: 0,
     marginTop: -5,
   },
+  badge: {
+  position: 'absolute',
+  top: -6,
+  right: -10,
+  minWidth: 16,
+  height: 16,
+  borderRadius: 8,
+  backgroundColor: '#ff3b30',
+  justifyContent: 'center',
+  alignItems: 'center',
+  paddingHorizontal: 3,
+  zIndex: 10,
+},
+badgeText: {
+  color: '#fff',
+  fontSize: 9,
+  fontWeight: 'bold',
+},
+
 });
 
 export default CoolBottomNavigation;

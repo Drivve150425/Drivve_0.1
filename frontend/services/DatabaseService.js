@@ -533,13 +533,20 @@ async deleteVehicle(id) {
     return await res.json();
   }
 
-  async deleteContact(id) {
-    const res = await fetch(
-      `${API_BASE_URL}/emergency-contacts/${id}`,
-      { method: "DELETE" }
-    );
-    return await res.json();
-  }
+  async deleteContact(id, phoneNumber) {
+  const res = await fetch(
+    `${API_BASE_URL}/emergency-contacts/${id}?phone_number=${encodeURIComponent(phoneNumber)}`,
+    {
+      method: "DELETE",
+      headers: {
+        Accept: "application/json",
+      },
+    }
+  );
+
+  return await res.json();
+}
+
 async getPromotions(phoneNumber) {
   const res = await fetch(
     `${API_BASE_URL}/promotions?phone_number=${encodeURIComponent(phoneNumber)}`
@@ -1710,6 +1717,134 @@ async submitRideFeedback(payload) {
   } catch (e) {
     console.error("❌ submitRideFeedback error", e);
     return { success: false };
+  }
+}
+/* ================= USER NOTIFICATIONS ================= */
+
+// GET user notifications
+async getNotifications(phone_number, page = 1, limit = 20) {
+  try {
+    if (!phone_number) {
+      console.warn("❌ getNotifications called without phone number");
+      return { notifications: [] };
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(
+      () => controller.abort(),
+      this.getNetworkTimeout()
+    );
+
+    const url =
+      `${API_BASE_URL}/notifications` +
+      `?phone_number=${encodeURIComponent(phone_number)}` +
+      `&page=${page}&limit=${limit}`;
+
+    console.log("🔔 Fetching notifications:", url);
+
+    const res = await fetch(url, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        ...(Platform.OS === "ios" && {
+          "User-Agent": "DRIVVE-iOS/1.0"
+        })
+      },
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!res.ok) {
+      const text = await res.text();
+      console.error("❌ Notifications fetch error:", res.status, text);
+      throw new Error(text);
+    }
+
+    const json = await res.json();
+    console.log("✅ Notifications loaded:", json.notifications?.length || 0);
+
+    return json;
+  } catch (e) {
+    console.error("❌ getNotifications error:", e);
+    return { notifications: [] };
+  }
+}
+
+// MARK notification as read
+async markNotificationRead(notification_id) {
+  try {
+    console.log("👁️ Marking notification read:", notification_id);
+
+    const res = await fetch(`${API_BASE_URL}/notifications/read`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json"
+      },
+      body: JSON.stringify({ id: notification_id })
+    });
+
+    return await res.json();
+  } catch (e) {
+    console.error("❌ markNotificationRead error:", e);
+    return null;
+  }
+}
+
+// CLEAR all notifications
+async clearNotifications(phone_number) {
+  try {
+    console.log("🧹 Clearing notifications for:", phone_number);
+
+    const res = await fetch(
+      `${API_BASE_URL}/notifications/clear?phone_number=${encodeURIComponent(
+        phone_number
+      )}`,
+      { method: "POST" }
+    );
+
+    return await res.json();
+  } catch (e) {
+    console.error("❌ clearNotifications error:", e);
+    return null;
+  }
+}
+
+// GET unread count (badge support)
+async getUnreadNotificationCount(phone_number) {
+  try {
+    const res = await fetch(
+      `${API_BASE_URL}/notifications/unread-count?phone_number=${encodeURIComponent(
+        phone_number
+      )}`
+    );
+
+    const json = await res.json();
+    return json.count || 0;
+  } catch (e) {
+    console.error("❌ getUnreadNotificationCount error:", e);
+    return 0;
+  }
+}
+// ================= LIVE LOCATION =================
+
+// Update live location (NO Google Maps URL)
+async updateLiveLocation(payload) {
+  try {
+    const res = await fetch(`${API_BASE_URL}/live-location/update`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const json = await res.json();
+    return json;
+  } catch (e) {
+    console.error("❌ updateLiveLocation error:", e);
+    return null;
   }
 }
 

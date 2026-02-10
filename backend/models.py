@@ -584,3 +584,44 @@ class City(Base):
 
     state_id = Column(Integer, ForeignKey("states.id", ondelete="CASCADE"))
     state = relationship("State", back_populates="cities")
+
+
+
+class NotificationType(enum.Enum):
+    RIDE = "ride"
+    REWARD = "reward"
+    PROMOTION = "promotion"
+    DOCUMENT = "document"
+    SYSTEM = "system"
+
+
+class UserNotification(Base):
+    __tablename__ = "user_notifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    phone_number = Column(String(20), index=True, nullable=False)
+
+    title = Column(String(150), nullable=False)
+    message = Column(Text, nullable=False)
+
+    type = Column(Enum(NotificationType), nullable=False)
+
+    is_read = Column(Boolean, default=False)
+    is_deleted = Column(Boolean, default=False)
+
+    # Optional deep-link / navigation payload
+    action_type = Column(String(50), nullable=True)
+    action_value = Column(String(100), nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+class LiveLocation(Base):
+    __tablename__ = "live_locations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    contact_id = Column(Integer, index=True, nullable=False)
+
+    lat = Column(Float, nullable=False)
+    lng = Column(Float, nullable=False)
+
+    updated_at = Column(DateTime, default=datetime.utcnow)
