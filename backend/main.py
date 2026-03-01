@@ -28,6 +28,10 @@ from user_id_generator import generate_user_id
 from models import ShareActivity,DocumentStatus, VerificationLog,DCoinRedemption,RideRewardMaster,RideBooking,RideReward,FAQ,AboutUs,MatchingPreferenceUser,MatchingPreferenceMaster,DocumentVerification
 from utils.redeem_code import generate_redeem_code
 from sqlalchemy import func  # <-- For aggregate functions
+# from routers.routes import router as routes_router # <-- Mappls
+from routers.routes import router as map_router
+from routers.ride import router as ride_router
+
 load_dotenv()
 
 
@@ -40,6 +44,11 @@ app = FastAPI(
     version="2.0.1"
 )
 
+# #mappls
+# app.include_router(routes_router, prefix="/api/v1")
+# print("✅ Mappls routes loaded!")
+app.include_router(map_router)
+app.include_router(ride_router)
 
 # CORS
 app.add_middleware(
@@ -3760,7 +3769,7 @@ from sqlalchemy import func
 from datetime import datetime, timezone
 import os
 
-BASE_URL="http://192.168.1.13:8000"
+BASE_URL="http://192.168.1.2:8000"
 
 def build_image_url(path: str | None):
     if not path:
@@ -4373,6 +4382,62 @@ def create_notification(
     )
     db.add(notif)
     db.commit()
+
+
+# =========================
+# CREATE NOTIFICATION (POST)
+# =========================
+
+class CreateNotificationRequest(BaseModel):
+    phone_number: str
+    title: str
+    message: str
+    type: str = "system"  # system, ride, document, promotion
+    action_type: Optional[str] = None
+    action_value: Optional[str] = None
+
+
+@app.post("/api/v1/notifications")
+def create_notification_endpoint(
+    data: CreateNotificationRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Create a new notification for a user
+    """
+    try:
+        # Convert string type to NotificationType enum
+        try:
+            notif_type = NotificationType(data.type)
+        except ValueError:
+            notif_type = NotificationType.SYSTEM
+        
+        notif = UserNotification(
+            phone_number=data.phone_number,
+            title=data.title,
+            message=data.message,
+            type=notif_type,
+            action_type=data.action_type,
+            action_value=data.action_value,
+            is_read=False,
+            is_deleted=False
+        )
+        db.add(notif)
+        db.commit()
+        db.refresh(notif)
+        
+        return {
+            "success": True,
+            "notification_id": notif.id,
+            "message": "Notification created successfully"
+        }
+    except Exception as e:
+        db.rollback()
+        print(f"❌ Create notification error: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to create notification: {str(e)}"
+        )
 # @app.get("/api/v1/notifications")
 # def get_notifications(
 #     phone_number: str,

@@ -14,15 +14,11 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import DatabaseService from "../services/DatabaseService";
 import { Colors, Typography } from "../constants/Colors";
+import { useAuth } from "../context/AuthContext";
 
 export default function PromotionsScreen({ navigation, route }) {
-
-   const phoneNumber =
-  route?.params?.phoneNumber ||
-  navigation?.getState()?.routes
-    ?.find(r => r.params?.phoneNumber)
-    ?.params?.phoneNumber ||
-  null;
+  const { user } = useAuth();
+  const phoneNumber = user?.phone_number;
 
   const [promotions, setPromotions] = useState([]);
 

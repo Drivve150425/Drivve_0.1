@@ -7,6 +7,7 @@ import AppNavigator from './navigation/AppNavigator';
 import { useAppFonts } from './constants/Fonts';
 import { Colors } from './constants/Colors';
 import FirebaseAuthService from './services/FirebaseAuthService';
+import { AuthProvider } from './context/AuthContext';
 
 export default function App() {
   const [fontsLoaded] = useAppFonts();
@@ -103,8 +104,11 @@ export default function App() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <StatusBar style="auto" backgroundColor={Colors.white} />
-      <AppNavigator user={user} />
+      <AuthProvider>
+        <StatusBar style="auto" backgroundColor={Colors.white} />
+        <AppNavigator user={user} />
+      </AuthProvider>
+      
     </GestureHandlerRootView>
   );
 }

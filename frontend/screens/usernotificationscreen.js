@@ -13,15 +13,12 @@ import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 
 import DatabaseService from "../services/DatabaseService";
 import { Colors, Typography } from "../constants/Colors";
+import { useAuth } from "../context/AuthContext";
 
 /* ================= SCREEN ================= */
 export default function NotificationScreen({ navigation, route }) {
-  const phoneNumber =
-    route?.params?.phoneNumber ||
-    navigation?.getState()?.routes
-      ?.find(r => r.params?.phoneNumber)
-      ?.params?.phoneNumber ||
-    null;
+  const { user } = useAuth();
+  const phoneNumber = user?.phone_number;
 
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);

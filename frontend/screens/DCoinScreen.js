@@ -15,22 +15,21 @@ import * as Clipboard from "expo-clipboard";
 
 import DatabaseService from "../services/DatabaseService";
 import { Colors, Typography } from "../constants/Colors";
+import { useAuth } from "../context/AuthContext";
 
 export default function DCoinWalletScreen({ route, navigation }) {
-  const phoneNumber =
-    route?.params?.phoneNumber ||
-    navigation?.getState()?.routes
-      ?.find(r => r.params?.phoneNumber)
-      ?.params?.phoneNumber ||
-    null;
+  const { user } = useAuth();
+  const phoneNumber = user?.phone_number;
 
   const [history, setHistory] = useState([]);
   const [balanceCoins, setBalanceCoins] = useState(0);
   const [balanceRupees, setBalanceRupees] = useState(0);
 
   useEffect(() => {
-    loadData();
-  }, []);
+    if (phoneNumber) {
+      loadData();
+    }
+  }, [phoneNumber]);
 
   /* ================= LOAD DATA ================= */
   const loadData = async () => {

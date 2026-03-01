@@ -12,14 +12,16 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAuth } from '../context/AuthContext';
 import { Colors, Typography } from '../constants/Colors';
 import { useFocusEffect } from '@react-navigation/native';
 import BottomNavigation from '../components/BottomNavigation';
 
-const API_URL = 'http://192.168.1.11:8000'; // Your FastAPI server URL
+const API_URL = 'http://192.168.1.2:8000'; // Your FastAPI server URL
 
 const ChatListScreen = ({ navigation }) => {
+  const { token } = useAuth();
+
   const [searchQuery, setSearchQuery] = useState('');
   const [chats, setChats] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -62,7 +64,13 @@ const ChatListScreen = ({ navigation }) => {
     try {
       setLoading(true);
 
-      const token = await AsyncStorage.getItem('token');
+      if (!token) {
+        console.log('No token found');
+        setChats([]);
+        setLoading(false);
+        setRefreshing(false);
+        return;
+      }
 
       // If no token (testing mode), show mock data
       if (!token) {

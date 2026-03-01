@@ -14,19 +14,21 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import io from 'socket.io-client';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAuth } from '../context/AuthContext';
 import { Colors, Typography } from '../constants/Colors';
 
-const API_URL = 'http://192.168.1.11:8000'; // Your FastAPI server URL
-const SOCKET_URL = 'http://192.168.1.11:8000'; // Socket.IO URL
+const API_URL = 'http://192.168.1.2:8000'; // Your FastAPI server URL
+const SOCKET_URL = 'http://192.168.1.2:8000'; // Socket.IO URL
 
 const ChatScreen = ({ route, navigation }) => {
+  const { user: currentUser, token } = useAuth();
+  
   const { user, conversationId } = route.params;
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [recording, setRecording] = useState(false);
   const [typing, setTyping] = useState(false);
-  const [currentUserId, setCurrentUserId] = useState(null);
+  const currentUserId = currentUser?.id;
   const socketRef = useRef(null);
   const flatListRef = useRef(null);
   const typingTimeoutRef = useRef(null);
@@ -44,28 +46,11 @@ const ChatScreen = ({ route, navigation }) => {
 
   const initializeChat = async () => {
     try {
-      // Get JWT token and user ID
-      const token = await AsyncStorage.getItem('token');
-      const userId = await AsyncStorage.getItem('user_id');
-
-      if (!token || !userId) {
-        // Testing mode - use mock data
-        console.log('Testing mode: No token found, using mock data');
-        setCurrentUserId(999); // Mock user ID
-
-        // Load mock messages
-        loadMockMessages();
-
-        // Skip socket connection for testing
-        return;
-      }
-
-      setCurrentUserId(parseInt(userId));
 
       // Load existing messages
       await loadMessages(token);
 
-      // Initialize Socket.IO connection
+      // Connect socket
       connectSocket(token);
 
     } catch (error) {

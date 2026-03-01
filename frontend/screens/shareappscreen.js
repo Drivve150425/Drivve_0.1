@@ -11,20 +11,17 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import DatabaseService from "../services/DatabaseService";
+import { useAuth } from "../context/AuthContext";
 
 /* ================= COLORS ================= */
 import { Colors, Typography } from '../constants/Colors';
 
 export default function ShareAppScreen({ navigation, route }) {
+  const { user } = useAuth();
+  const phoneNumber = user?.phone_number;
+  
   const referralCode = "CARPOOL123";
   const appLink = "https://drivve.app/download";
-
- const phoneNumber =
-  route?.params?.phoneNumber ||
-  navigation?.getState()?.routes
-    ?.find(r => r.params?.phoneNumber)
-    ?.params?.phoneNumber ||
-  null;
 
   const [shareCount, setShareCount] = useState(0);
 

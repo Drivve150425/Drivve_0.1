@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import DatabaseService from "../services/DatabaseService";
+import { useAuth } from "../context/AuthContext";
 
 /* ================= COLORS ================= */
 import { Colors, Typography } from "../constants/Colors";
@@ -25,12 +26,8 @@ const REASONS = [
 ];
 
 export default function FeedbackScreen({ navigation, route }) {
-  const phoneNumber =
-    route?.params?.phoneNumber ||
-    navigation?.getState()?.routes
-      ?.find(r => r.params?.phoneNumber)
-      ?.params?.phoneNumber ||
-    null;
+  const { user } = useAuth();
+  const phoneNumber = user?.phone_number;
 
   const [rating, setRating] = useState(0);
   const [selectedReason, setSelectedReason] = useState(null);

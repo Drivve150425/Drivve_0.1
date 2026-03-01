@@ -16,20 +16,45 @@ const SUPPORT_EMAIL = "social.drivve@gmail.com";
 export default function EmailSupportScreen({ navigation }) {
   /* ================= HANDLERS ================= */
 
-  const openEmail = () => {
-    const subject = "DRIVVE Support";
-    const body = "Hi DRIVVE Team,%0D%0A%0D%0A";
+  // const openEmail = () => {
+  //   const subject = "DRIVVE Support";
+  //   const body = "Hi DRIVVE Team,%0D%0A%0D%0A";
+  //   const mailUrl = `mailto:${SUPPORT_EMAIL}?subject=${subject}&body=${body}`;
+
+  //   Linking.openURL(mailUrl).catch(err =>
+  //     console.error("❌ Email open failed", err)
+  //   );
+  // };
+
+  // const openLink = url => {
+  //   Linking.openURL(url).catch(err =>
+  //     console.error("❌ Link open failed", err)
+  //   );
+  // };
+
+  const openEmail = async () => {
+    const subject = encodeURIComponent("DRIVVE Support");
+    const body = encodeURIComponent("Hi DRIVVE Team,\n\n");
+
     const mailUrl = `mailto:${SUPPORT_EMAIL}?subject=${subject}&body=${body}`;
 
-    Linking.openURL(mailUrl).catch(err =>
-      console.error("❌ Email open failed", err)
-    );
+    const supported = await Linking.canOpenURL(mailUrl);
+
+    if (supported) {
+      await Linking.openURL(mailUrl);
+    } else {
+      alert("No email app found on this device.");
+    }
   };
 
-  const openLink = url => {
-    Linking.openURL(url).catch(err =>
-      console.error("❌ Link open failed", err)
-    );
+  const openLink = async (url) => {
+    const supported = await Linking.canOpenURL(url);
+
+    if (supported) {
+      await Linking.openURL(url);
+    } else {
+      alert("Unable to open link.");
+    }
   };
 
   /* ================= UI ================= */

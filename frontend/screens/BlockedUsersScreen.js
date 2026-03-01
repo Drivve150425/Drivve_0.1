@@ -13,9 +13,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { Colors, Typography } from '../constants/Colors';
 import DatabaseService from '../services/DatabaseService';
+import { useAuth } from '../context/AuthContext';
 
 export default function BlockedUsersScreen({ navigation, route }) {
-  const phone_number = route?.params?.phone_number;
+  const { user } = useAuth();
+  const phone_number = user?.phone_number;
 
   const [blockedUsers, setBlockedUsers] = useState([]);
   const [loading, setLoading] = useState(true);

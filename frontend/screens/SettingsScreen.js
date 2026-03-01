@@ -11,38 +11,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors, Typography } from '../constants/Colors';
+import { useAuth } from '../context/AuthContext';
 
 export default function SettingsMainScreen({ navigation, route }) {
-  
- const phoneNumber =
-  route?.params?.phoneNumber ||
-  navigation?.getState()?.routes
-    ?.find(r => r.params?.phoneNumber)
-    ?.params?.phoneNumber ||
-  null;
-
-  /* ================= LOAD PHONE NUMBER ================= */
-  useEffect(() => {
-    const loadPhoneNumber = async () => {
-      // 1️⃣ From route params
-      if (route?.params?.phone_number) {
-        setPhoneNumber(route.params.phone_number);
-        await AsyncStorage.setItem(
-          'phone_number',
-          route.params.phone_number
-        );
-        return;
-      }
-
-      // 2️⃣ From AsyncStorage
-      const storedPhone = await AsyncStorage.getItem('phone_number');
-      if (storedPhone) {
-        setPhoneNumber(storedPhone);
-      }
-    };
-
-    loadPhoneNumber();
-  }, []);
+  const { user } = useAuth();
+  const phoneNumber = user?.phone_number;
 
   /* ================= MENU ================= */
   const menuItems = [

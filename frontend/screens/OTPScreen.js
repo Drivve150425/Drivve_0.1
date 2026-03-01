@@ -27,7 +27,9 @@ import SuccessAnimation from '../components/SuccessAnimation';
 import FirebaseAuthService from '../services/FirebaseAuthService';
 import DatabaseService from '../services/DatabaseService';
 import * as Haptics from 'expo-haptics';
-const BASE_URL = "http://192.168.1.13:8000"//process.env.EXPO_PUBLIC_API_URL;
+import { useAuth } from '../context/AuthContext';
+
+const BASE_URL = "http://192.168.1.2:8000"//process.env.EXPO_PUBLIC_API_URL;
 
 
 LogBox.ignoreLogs([
@@ -50,6 +52,8 @@ export default function OTPScreen({ navigation, route }) {
     confirmationResult,
     verificationId
   } = route.params || {};
+
+  const { login } = useAuth();
  
   // State management - Changed initial timer from 60 to 30 seconds
   const [otpValue, setOtpValue] = useState('');
@@ -225,41 +229,40 @@ export default function OTPScreen({ navigation, route }) {
       console.log('🔥 Firebase Verification Result:', result.success ? 'SUCCESS' : 'FAILED');
      
       if (result.success) {
-  console.log('✅ User authenticated:', result.user.uid);
-  console.log('📱 Phone number:', result.phoneNumber);
+        console.log('✅ User authenticated:', result.user.uid);
+        console.log('📱 Phone number:', result.phoneNumber);
 
-  // 🔐 REGISTER DEVICE WITH BACKEND
-  const deviceName = `${Device.brand || "Unknown"} ${Device.modelName || "Device"}`;
-  const deviceType =
-    Device.deviceType === Device.DeviceType.TABLET ? "tablet" : "mobile";
+        // 🔐 REGISTER DEVICE WITH BACKEND
+        const deviceName = `${Device.brand || "Unknown"} ${Device.modelName || "Device"}`;
+        const deviceType =
+          Device.deviceType === Device.DeviceType.TABLET ? "tablet" : "mobile";
 
-  console.log("📱 Registering device:", deviceName, deviceType);
+        console.log("📱 Registering device:", deviceName, deviceType);
 
-  await fetch(`${BASE_URL}/api/verify-otp`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      phone_number: fullNumber,
-      otp_code: otpValue,
-      device_name: deviceName,
-      device_type: deviceType,
-    }),
-  });
+        await fetch(`${BASE_URL}/api/verify-otp`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            phone_number: fullNumber,
+            otp_code: otpValue,
+            device_name: deviceName,
+            device_type: deviceType,
+          }),
+        });
 
-  if (Platform.OS !== 'web') {
-    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  }
+        if (Platform.OS !== 'web') {
+          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }
 
-  setIsVerifying(false);
-  setShowSuccessAnimation(true);
-}
- else {
-        setOtpError(result.message);
-        setOtpValue('');
         setIsVerifying(false);
-        triggerShakeAnimation();
-        Alert.alert('Verification Failed', result.message);
-      }
+        setShowSuccessAnimation(true);
+      } else {
+          setOtpError(result.message);
+          setOtpValue('');
+          setIsVerifying(false);
+          triggerShakeAnimation();
+          Alert.alert('Verification Failed', result.message);
+        }
     } catch (error) {
       console.error('🚨 OTP Verification Error:', error);
       setOtpError('Verification failed. Please try again.');
@@ -275,15 +278,14 @@ export default function OTPScreen({ navigation, route }) {
     console.log('🎯 Success animation complete, checking user...');
     setShowSuccessAnimation(false);
    
-    if (Platform.OS === 'ios') {
-      await new Promise(resolve => setTimeout(resolve, 300));
-    }
+    // if (Platform.OS === 'ios') {
+    //   await new Promise(resolve => setTimeout(resolve, 300));
+    // }
    
     try {
       if (!fullNumber) {
         console.error('❌ No phone number available');
-        handleNavigationError();
-        return;
+        return handleNavigationError();     
       }
 
 
@@ -291,53 +293,73 @@ export default function OTPScreen({ navigation, route }) {
       const userCheck = await DatabaseService.checkUserExists(fullNumber);
       console.log('📊 User check result:', userCheck);
      
-      if (userCheck.exists && userCheck.userData) {
-        console.log('✅ User found, navigating to Home...');
+      if (userCheck.exists && userCheck?.userData) {
+        console.log('✅ User found, setting session...');
        
-        setTimeout(() => {
-          try {
-            navigation.replace('Home', {
-              firstName: userCheck.userData.first_name,
-              lastName: userCheck.userData.last_name,
-              userId: userCheck.userData.user_id,
-              userData: userCheck.userData,
-              phoneNumber: fullNumber, 
-              isReturningUser: true
-            });
-          } catch (navError) {
-            console.error('❌ Home navigation error:', navError);
-            handleNavigationError();
-          }
-        }, Platform.OS === 'ios' ? 100 : 0);
+// 🔥 SET GLOBAL SESSION HERE
+        login({
+          phone_number: fullNumber,
+          id: userCheck.userData.user_id,
+          ...userCheck.userData,
+        });
+
+        console.log('🚀 Session stored globally');
+
+        navigation.reset({
+              index: 0,
+              routes: [{ name: 'Home' }],
+        });
+        return;
+      }
+
+        // setTimeout(() => {
+        //   try {
+        //     navigation.reset({
+        //       index: 0,
+        //       routes: [{ name: 'Home' }],
+            // navigation.replace('Home', {
+            //   firstName: userCheck.userData.first_name,
+            //   lastName: userCheck.userData.last_name,
+            //   userId: userCheck.userData.user_id,
+            //   userData: userCheck.userData,
+            //   phoneNumber: fullNumber, 
+            //   isReturningUser: true
+          //   });
+          // } catch (navError) {
+      //       console.error('❌ Home navigation error:', navError);
+      //       handleNavigationError();
+      //     }
+      //   }, Platform.OS === 'ios' ? 100 : 0);
        
-      } else {
+      // } else {
         console.log('📝 New user, navigating to CreateProfile...');
+
        
-        setTimeout(() => {
-          try {
+        // setTimeout(() => {
+        //   try {
             navigation.replace('CreateProfile', {
               phoneNumber: phoneNumber,
               fullPhoneNumber: fullNumber,
               countryCode: countryCode,
               isNewUser: true
             });
-            console.log('✅ Navigation to CreateProfile successful');
-          } catch (navError) {
-            console.error('❌ CreateProfile navigation error:', navError);
+    //         console.log('✅ Navigation to CreateProfile successful');
+    //       } catch (navError) {
+    //         console.error('❌ CreateProfile navigation error:', navError);
            
-            Alert.alert(
-              'Navigation Issue',
-              'Profile creation screen unavailable. Please try logging in again.',
-              [
-                {
-                  text: 'OK',
-                  onPress: () => navigation.navigate('Login')
-                }
-              ]
-            );
-          }
-        }, Platform.OS === 'ios' ? 100 : 0);
-      }
+    //         Alert.alert(
+    //           'Navigation Issue',
+    //           'Profile creation screen unavailable. Please try logging in again.',
+    //           [
+    //             {
+    //               text: 'OK',
+    //               onPress: () => navigation.navigate('Login')
+    //             }
+    //           ]
+    //         );
+    //       }
+    //     }, Platform.OS === 'ios' ? 100 : 0);
+    //   // }
     } catch (error) {
       console.error('❌ Critical error in success handler:', error);
       handleNavigationError();

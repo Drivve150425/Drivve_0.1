@@ -13,6 +13,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialIcons, Ionicons } from "@expo/vector-icons";
 import DatabaseService from "../services/DatabaseService";
 import { Colors, Typography } from "../constants/Colors";
+import { useAuth } from "../context/AuthContext";
 
 /* =========================================================
    HELPERS
@@ -53,20 +54,24 @@ const ICON_MAP = {
 ========================================================= */
 
 export default function MatchingPreferenceScreen({ route, navigation }) {
-  const phoneNumber =
-    route?.params?.phoneNumber ||
-    navigation?.getState()?.routes?.find(r => r.params?.phoneNumber)?.params
-      ?.phoneNumber ||
-    null;
+  const { user } = useAuth();
+  const phoneNumber = user?.phone_number;
+  
+  // Get callback from route params (passed from Step3)
+  const onSaveCallback = route?.params?.onSave || null;
 
   const [master, setMaster] = useState([]);
   const [values, setValues] = useState({});
 
   useEffect(() => {
-    load();
-  }, []);
+    if (phoneNumber) {
+      load();
+    }
+  }, [phoneNumber]);
 
   const load = async () => {
+    if (!phoneNumber) return;
+
     const defs = await DatabaseService.getMatchingPreferenceMaster();
     const userVals = await DatabaseService.getUserMatchingPreferences(phoneNumber);
     setMaster(defs || []);
@@ -78,6 +83,16 @@ export default function MatchingPreferenceScreen({ route, navigation }) {
   const updateValue = (key, value) => {
     setValues(prev => ({ ...prev, [key]: value }));
     DatabaseService.saveMatchingPreference(phoneNumber, key, value);
+  };
+
+  // Handle save and navigate back
+  const handleSave = () => {
+    // Call the callback if provided (from Step3)
+    if (onSaveCallback) {
+      onSaveCallback(values);
+    }
+    // Navigate back to Step3
+    navigation.goBack();
   };
 
   /* =========================================================
@@ -241,6 +256,13 @@ export default function MatchingPreferenceScreen({ route, navigation }) {
           </View>
         ))}
       </ScrollView>
+
+      {/* Save Button */}
+      <View style={styles.footer}>
+        <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
+          <Text style={styles.saveButtonText}>Save Preferences</Text>
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
   );
 }
@@ -275,7 +297,7 @@ const styles = StyleSheet.create({
 
   scrollContent: {
     padding: 20,
-    paddingBottom: 40
+    paddingBottom: 20
   },
 
   card: {
@@ -412,5 +434,27 @@ const styles = StyleSheet.create({
     color: Colors.dark,
     textAlign: "center",
     marginTop: 6
-  }
+  },
+
+  // Footer styles
+  footer: {
+    padding: 20,
+    paddingBottom: 34,
+    borderTopWidth: 1,
+    borderTopColor: "#F3F4F6",
+    backgroundColor: Colors.white,
+  },
+
+  saveButton: {
+    backgroundColor: Colors.primary,
+    paddingVertical: 16,
+    borderRadius: 16,
+    alignItems: "center",
+  },
+
+  saveButtonText: {
+    color: Colors.white,
+    fontSize: 18,
+    fontWeight: "700",
+  },
 });

@@ -7,7 +7,7 @@ const NAV_ITEMS = [
   { key: 'home', icon: 'home', label: 'Home' },
   { key: 'myride', icon: 'car-sport', label: 'My Rides' },
   { key: 'chat', icon: 'chatbubbles', label: 'Chat' },
-  { key: 'alert', icon: 'notifications', label: 'Alerts' }
+  { key: 'profile', icon: 'person', label: 'Profile' }
 ];
 
 const INDICATOR_SIZE = 38;
@@ -92,14 +92,6 @@ const CoolBottomNavigation = ({ activeTab, onNavigate, unreadCount = 0 }) => {
     color={isActive ? Colors.white : Colors.gray}
     style={styles.icon}
   />
-
-  {item.key === 'alert' && unreadCount > 0 && (
-    <View style={styles.badge}>
-      <Animated.Text style={styles.badgeText}>
-        {unreadCount > 9 ? '9+' : unreadCount}
-      </Animated.Text>
-    </View>
-  )}
 </View>
 
               <Animated.Text style={[

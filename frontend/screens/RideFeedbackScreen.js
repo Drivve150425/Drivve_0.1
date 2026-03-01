@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import DatabaseService from "../services/DatabaseService";
+import { useAuth } from "../context/AuthContext";
 
 /* ================= COLORS ================= */
 import { Colors, Typography } from "../constants/Colors";
@@ -25,8 +26,8 @@ const REASONS = [
 ];
 
 export default function RideFeedbackScreen({ navigation, route }) {
-const phoneNumber =
-  route?.params?.phoneNumber ;
+  const { user } = useAuth();
+  const phoneNumber = user?.phone_number;
  
 
 const rideBookingId = 1; // 🔥 HARDCODED RIDE ID FOR NOW

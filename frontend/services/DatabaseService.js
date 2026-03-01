@@ -5,10 +5,10 @@ import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const API_BASE_URL = __DEV__ 
-? 'http://192.168.1.13:8000/api/v1' // Your working backend 
+? 'http://192.168.1.2:8000/api/v1' // Your working backend 
  :  'https://your-api-domain.com/api/v1'; 
 const BASE_URL = __DEV__ 
-? 'http://192.168.1.13:8000' // Base URL for auth endpoints 
+? 'http://192.168.1.2:8000' // Base URL for auth endpoints 
 : 'https://your-api-domain.com';
 
 
@@ -1825,6 +1825,36 @@ async getUnreadNotificationCount(phone_number) {
   } catch (e) {
     console.error("❌ getUnreadNotificationCount error:", e);
     return 0;
+  }
+}
+
+// CREATE notification (for ride posted)
+async createNotification(phoneNumber, title, message, type = "system", actionType = null, actionValue = null) {
+  try {
+    console.log("🔔 Creating notification for:", phoneNumber, "title:", title);
+    
+    const res = await fetch(`${API_BASE_URL}/notifications`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        phone_number: phoneNumber,
+        title: title,
+        message: message,
+        type: type,
+        action_type: actionType,
+        action_value: actionValue,
+      }),
+    });
+
+    const json = await res.json();
+    console.log("✅ Notification created:", json);
+    return json;
+  } catch (e) {
+    console.error("❌ createNotification error:", e);
+    return null;
   }
 }
 // ================= LIVE LOCATION =================

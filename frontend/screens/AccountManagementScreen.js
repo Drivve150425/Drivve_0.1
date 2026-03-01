@@ -14,9 +14,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, Typography } from '../constants/Colors';
 import DatabaseService from '../services/DatabaseService';
+import { useAuth } from '../context/AuthContext';
 
-export default function AccountManagementScreen({ navigation, route }) {
-  const phone_number = route?.params?.phone_number;
+export default function AccountManagementScreen({ navigation }) {
+  const { user, logout } = useAuth();
+
+  const phone_number = user?.phone_number;
 
   const [showDeactivateModal, setShowDeactivateModal] = useState(false);
   const [deactivateReason, setDeactivateReason] = useState('');
@@ -31,7 +34,7 @@ export default function AccountManagementScreen({ navigation, route }) {
 
     Alert.alert(
       'Deactivate Account',
-'Your account will be disabled immediately. If you log in within 30 days, your account will be restored automatically. Otherwise, it will be permanently deleted after 30 days.',
+      'Your account will be disabled immediately. If you log in within 30 days, your account will be restored automatically. Otherwise, it will be permanently deleted after 30 days.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -62,6 +65,9 @@ export default function AccountManagementScreen({ navigation, route }) {
     if (res?.success) {
       setShowDeactivateModal(false);
       setDeactivateReason('');
+
+// 🔥 Clear global session
+      logout();
 
       Alert.alert(
         'Account Deactivated',
@@ -115,7 +121,6 @@ export default function AccountManagementScreen({ navigation, route }) {
             after 30 days.
           </Text>
 
-          {/* WARNING */}
           <View style={styles.warningBox}>
             <MaterialIcons name="warning" size={24} color="#D32F2F" />
             <View style={styles.warningText}>
@@ -129,7 +134,6 @@ export default function AccountManagementScreen({ navigation, route }) {
             </View>
           </View>
 
-          {/* ACTION */}
           <TouchableOpacity
             style={styles.deactivateButton}
             onPress={() => setShowDeactivateModal(true)}
@@ -178,10 +182,7 @@ export default function AccountManagementScreen({ navigation, route }) {
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[
-                  styles.modalButton,
-                  styles.deactivateModalButton,
-                ]}
+                style={[styles.modalButton, styles.deactivateModalButton]}
                 onPress={handleDeactivate}
                 disabled={loading}
               >
@@ -197,7 +198,7 @@ export default function AccountManagementScreen({ navigation, route }) {
   );
 }
 
-/* ================= STYLES ================= */
+/* ================= STYLES (UNCHANGED) ================= */
 
 const styles = StyleSheet.create({
   container: {

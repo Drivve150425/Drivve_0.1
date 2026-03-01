@@ -47,9 +47,11 @@ import PrivacyPolicyScreen from '../screens/PrivacyPolicyScreen';
 import FeedbackScreen from '../screens/Feedbackscreen';
 import RideFeedbackScreen from '../screens/RideFeedbackScreen';
 import usetnotificationScreen from '../screens/usernotificationscreen';
-// Chat screens are currently disabled
-//import ChatListScreen from '../screens/ChatListScreen';
-//import ChatScreen from '../screens/ChatScreen';
+import RouteScreen from '../screens/RouteScreen';
+import LocationSearchScreen from '../screens/LocationSearchScreen';
+import MyRides from '../screens/MyRides';
+import RideSuccessScreen from '../screens/RideSuccessScreen';
+
 
 // Suppress navigation warnings for iOS
 LogBox.ignoreLogs([
@@ -354,6 +356,34 @@ export default function AppNavigator({ user }) {
           options={{ headerShown: false }}
         />
         
+        <Stack.Screen 
+          name="RouteScreen" 
+          component={RouteScreen}
+          options={{ 
+            title: 'Route Tester',
+            headerShown: true,  // Show header here if wanted
+            headerTintColor: 'white',
+            headerStyle: { backgroundColor: '#007AFF' }
+          }}
+        />
+
+        <Stack.Screen
+          name="LocationSearch"
+          component={LocationSearchScreen}
+          options={{ headerShown: false }}
+        />
+
+        <Stack.Screen
+          name="MyRides"
+          component={MyRides}
+          options={{ headerShown: false }}
+        />
+
+        <Stack.Screen
+          name="RideSuccessScreen"
+          component={RideSuccessScreen}
+          options={{ headerShown: false }}
+        />
 
       </Stack.Navigator>
     </NavigationContainer>

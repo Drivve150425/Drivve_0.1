@@ -24,18 +24,15 @@ import { Colors } from "../constants/Colors";
 import DatabaseService from "../services/DatabaseService";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import * as Haptics from "expo-haptics";
+import { useAuth } from "../context/AuthContext";
 
 const { width, height } = Dimensions.get("window");
 const isSmallScreen = width < 375;
 const isTablet = width > 768;
 
 export default function DocumentUploadScreen({ navigation, route }) {
-  const phoneNumber =
-    route?.params?.phoneNumber ||
-    navigation?.getState()?.routes
-      ?.find((r) => r.params?.phoneNumber)
-      ?.params?.phoneNumber ||
-    null;
+  const { user, logout } = useAuth();
+  const phoneNumber = user?.phone_number;
   
   // States
   const [loading, setLoading] = useState(false);
@@ -138,15 +135,29 @@ export default function DocumentUploadScreen({ navigation, route }) {
 
   // Initialize
   useEffect(() => {
-    if (!phoneNumber) {
-      showErrorPopup("Phone number not found. Please login again.");
-      navigation.goBack();
+    if (!user) {
+      Alert.alert(
+        "Session Expired",
+        "Please login again.",
+        [
+          {
+            text: "OK",
+            onPress: async () => {
+              await logout();
+              navigation.reset({
+                index: 0,
+                routes: [{ name: "Login" }],
+              });
+            },
+          },
+        ]
+      );
       return;
     }
 
     loadData();
     startAnimations();
-  }, [phoneNumber]);
+  }, [user]);
 
   const startAnimations = () => {
     Animated.parallel([

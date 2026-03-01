@@ -14,33 +14,49 @@ import {
   Modal,
 } from 'react-native';
 import { Colors } from '../../constants/Colors';
-import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import { Ionicons, MaterialIcons, Zocial } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker'
+import { useFocusEffect } from '@react-navigation/native';
+import { useAuth } from '../../context/AuthContext';
 
-export default function Step1({ navigation, route }) {
+export default function Step1({ from, to, setFrom, setTo, setFromCoords, setToCoords, dateTime, setDateTime, onNext, navigation, route, phoneNumber: phoneNumberProp }) {
 
-  const [fromLocation, setFromLocation] = useState('');
-  const [toLocation, setToLocation] = useState('');
-  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [fromLocation, setFromLocation] = useState(from);
+  const [toLocation, setToLocation] = useState(to);
+  const [selectedDate, setSelectedDate] = useState(dateTime);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
-  const { firstName, lastName, userId, userData, isNewUser } = route.params || {};
+  const { firstName, lastName, userId, userData, isNewUser } = route?.params || {};
+
+  // ✅ Get authenticated user from AuthContext
+  const { user } = useAuth();
+
+  // ✅ Get phone number from props, AuthContext, route params, or navigation state
+  const phoneNumber = phoneNumberProp || 
+    route?.params?.phoneNumber || 
+    user?.phone_number || 
+    user?.phoneNumber || 
+    user?.phone || 
+    navigation?.getState()?.routes?.find(r => r.params?.phoneNumber)?.params?.phoneNumber ||
+    null;
 
   // Format date and time
   const formatDateTime = () => {
     const today = new Date();
     const isToday = selectedDate.toDateString() === today.toDateString();
     
-    const timeString = selectedDate.toLocaleTimeString('en-US', {
+    const timeString = selectedDate.toLocaleTimeString('en-IN', {
       hour: 'numeric',
       minute: '2-digit',
-      hour12: true
+      hour12: true,
+      timeZone: 'Asia/Calcutta',
+      timezoneoffset: 330
     });
 
     if (isToday) {
       return `Today, ${timeString}`;
     } else {
-      const dateString = selectedDate.toLocaleDateString('en-US', {
+      const dateString = selectedDate.toLocaleDateString('en-IN', {
         weekday: 'short',
         month: 'short',
         day: 'numeric'
@@ -60,6 +76,7 @@ export default function Step1({ navigation, route }) {
       }
       if (selectedDate) {
         setSelectedDate(selectedDate);
+        setDateTime(selectedDate);
       }
     };
   
@@ -70,67 +87,76 @@ export default function Step1({ navigation, route }) {
         newDateTime.setHours(selectedTime.getHours());
         newDateTime.setMinutes(selectedTime.getMinutes());
         setSelectedDate(newDateTime);
+        setDateTime(newDateTime);
       }
     };
 
-    const onNext = () => {
-        if (!fromLocation.trim() || !toLocation.trim()) {
+  const handleNext = () => {
+        if (!from || !to) {
           Alert.alert('Required Fields', 'Please enter both pickup and destination locations');
           return;
         }
-    
-        
-    
+
         const DriveData = {
-          from: fromLocation,
-          to: toLocation,
+          from,
+          to,
           dateTime: selectedDate,
-          userId: userId
+          userId: userId,
         };
         console.log('🚗 Drive data:', DriveData);
-    
-        navigation.navigate('Step2', {
-            DriveData,
-            userData: { userId, firstName, lastName },
-          });
-        }
+
+        onNext();
+  }
 
   return (
-    <View style={{ backgroundColor: '#fff', borderRadius: 12, padding: 18, marginBottom: 16 }}>
+    <View style={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', padding: 18, marginBottom: 16, borderRadius: 28,
+            flex: 1,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 10 },
+            shadowOpacity: 0.15,
+            shadowRadius: 20,
+            elevation: 10,
+            borderWidth: 1,
+            borderColor: 'rgba(229, 231, 235, 0.5)', }}>
       <View style={styles.titleSection}>
         <Text style={{ fontSize: 20, fontWeight: '700', color: Colors.dark, marginBottom: 18 }}>Route Details</Text>
         <View style={{ marginBottom: 10 }}>
           <Text style={styles.sectionTitle}>Where are you going?</Text>
         </View>
       </View>
-      <View style={styles.locationContainer}>
-        <Ionicons name="location-sharp" size={20} color={Colors.gray} style={styles.inputIcon} />
-        <TextInput
-         style={styles.locationInput}
-         placeholder="From"
-         placeholderTextColor={Colors.gray}
-         textAlign='left'
-         textAlignVertical='center'
-         value={fromLocation}
-         onChangeText={setFromLocation}
-         editable={true}
-        />
-      </View>
 
-      <View style={styles.locationContainer}>
+      <TouchableOpacity
+        style={styles.locationContainer}
+        onPress={() => 
+          navigation.navigate('LocationSearch', 
+            { onSelect: (location) => {
+                setFrom(location.label); 
+                setFromCoords(location.coordinates);
+             }
+        })
+      }
+      >
         <Ionicons name="location-sharp" size={20} color={Colors.gray} style={styles.inputIcon} />
-        <TextInput
-         style={styles.locationInput}
-         placeholder="To"
-         placeholderTextColor={Colors.gray}
-         textAlign='left'
-         textAlignVertical='center'
-         value={toLocation}
-         onChangeText={setToLocation}
-         editable={true}
-        
-        />
-      </View>
+        <Text style={styles.locationInput}>
+          {from || 'From'}
+        </Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.locationContainer}
+        onPress={() => navigation.navigate('LocationSearch',
+           { onSelect: (location) => {
+                setTo(location.label); 
+                setToCoords(location.coordinates);
+             }
+        })
+      }
+      >
+        <Ionicons name="location-sharp" size={20} color={Colors.gray} style={styles.inputIcon} />
+        <Text style={styles.locationInput}>
+          {to || 'To'}
+        </Text>
+      </TouchableOpacity>
 
       <View style={{ marginBottom: 10 }}></View>
       <View style={styles.whenSection}>
@@ -142,15 +168,12 @@ export default function Step1({ navigation, route }) {
         </TouchableOpacity>
       </View>
 
-
-
-      <View style={{ height: 260 }} />
       <View>
         <TouchableOpacity
           style={[styles.actionButton, { backgroundColor: Colors.primary }]}
-          onPress={onNext}
+          onPress={handleNext}
         >
-          <Text style={styles.actionButtonText}>Search</Text>
+          <Text style={styles.actionButtonText}>Continue</Text>
         </TouchableOpacity>
       </View>
 
@@ -198,7 +221,6 @@ export default function Step1({ navigation, route }) {
           </View>
         </Modal>
       )}
-
     </View>
   );
 

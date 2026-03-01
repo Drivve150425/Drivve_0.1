@@ -91,31 +91,67 @@ class EmailOTP(Base):
 
 class Ride(Base):
     __tablename__ = "rides"
-    
+
     id = Column(Integer, primary_key=True, index=True)
-    driver_id = Column(Integer, nullable=False)
+
+    # Driver
+    phone_number = Column(String(20), index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    # Route Info
     origin = Column(String(255), nullable=False)
     destination = Column(String(255), nullable=False)
+
+    origin_lat = Column(Float, nullable=True)
+    origin_lng = Column(Float, nullable=True)
+
+    destination_lat = Column(Float, nullable=True)
+    destination_lng = Column(Float, nullable=True)
+
     departure_time = Column(DateTime(timezone=True), nullable=False)
+
+    # Route summary
+    distance_km = Column(Float, nullable=True)
+    duration_text = Column(String(100), nullable=True)
+
+    total_estimated_price = Column(Float, nullable=True)
+
+    # Seats & pricing
     available_seats = Column(Integer, nullable=False)
-    price_per_seat = Column(Integer, nullable=False)
-    vehicle_type = Column(String(50), nullable=False)
+    price_per_seat = Column(Float, nullable=False)
+
+    # Preferences (Step3)
+    preferences = Column(JSON, nullable=True)
+
+    # Vehicle
+    vehicle_id = Column(Integer, ForeignKey("vehicles.id"), nullable=True)
+
     status = Column(String(20), default="active")
+    is_deleted = Column(Boolean, default=False)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationships
+    bookings = relationship("RideBooking", back_populates="ride")
 
 class RideBooking(Base):
     __tablename__ = "ride_bookings"
-    
+
     id = Column(Integer, primary_key=True, index=True)
-    ride_id = Column(Integer, nullable=False)
-    passenger_id = Column(Integer, nullable=False)
+
+    ride_id = Column(Integer, ForeignKey("rides.id"), nullable=False)
+    passenger_phone = Column(String(20), index=True, nullable=False)
+    passenger_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
     seats_booked = Column(Integer, nullable=False)
-    total_amount = Column(Integer, nullable=False)
+    total_amount = Column(Float, nullable=False)
+
     status = Column(String(20), default="pending")
-    phone_number = Column(String(20), index=True)  # ✅ ADD THIS
+    # pending | accepted | rejected | cancelled | completed
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+    ride = relationship("Ride", back_populates="bookings")
 
 class ShareActivity(Base):
     __tablename__ = "share_activity"

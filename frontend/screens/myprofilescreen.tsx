@@ -34,14 +34,16 @@ import CustomAlert from '../components/CustomAlert';
 import DatePickerModal from '../components/DatePickerModal';
 import ProfilePictureModal from '../components/ProfilePictureModal';
 import AvatarPicker from '../components/AvatarPicker';
+import { useAuth } from "../context/AuthContext";
 
 const { width, height } = Dimensions.get("window");
 
 
 
 export default function MyProfileScreen({ navigation, route })  {
+  const { user } = useAuth();
+  const phoneNumber = user?.phone_number;
   const scrollViewRef = useRef<ScrollView>(null);
-  const phoneFromRoute = route.params?.phoneNumber || null;
 
   // Animation refs
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -97,7 +99,7 @@ export default function MyProfileScreen({ navigation, route })  {
 
       // Save verified email
       DatabaseService.updateUserProfile({
-        phone_number: phoneFromRoute,
+        phone_number: phoneNumber,
         email: currentValue.trim(),
         email_verified: true,
       });
@@ -189,12 +191,9 @@ export default function MyProfileScreen({ navigation, route })  {
 
   /* ================= FETCH PROFILE FROM DB ================= */
   useEffect(() => {
-    if (!phoneFromRoute) {
-      console.log("❌ No phone number passed to MyProfileScreen");
-      return;
-    }
+    if (!phoneNumber) return;
 
-    DatabaseService.getUserProfile(phoneFromRoute)
+    DatabaseService.getUserProfile(phoneNumber)
       .then((res) => {
         if (res?.success && res.user) {
           const u = res.user;
@@ -229,7 +228,7 @@ export default function MyProfileScreen({ navigation, route })  {
       .catch((err) => {
         console.log("❌ Profile fetch error:", err);
       });
-  }, [phoneFromRoute]);
+  }, [phoneNumber]);
 
   // Age from DOB
   const calculateAge = (dob: string) => {
@@ -343,7 +342,7 @@ const isEmpty = (value?: string) => !value || value.trim() === "";
 
   // ---------- BACKEND PAYLOAD ----------
   const payload = {
-    phone_number: phoneFromRoute,
+    phone_number: phoneNumber,
     ...(currentField === "firstName" && { first_name: currentValue.trim() }),
     ...(currentField === "lastName" && { last_name: currentValue.trim() }),
     ...(currentField === "emailID" && { email: currentValue.trim() }),
@@ -382,7 +381,7 @@ const handleGenderSelect = (gender: string) => {
   setShowGenderModal(false);
 
   DatabaseService.updateUserProfile({
-    phone_number: phoneFromRoute,
+    phone_number: phoneNumber,
     gender,
   })
     .then(() => showProfileUpdateSuccess())
@@ -405,7 +404,7 @@ const handleStateSelect = (state: string) => {
   setShowStateModal(false);
 
   DatabaseService.updateUserProfile({
-    phone_number: phoneFromRoute,
+    phone_number: phoneNumber,
     state,
     city: "",
   })
@@ -425,7 +424,7 @@ const handleCitySelect = (city: string) => {
   setShowCityModal(false);
 
   DatabaseService.updateUserProfile({
-    phone_number: phoneFromRoute,
+    phone_number: phoneNumber,
     city,
   })
     .then(() => showProfileUpdateSuccess())
@@ -471,7 +470,7 @@ const handleDateConfirm = (date: Date) => {
   }));
 
   DatabaseService.updateUserProfile({
-    phone_number: phoneFromRoute,
+    phone_number: phoneNumber,
     date_of_birth: formatted,
   })
     .then(() => {
@@ -513,7 +512,7 @@ const takePhoto = async () => {
       setSelectedAvatar(null);
 
       DatabaseService.updateUserProfile({
-        phone_number: phoneFromRoute,
+        phone_number: phoneNumber,
         profile_picture: result.assets[0].uri,
       })
         .then(() => showProfileUpdateSuccess())
@@ -555,7 +554,7 @@ const takePhoto = async () => {
       setSelectedAvatar(null);
 
       DatabaseService.updateUserProfile({
-        phone_number: phoneFromRoute,
+        phone_number: phoneNumber,
         profile_picture: result.assets[0].uri,
       })
         .then(() => showProfileUpdateSuccess())
@@ -1049,7 +1048,7 @@ const takePhoto = async () => {
     setProfileImage(null);
 
     DatabaseService.updateUserProfile({
-      phone_number: phoneFromRoute,
+      phone_number: phoneNumber,
       avatar: avatar.id,
     })
       .then(() => showProfileUpdateSuccess())

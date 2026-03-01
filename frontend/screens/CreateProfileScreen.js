@@ -28,11 +28,13 @@ import DatePickerModal from '../components/DatePickerModal';
 import EmailOTPModal from '../components/EmailOTPModal';
 import ProfilePictureModal from '../components/ProfilePictureModal';
 import DatabaseService from '../services/DatabaseService';
+import { useAuth } from '../context/AuthContext';
 
 const { width, height } = Dimensions.get('window');
 
 export default function CreateProfileScreen({ navigation, route }) {
   const params = route?.params || {};
+const { login } = useAuth();
   const { phoneNumber, fullPhoneNumber, countryCode, isNewUser } = params;
 
   // Form states
@@ -805,17 +807,28 @@ export default function CreateProfileScreen({ navigation, route }) {
             text: 'Continue',
             onPress: () => {
               setShowSuccessAlert(false);
-              try {
-                navigation.replace('Home', {
-                  firstName: firstName.trim(),
-                  lastName: lastName.trim(),
-                  userId: successData?.userId,
-                  userData: successData?.profileData,
-                  isNewUser: true
-                });
-              } catch (navError) {
-                navigation.navigate('Login');
-              }
+// Set session and navigate to Home
+              login({
+                phone_number: fullPhoneNumber || (countryCode + phoneNumber),
+                id: successData?.userId,
+                ...successData?.profileData,
+              });
+              // Reset
+              navigation.reset({
+                index: 0,
+                routes: [{ name: 'Home' }],
+              });
+              // try {
+              //   navigation.replace('Home', {
+              //     firstName: firstName.trim(),
+              //     lastName: lastName.trim(),
+              //     userId: successData?.userId,
+              //     userData: successData?.profileData,
+              //     isNewUser: true
+              //   });
+              // } catch (navError) {
+              //   navigation.navigate('Login');
+              // }
             }
           }
         ]}

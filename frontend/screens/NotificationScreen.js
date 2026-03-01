@@ -12,14 +12,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { Colors, Typography } from '../constants/Colors';
 import DatabaseService from '../services/DatabaseService';
+import { useAuth } from '../context/AuthContext';
 
 export default function NotificationSettingsScreen({ navigation, route }) {
-  const phoneNumber =
-  route?.params?.phoneNumber ||
-  navigation?.getState()?.routes
-    ?.find(r => r.params?.phoneNumber)
-    ?.params?.phoneNumber ||
-  null;
+  const { user } = useAuth();
+  const phoneNumber = user?.phone_number;
 
   const [notifications, setNotifications] = useState({
     rideUpdates: true,

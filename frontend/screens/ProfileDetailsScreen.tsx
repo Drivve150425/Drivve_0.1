@@ -18,14 +18,12 @@ import * as Animatable from "react-native-animatable";
 import { ImageBackground } from "react-native";
 import { Colors, Typography } from '../constants/Colors';
 import { MaterialIcons } from '@expo/vector-icons';
-import React, {
-  
-  useCallback
-} from "react";
+import React, { useCallback } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { CommonActions } from "@react-navigation/native";
 import { Alert } from "react-native";
+import { useAuth } from "../context/AuthContext";
 const { width, height } = Dimensions.get('window');
 
 /* ================= NAVIGATION TYPE ================= */
@@ -54,11 +52,18 @@ export default function ProfileScreen({ navigation, route }) {
   const scrollViewRef = useRef(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
 
-  /* ✅ NO useRoute */
+  // ✅ Use AuthContext for session management
+  const { user, logout: authLogout } = useAuth();
+
+  /* ✅ Get phone from route params or AuthContext */
   const phoneFromRoute = route?.params?.phoneNumber || null;
+  const phoneFromAuth = user?.phoneNumber || user?.phone || null;
+  const userFromAuth = user?.userName || user?.name || "User";
+  const phoneFromRouteOrAuth = phoneFromRoute || phoneFromAuth;
 
   const [userName, setUserName] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
+
 const handleLogout = () => {
   Alert.alert(
     "Logout",
@@ -69,7 +74,8 @@ const handleLogout = () => {
         text: "Logout",
         style: "destructive",
         onPress: async () => {
-          await AsyncStorage.clear();
+          // ✅ Use AuthContext logout
+          await authLogout();
           navigation.dispatch(
             CommonActions.reset({
               index: 0,
@@ -81,11 +87,14 @@ const handleLogout = () => {
     ]
   );
 };
+
 const loadProfile = async () => {
   try {
-    if (!phoneFromRoute) return;
+    // ✅ Use phone from AuthContext as fallback
+    const phoneToUse = phoneFromRouteOrAuth;
+    if (!phoneToUse) return;
 
-    const res = await DatabaseService.getUserProfile(phoneFromRoute);
+    const res = await DatabaseService.getUserProfile(phoneToUse);
 
     if (res?.success && res.user) {
       setUserName(res.user.full_name || "User");
@@ -102,7 +111,7 @@ const loadProfile = async () => {
 useFocusEffect(
   useCallback(() => {
     loadProfile(); // 🔥 runs when coming back from edit screen
-  }, [phoneFromRoute])
+  }, [phoneFromRouteOrAuth])
 );
 
   const infoItems: {
@@ -218,7 +227,7 @@ useFocusEffect(
       {/* Header - Moved down slightly */}
       <View style={styles.headerContainer}>
         <View style={styles.header}>
-          <TouchableOpacity style={styles.modernBackButton} onPress={() => navigation.goBack()}>
+          <TouchableOpacity style={styles.modernBackButton} onPress={() => navigation.navigate('Home')}>
             <MaterialIcons name="arrow-back-ios" size={28} color={Colors.orange1} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Profile</Text>

@@ -22,6 +22,7 @@ import * as Haptics from 'expo-haptics';
 
 import { Colors } from '../constants/Colors';
 import DatabaseService from '../services/DatabaseService';
+import { useAuth } from "../context/AuthContext";
 
 const { width, height } = Dimensions.get('window');
 
@@ -44,12 +45,8 @@ const normalizeAddress = (a) => ({
 });
 
 export default function SavedAddressesScreen({ navigation, route }) {
- const phoneNumber =
-  route?.params?.phoneNumber ||
-  navigation?.getState()?.routes
-    ?.find(r => r.params?.phoneNumber)
-    ?.params?.phoneNumber ||
-  null;
+  const { user } = useAuth();
+  const phoneNumber = user?.phone_number;
 
   
   // States

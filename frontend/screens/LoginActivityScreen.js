@@ -12,12 +12,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { Colors, Typography } from '../constants/Colors';
 import DatabaseService from '../services/DatabaseService';
+import { useAuth } from '../context/AuthContext';
 
 export default function DeviceManagementScreen({ navigation, route }) {
- const phoneNumber=route?.params?.phoneNumber;
-  console.log('🔥 DeviceManagementScreen phoneNumber:', phoneNumber);
-  console.log('🔥 DeviceManagementScreen route params:', route?.params);
-  console.log('🔥 DeviceManagementScreen navigation state:', navigation?.getState());
+  const { user } = useAuth();
+  const phoneNumber = user?.phone_number;
+  
   const [devices, setDevices] = useState([]);
   const [loading, setLoading] = useState(true);
 

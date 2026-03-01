@@ -3,13 +3,50 @@ import { View, Text, TouchableOpacity, StyleSheet, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import ScreenHeader from "../screens/ScreenHeader";
 import { Colors } from "../constants/Colors";
+import { useAuth } from "../context/AuthContext";
+import DatabaseService from "../services/DatabaseService";
 
 export default function DeactivateAccountScreen({ navigation }) {
+  const { user, logout } = useAuth();
+  const phoneNumber = user?.phone_number;
   const handleDeactivate = () => {
+    if (!phoneNumber) return;
+
     Alert.alert(
       "Deactivate Account",
-      "Are you sure you want to deactivate your account?",
-      [{ text: "Cancel" }, { text: "Deactivate", style: "destructive" }]
+      "Are you sure you want to deactivate your account? This action cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Deactivate",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await DatabaseService.deactivateUser(phoneNumber);
+
+              Alert.alert(
+                "Account Deactivated",
+                "Your account has been successfully deactivated.",
+                [
+                  {
+                    text: "OK",
+                    onPress: async () => {
+                      await logout();
+
+                      navigation.reset({
+                        index: 0,
+                        routes: [{ name: "Login" }],
+                      });
+                    },
+                  },
+                ]
+              );
+            } catch (error) {
+              Alert.alert("Error", "Failed to deactivate account.");
+            }
+          },
+        },
+      ]
     );
   };
 

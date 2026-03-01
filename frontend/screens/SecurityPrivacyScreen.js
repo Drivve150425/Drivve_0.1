@@ -13,14 +13,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, Typography } from '../constants/Colors';
 import DatabaseService from '../services/DatabaseService';
+import { useAuth } from '../context/AuthContext';
 
 export default function SecurityPrivacyScreen({ navigation, route }) {
-   const phoneNumber =
-  route?.params?.phoneNumber ||
-  navigation?.getState()?.routes
-    ?.find(r => r.params?.phoneNumber)
-    ?.params?.phoneNumber ||
-  null;
+  const { user } = useAuth();
+  const phoneNumber = user?.phone_number;
+  
   const [contactVisibility, setContactVisibility] = useState(true);
   const [loginDevices, setLoginDevices] = useState(0);
   const [loading, setLoading] = useState(true);

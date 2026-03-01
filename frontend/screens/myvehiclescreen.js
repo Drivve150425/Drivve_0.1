@@ -20,16 +20,13 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialIcons, Ionicons } from "@expo/vector-icons";
 import DatabaseService from "../services/DatabaseService";
+import { useAuth } from "../context/AuthContext";
 
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 
 export default function MyVehicleScreen({ navigation, route }) {
-  const phoneNumber =
-  route?.params?.phoneNumber ||
-  navigation?.getState()?.routes
-    ?.find(r => r.params?.phoneNumber)
-    ?.params?.phoneNumber ||
-  null;
+const { user } = useAuth();
+const phoneNumber = user?.phone_number;
 
 
   const [vehicles, setVehicles] = useState([]);
