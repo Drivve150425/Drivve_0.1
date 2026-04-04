@@ -18,6 +18,7 @@ from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
 import os
 from typing import Any, Dict
+from contextlib import asynccontextmanager
 
 from fastapi import Depends, HTTPException, UploadFile, File, Form
 
@@ -4544,6 +4545,77 @@ def update_live_location(
         "lng": payload.lng,
     }
 
+from sqlalchemy import text
+from database import engine
+
+def setup_postgis_and_ride_columns():
+    try:
+        with engine.begin() as conn:
+            print("🚀 Running PostGIS setup...")
+
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS postgis;"))
+            print("✅ PostGIS extension checked")
+
+            conn.execute(text("""
+                ALTER TABLE rides
+                ADD COLUMN IF NOT EXISTS route_coordinates JSONB
+            """))
+            print("✅ route_coordinates checked")
+
+            conn.execute(text("""
+                ALTER TABLE rides
+                ADD COLUMN IF NOT EXISTS origin_lon DOUBLE PRECISION
+            """))
+            print("✅ origin_lon checked")
+
+            conn.execute(text("""
+                ALTER TABLE rides
+                ADD COLUMN IF NOT EXISTS origin_lat DOUBLE PRECISION
+            """))
+            print("✅ origin_lat checked")
+
+            conn.execute(text("""
+                ALTER TABLE rides
+                ADD COLUMN IF NOT EXISTS destination_lon DOUBLE PRECISION
+            """))
+            print("✅ destination_lon checked")
+
+            conn.execute(text("""
+                ALTER TABLE rides
+                ADD COLUMN IF NOT EXISTS destination_lat DOUBLE PRECISION
+            """))
+            print("✅ destination_lat checked")
+
+            conn.execute(text("""
+                ALTER TABLE rides
+                ADD COLUMN IF NOT EXISTS route_line geometry(LineString, 4326)
+            """))
+            print("✅ route_line checked")
+
+            conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS idx_rides_route_line_gist
+                ON rides
+                USING GIST (route_line)
+            """))
+            print("✅ route_line index checked")
+
+    except Exception as e:
+        print("❌ PostGIS setup failed:", str(e))
+
+
+# @asynccontextmanager
+# async def lifespan(app: FastAPI):
+#     print("🚀 App startup: initializing resources...")
+#     setup_postgis_and_ride_columns()
+#     yield
+#     print("🛑 App shutdown: cleanup complete")
+
+# app = FastAPI(
+#     title="DRIVVE API Working",
+#     description="DRIVVE Carpooling API",
+#     version="2.0.1"
+# )
+
 if __name__ == "__main__":
     print("🚀 Starting DRIVVE Working Server...")
     print("🌐 Network accessible on:")
@@ -4558,3 +4630,4 @@ if __name__ == "__main__":
         reload=False,
         access_log=True
     )
+

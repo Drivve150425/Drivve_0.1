@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -12,97 +12,120 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/Colors';
+import { useAuth } from '../context/AuthContext';
+
+const BASE_URL = process.env.EXPO_PUBLIC_API_URL || "http://192.168.1.2:8000";
 
 export default function RideNextScreen({ navigation, route }) {
-  const { searchData, userData } = route.params || {};
-  const { from, to, dateTime, seats } = searchData || {};
+  const { user, loading: authLoading } = useAuth();
+
+  const { searchData } = route.params || {};
+  const { from, to, fromCoords, toCoords, dateTime, seats } = searchData || {};
 
   const [availableRides, setAvailableRides] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState('');
 
-  // Mock data - Replace with actual API call
-  useEffect(() => {
-    fetchAvailableRides();
-  }, []);
-
-  const fetchAvailableRides = async () => {
-    // Simulate API call
-    setTimeout(() => {
-      const mockRides = [
-        {
-          id: '1',
-          driverName: 'Aman Jain',
-          rating: 4.5,
-          dateTime: '07/10/2025',
-          time: '01:46 Am',
-          from: 'Block S 2, Upadhyay Block, Shakarpur khas, Delhi, 110092, India',
-          to: 'Jal Vayu Vihar, Sector 30, Gurugram, Haryana 122022, India',
-          price: 200,
-          matchPercentage: 80,
-          seatsAvailable: 3,
-        },
-        {
-          id: '2',
-          driverName: 'Aman Jain',
-          rating: 4.5,
-          dateTime: '27/07/2025',
-          time: '7:30 Pm',
-          from: 'Block S 2, Upadhyay Block, Shakarpur khas, Delhi, 110092, India',
-          to: 'Jal Vayu Vihar, Sector 30, Gurugram, Haryana 122022, India',
-          price: 200,
-          matchPercentage: 80,
-          seatsAvailable: 2,
-        },
-        {
-          id: '3',
-          driverName: 'Aman Jain',
-          rating: 4.5,
-          dateTime: '27/07/2025',
-          time: '7:30 Pm',
-          from: 'Block S 2, Upadhyay Block, Shakarpur khas, Delhi, 110092, India',
-          to: 'Jal Vayu Vihar, Sector 30, Gurugram, Haryana 122022, India',
-          price: 200,
-          matchPercentage: 80,
-          seatsAvailable: 1,
-        },
-      ];
-
-      setAvailableRides(mockRides);
+  const fetchAvailableRides = useCallback(async () => {
+    if (!searchData || !fromCoords || !toCoords || !dateTime) {
+      setAvailableRides([]);
       setLoading(false);
-    }, 1000);
-  };
+      return;
+    }
 
-  // Handle card press to view full ride details
+    try {
+      setLoading(true);
+      setErrorMessage('');
+
+      const response = await fetch(`${BASE_URL}/search-rides`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from_location: from,
+          to_location: to,
+          from_coords: fromCoords,
+          to_coords: toCoords,
+          departure_time: new Date(dateTime).toISOString(),
+          seats_required: seats || 1,
+        }),
+      });
+
+      const rawText = await response.text();
+      let parsedData = null;
+
+      try {
+        parsedData = rawText ? JSON.parse(rawText) : {};
+      } catch (parseError) {
+        parsedData = { detail: rawText || 'Unexpected server response' };
+      }
+
+      if (!response.ok) {
+        throw new Error(parsedData?.detail || 'Failed to fetch rides');
+      }
+
+      setAvailableRides(Array.isArray(parsedData?.rides) ? parsedData.rides : []);
+    } catch (error) {
+      console.log('❌ search-rides error:', error);
+      setAvailableRides([]);
+      setErrorMessage(error.message || 'Failed to search rides');
+      Alert.alert('Error', error.message || 'Failed to search rides');
+    } finally {
+      setLoading(false);
+    }
+  }, [searchData, from, to, fromCoords, toCoords, dateTime, seats]);
+
+  useEffect(() => {
+    if (authLoading) return;
+    fetchAvailableRides();
+  }, [authLoading, fetchAvailableRides]);
+
   const handleCardPress = (ride) => {
-    // TODO: Navigate to RideDetailsScreen in future
     Alert.alert(
       'Ride Details',
       `You clicked on ${ride.driverName}'s ride. Full details screen will be available soon.`,
       [{ text: 'OK' }]
     );
-    
-    // Future implementation:
-    // navigation.navigate('RideDetails', { rideId: ride.id, rideData: ride });
   };
 
-  const handleRequestToJoin = (ride, event) => {
-    // Stop event propagation to prevent card press
-    event?.stopPropagation?.();
-    
-    Alert.alert(
-      'Request to Join',
-      `Do you want to request to join ${ride.driverName}'s ride for ₹${ride.price}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Request',
-          onPress: () => {
-            // TODO: Send request to backend
-            Alert.alert('Success', 'Your request has been sent to the driver!');
-          },
+  const handleRequestToJoin = async (ride) => {
+    if (!user?.phone_number) {
+      Alert.alert('Login required', 'Please log in again to continue.');
+      return;
+    }
+
+    try {
+      const response = await fetch(`${BASE_URL}/ride-bookings`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
         },
-      ]
-    );
+        body: JSON.stringify({
+          ride_id: ride.id,
+          passenger_phone: user.phone_number,
+          seats_requested: seats || 1,
+        }),
+      });
+
+      const rawText = await response.text();
+      let parsedData = {};
+
+      try {
+        parsedData = rawText ? JSON.parse(rawText) : {};
+      } catch (e) {
+        parsedData = { detail: rawText || 'Unexpected server response' };
+      }
+
+      if (!response.ok) {
+        throw new Error(parsedData?.detail || 'Failed to send ride request');
+      }
+
+      Alert.alert('Success', parsedData.message || 'Your request has been sent to the driver!');
+    } catch (error) {
+      console.log('❌ ride-bookings error:', error);
+      Alert.alert('Error', error.message || 'Failed to send ride request');
+    }
   };
 
   const renderRideCard = ({ item }) => (
@@ -111,17 +134,31 @@ export default function RideNextScreen({ navigation, route }) {
       onPress={() => handleCardPress(item)}
       activeOpacity={0.7}
     >
-      {/* Header: Driver Info and Match */}
       <View style={styles.cardHeader}>
         <View style={styles.driverInfo}>
           <View style={styles.avatarContainer}>
             <Ionicons name="person-outline" size={22} color={Colors.gray} />
           </View>
+
           <View style={styles.driverDetails}>
-            <Text style={styles.driverName}>{item.driverName}</Text>
+            <Text style={styles.driverName}>{item.driverName || 'Driver'}</Text>
+
+            <View style={styles.metaRow}>
+              {!!item.driverUserId && (
+                <Text style={styles.userIdText}>{item.driverUserId}</Text>
+              )}
+
+              {item.profileCompleted ? (
+                <View style={styles.verifiedBadge}>
+                  <Ionicons name="checkmark-circle" size={12} color="#16A34A" />
+                  <Text style={styles.verifiedText}>Verified</Text>
+                </View>
+              ) : null}
+            </View>
+
             <View style={styles.ratingRow}>
               <Ionicons name="star" size={13} color="#FFA500" />
-              <Text style={styles.ratingText}>{item.rating}</Text>
+              <Text style={styles.ratingText}>{item.rating ?? 4.5}</Text>
             </View>
           </View>
         </View>
@@ -132,19 +169,18 @@ export default function RideNextScreen({ navigation, route }) {
         </View>
       </View>
 
-      {/* Date and Time Row */}
       <View style={styles.dateTimeRow}>
         <View style={styles.dateTimeItem}>
           <Ionicons name="calendar-outline" size={15} color={Colors.gray} />
-          <Text style={styles.dateTimeText}>{item.dateTime}</Text>
+          <Text style={styles.dateTimeText}>{item.date}</Text>
         </View>
+
         <View style={styles.dateTimeItem}>
           <Ionicons name="time-outline" size={15} color={Colors.gray} />
           <Text style={styles.dateTimeText}>{item.time}</Text>
         </View>
       </View>
 
-      {/* Route Info */}
       <View style={styles.routeContainer}>
         <View style={styles.routeIndicator}>
           <View style={styles.orangeDot} />
@@ -154,31 +190,33 @@ export default function RideNextScreen({ navigation, route }) {
 
         <View style={styles.routeDetails}>
           <View style={styles.locationBlock}>
-            <Text style={styles.locationLabel}>From:</Text>
+            <Text style={styles.locationLabel}>Pickup point</Text>
             <Text style={styles.locationText} numberOfLines={2}>
-              {item.from}
+              {item.pickupLabel}
             </Text>
           </View>
 
           <View style={styles.locationBlock}>
-            <Text style={styles.locationLabel}>To:</Text>
+            <Text style={styles.locationLabel}>Drop point</Text>
             <Text style={styles.locationText} numberOfLines={2}>
-              {item.to}
+              {item.dropLabel}
             </Text>
           </View>
         </View>
       </View>
 
-      {/* Footer: Price and Action Button */}
       <View style={styles.cardFooter}>
-        <View style={styles.priceContainer}>
-          <Text style={styles.priceSymbol}>₹</Text>
-          <Text style={styles.priceAmount}>{item.price}</Text>
+        <View>
+          <View style={styles.priceContainer}>
+            <Text style={styles.priceSymbol}>₹</Text>
+            <Text style={styles.priceAmount}>{item.price}</Text>
+          </View>
+          <Text style={styles.seatsText}>{item.seatsAvailable} seat(s) left</Text>
         </View>
 
         <TouchableOpacity
           style={styles.requestButton}
-          onPress={(e) => handleRequestToJoin(item, e)}
+          onPress={() => handleRequestToJoin(item)}
           activeOpacity={0.8}
         >
           <Text style={styles.requestButtonText}>Request to Join</Text>
@@ -187,7 +225,7 @@ export default function RideNextScreen({ navigation, route }) {
     </TouchableOpacity>
   );
 
-  if (loading) {
+  if (authLoading || loading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={Colors.primary} />
@@ -200,7 +238,6 @@ export default function RideNextScreen({ navigation, route }) {
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.white} />
 
-      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backButton}
@@ -208,18 +245,21 @@ export default function RideNextScreen({ navigation, route }) {
         >
           <Ionicons name="chevron-back" size={24} color={Colors.primary} />
         </TouchableOpacity>
+
         <Text style={styles.headerTitle}>Available Rides</Text>
         <View style={{ width: 40 }} />
       </View>
 
-      {/* Rides List */}
       {availableRides.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Ionicons name="car-outline" size={80} color={Colors.gray} />
           <Text style={styles.emptyTitle}>No Rides Found</Text>
           <Text style={styles.emptySubtitle}>
-            There are no available rides for this route at the moment.
+            {errorMessage
+              ? errorMessage
+              : 'There are no available rides for this route at the moment.'}
           </Text>
+
           <TouchableOpacity
             style={styles.backToHomeButton}
             onPress={() => navigation.goBack()}
@@ -231,7 +271,7 @@ export default function RideNextScreen({ navigation, route }) {
         <FlatList
           data={availableRides}
           renderItem={renderRideCard}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item) => String(item.id)}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
           ItemSeparatorComponent={() => <View style={{ height: 16 }} />}
@@ -320,6 +360,32 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: Colors.dark,
     marginBottom: 3,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+    flexWrap: 'wrap',
+  },
+  userIdText: {
+    fontSize: 11,
+    color: Colors.gray,
+    fontWeight: '600',
+  },
+  verifiedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#ECFDF3',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  verifiedText: {
+    fontSize: 10,
+    color: '#16A34A',
+    fontWeight: '700',
   },
   ratingRow: {
     flexDirection: 'row',
@@ -423,6 +489,12 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '700',
     color: Colors.secondary,
+  },
+  seatsText: {
+    marginTop: 4,
+    fontSize: 12,
+    color: Colors.gray,
+    fontWeight: '500',
   },
   requestButton: {
     backgroundColor: Colors.primary,

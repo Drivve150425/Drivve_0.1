@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import {
   View,
   Text,
@@ -10,36 +10,42 @@ import {
   RefreshControl,
   Animated,
   Alert,
-  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
+import { useFocusEffect } from "@react-navigation/native";
 import axios from "axios";
+
 import { useAuth } from "../context/AuthContext";
 import { Colors, Typography } from "../constants/Colors";
 import { FontFamily } from "../constants/Fonts";
 
-const BASE_URL = "http://192.168.1.2:8000";
+const BASE_URL = process.env.EXPO_PUBLIC_API_URL || "http://192.168.1.2:8000";
 
 export default function MyRides({ route, navigation }) {
   const { user } = useAuth();
   const phoneNumber = user?.phone_number;
 
+  const initialTab = route?.params?.initialTab || "posted";
+  const targetBookingId = route?.params?.bookingId || null;
+  const targetRideId = route?.params?.rideId || null;
+
   const [postedRides, setPostedRides] = useState([]);
   const [requestedRides, setRequestedRides] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState("posted");
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [rideFilter, setRideFilter] = useState("all");
 
-  // Animation refs
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(50)).current;
   const tabScaleAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
+    if (!phoneNumber) return;
+
     fetchMyRides();
-    // Entrance animations
+
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
@@ -52,15 +58,35 @@ export default function MyRides({ route, navigation }) {
         useNativeDriver: true,
       }),
     ]).start();
-  }, []);
+  }, [phoneNumber]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (phoneNumber) {
+        fetchMyRides();
+      }
+    }, [phoneNumber])
+  );
+
+  useEffect(() => {
+    if (route?.params?.initialTab) {
+      setActiveTab(route.params.initialTab);
+    }
+  }, [route?.params?.initialTab]);
 
   const fetchMyRides = async () => {
+    if (!phoneNumber) {
+      setLoading(false);
+      return;
+    }
+
     try {
       const res = await axios.get(`${BASE_URL}/my-rides/${phoneNumber}`);
-      setPostedRides(res.data.posted_rides || []);
-      setRequestedRides(res.data.requested_rides || []);
+      setPostedRides(Array.isArray(res.data.posted_rides) ? res.data.posted_rides : []);
+      setRequestedRides(Array.isArray(res.data.requested_rides) ? res.data.requested_rides : []);
     } catch (error) {
       console.log("Error fetching rides:", error);
+      Alert.alert("Error", "Could not load your rides.");
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -72,13 +98,40 @@ export default function MyRides({ route, navigation }) {
     fetchMyRides();
   };
 
+  const showUpcomingFeature = (featureName) => {
+    Alert.alert("Upcoming feature", `${featureName} will be available soon.`);
+  };
+
+  const handleEditRide = () => {
+    showUpcomingFeature("Edit ride");
+  };
+
+  const handleStartRide = () => {
+    showUpcomingFeature("Start ride");
+  };
+
   const handleBookingAction = async (bookingId, action) => {
-    try {
-      await axios.put(`${BASE_URL}/booking/${bookingId}/${action}`);
-      fetchMyRides();
-    } catch (err) {
-      Alert.alert("Error", "Could not update booking.");
-    }
+    const actionLabel = action === "accept" ? "Accept" : "Reject";
+
+    Alert.alert(
+      `${actionLabel} Request`,
+      `Are you sure you want to ${action} this booking request?`,
+      [
+        { text: "No", style: "cancel" },
+        {
+          text: "Yes",
+          onPress: async () => {
+            try {
+              await axios.put(`${BASE_URL}/booking/${bookingId}/${action}`);
+              Alert.alert("Success", `Booking ${action}ed successfully.`);
+              fetchMyRides();
+            } catch (err) {
+              Alert.alert("Error", "Could not update booking.");
+            }
+          },
+        },
+      ]
+    );
   };
 
   const cancelRide = async (rideId) => {
@@ -93,6 +146,7 @@ export default function MyRides({ route, navigation }) {
           onPress: async () => {
             try {
               await axios.put(`${BASE_URL}/ride/${rideId}/cancel`);
+              Alert.alert("Success", "Ride cancelled successfully.");
               fetchMyRides();
             } catch (err) {
               Alert.alert("Error", "Could not cancel ride.");
@@ -115,6 +169,7 @@ export default function MyRides({ route, navigation }) {
           onPress: async () => {
             try {
               await axios.put(`${BASE_URL}/booking/${bookingId}/cancel`);
+              Alert.alert("Success", "Booking cancelled successfully.");
               fetchMyRides();
             } catch (err) {
               Alert.alert("Error", "Could not cancel booking.");
@@ -126,23 +181,22 @@ export default function MyRides({ route, navigation }) {
   };
 
   const getFilteredRides = () => {
-    const now = new Date();
     let rides = [...postedRides];
+    const now = new Date();
 
     if (rideFilter !== "all") {
       rides = rides.filter((ride) => {
         const rideTime = new Date(ride.departure_time);
 
         if (rideFilter === "upcoming") {
-          // Upcoming: ride time is in the future AND not cancelled
           return rideTime > now && ride.status !== "cancelled";
         }
+
         if (rideFilter === "completed") {
-          // Completed: ride time is in the past AND not cancelled
           return rideTime < now && ride.status !== "cancelled";
         }
+
         if (rideFilter === "cancelled") {
-          // Cancelled: status is cancelled
           return ride.status === "cancelled";
         }
 
@@ -150,39 +204,33 @@ export default function MyRides({ route, navigation }) {
       });
     }
 
-    // Sort based on filter
-    if (rideFilter === "upcoming") {
-      // Upcoming: nearest first (ascending)
-      rides.sort((a, b) => {
-        const timeA = new Date(a.departure_time);
-        const timeB = new Date(b.departure_time);
-        return timeA - timeB;
-      });
-    } else if (rideFilter === "completed" || rideFilter === "cancelled") {
-      // Completed/Cancelled: latest first (descending)
-      rides.sort((a, b) => {
-        const timeA = new Date(a.departure_time);
-        const timeB = new Date(b.departure_time);
-        return timeB - timeA;
-      });
-    } else if (rideFilter === "all") {
-      // All: Upcoming rides first (nearest first), then completed/cancelled (latest first)
-      const now = new Date();
-      rides.sort((a, b) => {
-        const timeA = new Date(a.departure_time);
-        const timeB = new Date(b.departure_time);
-        const aIsUpcoming = timeA > now && a.status !== "cancelled";
-        const bIsUpcoming = timeB > now && b.status !== "cancelled";
-        
-        // If both are upcoming or both are past, sort by time
-        if (aIsUpcoming === bIsUpcoming) {
-          // Both same type - upcoming: nearest first, past: latest first
-          return aIsUpcoming ? timeA - timeB : timeB - timeA;
-        }
-        // If one is upcoming and one is past, upcoming comes first
-        return aIsUpcoming ? -1 : 1;
-      });
-    }
+    rides.sort((a, b) => {
+      const aPending = Array.isArray(a.bookings)
+        ? a.bookings.some((bk) => bk.status === "pending")
+        : false;
+      const bPending = Array.isArray(b.bookings)
+        ? b.bookings.some((bk) => bk.status === "pending")
+        : false;
+
+      if (aPending !== bPending) {
+        return aPending ? -1 : 1;
+      }
+
+      const timeA = new Date(a.departure_time);
+      const timeB = new Date(b.departure_time);
+
+      if (rideFilter === "upcoming") return timeA - timeB;
+      if (rideFilter === "completed" || rideFilter === "cancelled") return timeB - timeA;
+
+      const aIsUpcoming = timeA > now && a.status !== "cancelled";
+      const bIsUpcoming = timeB > now && b.status !== "cancelled";
+
+      if (aIsUpcoming === bIsUpcoming) {
+        return aIsUpcoming ? timeA - timeB : timeB - timeA;
+      }
+
+      return aIsUpcoming ? -1 : 1;
+    });
 
     return rides;
   };
@@ -206,8 +254,24 @@ export default function MyRides({ route, navigation }) {
     }
   };
 
+  const getStatusIcon = (status) => {
+    switch (status) {
+      case "active":
+      case "accepted":
+        return "checkmark-circle";
+      case "completed":
+        return "checkmark-done";
+      case "cancelled":
+      case "rejected":
+        return "close-circle";
+      case "pending":
+        return "time";
+      default:
+        return "ellipse";
+    }
+  };
+
   const handleTabPress = (tab) => {
-    // Animate the tab button
     Animated.sequence([
       Animated.timing(tabScaleAnim, {
         toValue: 0.95,
@@ -220,7 +284,9 @@ export default function MyRides({ route, navigation }) {
         useNativeDriver: true,
       }),
     ]).start();
+
     setActiveTab(tab);
+    if (tab !== "posted") setRideFilter("all");
   };
 
   const formatDate = (dateString) => {
@@ -254,6 +320,386 @@ export default function MyRides({ route, navigation }) {
     return { dayText, timeText };
   };
 
+  const getRequestedStatusText = (status) => {
+    switch (status) {
+      case "pending":
+        return "Waiting for confirmation";
+      case "accepted":
+        return "Approved by driver";
+      case "rejected":
+        return "Request rejected";
+      case "cancelled":
+        return "Booking cancelled";
+      default:
+        return status;
+    }
+  };
+
+  const renderPostedRideCard = (ride) => {
+    const hasPendingBookings = Array.isArray(ride.bookings)
+      ? ride.bookings.some((booking) => booking.status === "pending")
+      : false;
+
+    return (
+      <View
+        key={ride.id}
+        style={[
+          styles.card,
+          targetRideId === ride.id && styles.highlightRideCard,
+        ]}
+      >
+        <View style={styles.cardHeader}>
+          <View style={styles.routeContainer}>
+            <View style={styles.locationDot}>
+              <View style={[styles.dot, { backgroundColor: Colors.success }]} />
+              <View style={styles.line} />
+              <View style={[styles.dot, { backgroundColor: Colors.secondary }]} />
+            </View>
+
+            <View style={styles.routeTextContainer}>
+              <Text style={styles.routeOrigin} numberOfLines={1}>
+                {ride.origin?.split(",")[0] || "Origin"}
+              </Text>
+              <Text style={styles.routeDestination} numberOfLines={1}>
+                {ride.destination?.split(",")[0] || "Destination"}
+              </Text>
+            </View>
+          </View>
+
+          <View
+            style={[
+              styles.statusBadge,
+              { backgroundColor: getStatusColor(ride.status) },
+            ]}
+          >
+            <Ionicons
+              name={getStatusIcon(ride.status)}
+              size={12}
+              color={Colors.white}
+              style={styles.statusIcon}
+            />
+            <Text style={styles.statusText}>
+              {ride.status?.charAt(0).toUpperCase() + ride.status?.slice(1)}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.cardDetails}>
+          <View style={styles.detailItem}>
+            <Ionicons
+              name="calendar-outline"
+              size={16}
+              color={Colors.gray}
+            />
+            <Text style={styles.detailText}>
+              {formatDate(ride.departure_time).dayText}
+            </Text>
+            <Text style={styles.detailTextSecondary}>
+              {formatDate(ride.departure_time).timeText}
+            </Text>
+          </View>
+
+          <View style={styles.detailDivider} />
+
+          <View style={styles.detailItem}>
+            <Ionicons
+              name="person-outline"
+              size={16}
+              color={Colors.gray}
+            />
+            <Text style={styles.detailText}>
+              {ride.available_seats} seat{ride.available_seats > 1 ? "s" : ""}
+            </Text>
+          </View>
+
+          <View style={styles.detailDivider} />
+
+          <View style={styles.detailItem}>
+            <Ionicons
+              name="wallet-outline"
+              size={16}
+              color={Colors.gray}
+            />
+            <Text style={styles.detailTextPrice}>₹{ride.price_per_seat}</Text>
+            <Text style={styles.detailTextSecondary}>/seat</Text>
+          </View>
+        </View>
+
+        {ride.status !== "cancelled" && ride.status !== "completed" && (
+          <View style={styles.driverActionWrapper}>
+            <TouchableOpacity
+              style={styles.startRideBtn}
+              onPress={() => handleStartRide(ride)}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.startRideBtnText}>Start Ride</Text>
+            </TouchableOpacity>
+
+            <View style={styles.secondaryActionsRow}>
+              <TouchableOpacity
+                style={styles.secondaryBtn}
+                onPress={() => handleEditRide(ride)}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.secondaryBtnText}>Edit Details</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.secondaryBtn}
+                onPress={() => cancelRide(ride.id)}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.secondaryBtnText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {Array.isArray(ride.bookings) && ride.bookings.length > 0 && (
+          <View style={styles.bookingsSection}>
+            <View style={styles.bookingSectionHeader}>
+              <Text style={styles.bookingsTitle}>
+                Rider Requests ({ride.bookings.length})
+              </Text>
+              {hasPendingBookings && (
+                <View style={styles.pendingChip}>
+                  <Text style={styles.pendingChipText}>Action needed</Text>
+                </View>
+              )}
+            </View>
+
+            {ride.bookings.map((booking) => (
+              <View
+                key={booking.id}
+                style={[
+                  styles.bookingCard,
+                  targetBookingId === booking.id && styles.highlightBookingCard,
+                ]}
+              >
+                <View style={styles.bookingHeader}>
+                  <View style={styles.bookingInfo}>
+                    <View style={styles.avatarContainer}>
+                      <Ionicons
+                        name="person"
+                        size={20}
+                        color={Colors.primary}
+                      />
+                    </View>
+
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.bookingPhone}>
+                        {booking.passenger_name || booking.passenger_phone || "Rider"}
+                      </Text>
+                      <Text style={styles.bookingSeats}>
+                        {booking.seats_requested} seat
+                        {booking.seats_requested > 1 ? "s" : ""}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View
+                    style={[
+                      styles.bookingStatusBadge,
+                      {
+                        backgroundColor:
+                          getStatusColor(booking.status) + "20",
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.bookingStatusText,
+                        { color: getStatusColor(booking.status) },
+                      ]}
+                    >
+                      {booking.status?.charAt(0).toUpperCase() +
+                        booking.status?.slice(1)}
+                    </Text>
+                  </View>
+                </View>
+
+                {booking.status === "pending" && (
+                  <View style={styles.actionRow}>
+                    <TouchableOpacity
+                      style={[styles.actionBtn, styles.acceptBtn]}
+                      onPress={() => handleBookingAction(booking.id, "accept")}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons
+                        name="checkmark"
+                        size={16}
+                        color={Colors.white}
+                      />
+                      <Text style={styles.btnText}>Approve</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.actionBtn, styles.rejectBtn]}
+                      onPress={() => handleBookingAction(booking.id, "reject")}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons
+                        name="close"
+                        size={16}
+                        color={Colors.white}
+                      />
+                      <Text style={styles.btnText}>Reject</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+            ))}
+          </View>
+        )}
+      </View>
+    );
+  };
+
+  const renderRequestedRideCard = (booking) => {
+    const isAccepted = booking.status === "accepted";
+    const isPending = booking.status === "pending";
+    const isClosed = booking.status === "cancelled" || booking.status === "rejected";
+
+    return (
+      <View key={booking.id} style={styles.card}>
+        <View style={styles.cardHeader}>
+          <View style={styles.bookingIdContainer}>
+            <Ionicons
+              name="car-outline"
+              size={20}
+              color={Colors.primary}
+            />
+            <Text style={styles.bookingIdText}>
+              Ride #{booking.ride_id}
+            </Text>
+          </View>
+
+          <View
+            style={[
+              styles.statusBadge,
+              { backgroundColor: getStatusColor(booking.status) },
+            ]}
+          >
+            <Ionicons
+              name={getStatusIcon(booking.status)}
+              size={12}
+              color={Colors.white}
+              style={styles.statusIcon}
+            />
+            <Text style={styles.statusText}>
+              {booking.status?.charAt(0).toUpperCase() + booking.status?.slice(1)}
+            </Text>
+          </View>
+        </View>
+
+        {(booking.origin || booking.destination) && (
+          <View style={styles.requestRouteBlock}>
+            <View style={styles.locationDot}>
+              <View style={[styles.dot, { backgroundColor: Colors.success }]} />
+              <View style={styles.line} />
+              <View style={[styles.dot, { backgroundColor: Colors.secondary }]} />
+            </View>
+
+            <View style={styles.routeTextContainer}>
+              <Text style={styles.routeOrigin} numberOfLines={1}>
+                {booking.origin?.split(",")[0] || "Origin"}
+              </Text>
+              <Text style={styles.routeDestination} numberOfLines={1}>
+                {booking.destination?.split(",")[0] || "Destination"}
+              </Text>
+            </View>
+          </View>
+        )}
+
+        <View style={styles.requestDetails}>
+          <View style={styles.detailItem}>
+            <Ionicons
+              name="time-outline"
+              size={16}
+              color={Colors.gray}
+            />
+            <Text style={styles.detailText}>
+              {isPending ? "Requested" : "Status"}
+            </Text>
+            <Text style={styles.detailTextSecondary}>
+              {isPending
+                ? formatDate(booking.created_at).dayText
+                : getRequestedStatusText(booking.status)}
+            </Text>
+          </View>
+
+          <View style={styles.detailDivider} />
+
+          <View style={styles.detailItem}>
+            <Ionicons
+              name="calendar-outline"
+              size={16}
+              color={Colors.gray}
+            />
+            <Text style={styles.detailText}>Travel Date</Text>
+            <Text style={styles.detailTextSecondary}>
+              {booking.departure_time
+                ? formatDate(booking.departure_time).dayText
+                : "-"}
+            </Text>
+          </View>
+        </View>
+
+        {isPending && (
+          <View style={styles.waitingBox}>
+            <Ionicons name="time-outline" size={16} color="#B45309" />
+            <Text style={styles.waitingText}>Waiting for driver confirmation</Text>
+          </View>
+        )}
+
+        {isAccepted && (
+          <View style={styles.driverActionWrapper}>
+            <TouchableOpacity
+              style={styles.startRideBtn}
+              onPress={() => showUpcomingFeature("Contact / ride action")}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.startRideBtnText}>Confirmed Ride</Text>
+            </TouchableOpacity>
+
+            <View style={styles.secondaryActionsRow}>
+              <TouchableOpacity
+                style={styles.secondaryBtn}
+                onPress={() => showUpcomingFeature("Edit booking")}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.secondaryBtnText}>Edit Details</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.secondaryBtn}
+                onPress={() => cancelBooking(booking.id)}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.secondaryBtnText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {!isClosed && !isAccepted && (
+          <TouchableOpacity
+            style={styles.cancelRideBtn}
+            onPress={() => cancelBooking(booking.id)}
+            activeOpacity={0.7}
+          >
+            <Ionicons
+              name="trash-outline"
+              size={16}
+              color={Colors.error}
+            />
+            <Text style={styles.cancelBtnText}>Cancel Booking</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    );
+  };
+
   if (loading) {
     return (
       <View style={styles.loader}>
@@ -267,7 +713,6 @@ export default function MyRides({ route, navigation }) {
     <SafeAreaView style={styles.container}>
       <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
 
-      {/* ================= HEADER ================= */}
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backBtn}
@@ -287,7 +732,6 @@ export default function MyRides({ route, navigation }) {
         </TouchableOpacity>
       </View>
 
-      {/* ================= TABS ================= */}
       <View style={styles.tabContainer}>
         <TouchableOpacity
           style={[
@@ -368,7 +812,6 @@ export default function MyRides({ route, navigation }) {
         </TouchableOpacity>
       </View>
 
-      {/* ================= STICKY FILTERS ================= */}
       {activeTab === "posted" && (
         <View style={styles.stickyFilterContainer}>
           <ScrollView
@@ -394,11 +837,7 @@ export default function MyRides({ route, navigation }) {
                 <Ionicons
                   name={filter.icon}
                   size={14}
-                  color={
-                    rideFilter === filter.key
-                      ? Colors.white
-                      : Colors.gray
-                  }
+                  color={rideFilter === filter.key ? Colors.white : Colors.gray}
                   style={styles.filterIcon}
                 />
                 <Text
@@ -415,7 +854,6 @@ export default function MyRides({ route, navigation }) {
         </View>
       )}
 
-      {/* ================= CONTENT ================= */}
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.list}
@@ -428,7 +866,6 @@ export default function MyRides({ route, navigation }) {
           />
         }
       >
-        {/* POSTED RIDES */}
         {activeTab === "posted" && (
           <>
             {getFilteredRides().length === 0 ? (
@@ -442,321 +879,30 @@ export default function MyRides({ route, navigation }) {
                 </Text>
               </View>
             ) : (
-              getFilteredRides().map((ride) => (
-                <TouchableOpacity
-                  key={ride.id}
-                  style={styles.card}
-                  activeOpacity={0.85}
-                >
-                  {/* Route Header */}
-                  <View style={styles.cardHeader}>
-                    <View style={styles.routeContainer}>
-                      <View style={styles.locationDot}>
-                        <View
-                          style={[
-                            styles.dot,
-                            { backgroundColor: Colors.success },
-                          ]}
-                        />
-                        <View style={styles.line} />
-                        <View
-                          style={[
-                            styles.dot,
-                            { backgroundColor: Colors.secondary },
-                          ]}
-                        />
-                      </View>
-                      <View style={styles.routeTextContainer}>
-                        <Text style={styles.routeOrigin} numberOfLines={1}>
-                          {ride.origin.split(",")[0]}
-                        </Text>
-                        <Text style={styles.routeDestination} numberOfLines={1}>
-                          {ride.destination.split(",")[0]}
-                        </Text>
-                      </View>
-                    </View>
-
-                    <View
-                      style={[
-                        styles.statusBadge,
-                        { backgroundColor: getStatusColor(ride.status) },
-                      ]}
-                    >
-                      <Ionicons
-                        name={
-                          ride.status === "active"
-                            ? "checkmark-circle"
-                            : ride.status === "completed"
-                            ? "checkmark-done"
-                            : ride.status === "cancelled"
-                            ? "close-circle"
-                            : "time"
-                        }
-                        size={12}
-                        color={Colors.white}
-                        style={styles.statusIcon}
-                      />
-                      <Text style={styles.statusText}>
-                        {ride.status.charAt(0).toUpperCase() +
-                          ride.status.slice(1)}
-                      </Text>
-                    </View>
-                  </View>
-
-                  {/* Ride Details */}
-                  <View style={styles.cardDetails}>
-                    <View style={styles.detailItem}>
-                      <Ionicons
-                        name="calendar-outline"
-                        size={16}
-                        color={Colors.gray}
-                      />
-                      <Text style={styles.detailText}>
-                        {formatDate(ride.departure_time).dayText}
-                      </Text>
-                      <Text style={styles.detailTextSecondary}>
-                        {formatDate(ride.departure_time).timeText}
-                      </Text>
-                    </View>
-
-                    <View style={styles.detailDivider} />
-
-                    <View style={styles.detailItem}>
-                      <Ionicons
-                        name="person-outline"
-                        size={16}
-                        color={Colors.gray}
-                      />
-                      <Text style={styles.detailText}>
-                        {ride.available_seats} seat
-                        {ride.available_seats > 1 ? "s" : ""}
-                      </Text>
-                    </View>
-
-                    <View style={styles.detailDivider} />
-
-                    <View style={styles.detailItem}>
-                      <Ionicons
-                        name="wallet-outline"
-                        size={16}
-                        color={Colors.gray}
-                      />
-                      <Text style={styles.detailTextPrice}>
-                        ₹{ride.price_per_seat}
-                      </Text>
-                      <Text style={styles.detailTextSecondary}>/seat</Text>
-                    </View>
-                  </View>
-
-                  {/* Bookings Section */}
-                  {ride.bookings && ride.bookings.length > 0 && (
-                    <View style={styles.bookingsSection}>
-                      <Text style={styles.bookingsTitle}>
-                        Bookings ({ride.bookings.length})
-                      </Text>
-                      {ride.bookings.map((booking) => (
-                        <View key={booking.id} style={styles.bookingCard}>
-                          <View style={styles.bookingHeader}>
-                            <View style={styles.bookingInfo}>
-                              <View style={styles.avatarContainer}>
-                                <Ionicons
-                                  name="person"
-                                  size={20}
-                                  color={Colors.primary}
-                                />
-                              </View>
-                              <View>
-                                <Text style={styles.bookingPhone}>
-                                  {booking.passenger_phone}
-                                </Text>
-                                <Text style={styles.bookingSeats}>
-                                  {booking.seats_requested} seat
-                                  {booking.seats_requested > 1 ? "s" : ""}
-                                </Text>
-                              </View>
-                            </View>
-
-                            <View
-                              style={[
-                                styles.bookingStatusBadge,
-                                {
-                                  backgroundColor:
-                                    getStatusColor(booking.status) + "20",
-                                },
-                              ]}
-                            >
-                              <Text
-                                style={[
-                                  styles.bookingStatusText,
-                                  { color: getStatusColor(booking.status) },
-                                ]}
-                              >
-                                {booking.status.charAt(0).toUpperCase() +
-                                  booking.status.slice(1)}
-                              </Text>
-                            </View>
-                          </View>
-
-                          {booking.status === "pending" && (
-                            <View style={styles.actionRow}>
-                              <TouchableOpacity
-                                style={[
-                                  styles.actionBtn,
-                                  styles.acceptBtn,
-                                ]}
-                                onPress={() =>
-                                  handleBookingAction(booking.id, "accept")
-                                }
-                                activeOpacity={0.8}
-                              >
-                                <Ionicons
-                                  name="checkmark"
-                                  size={16}
-                                  color={Colors.white}
-                                />
-                                <Text style={styles.btnText}>Accept</Text>
-                              </TouchableOpacity>
-
-                              <TouchableOpacity
-                                style={[
-                                  styles.actionBtn,
-                                  styles.rejectBtn,
-                                ]}
-                                onPress={() =>
-                                  handleBookingAction(booking.id, "reject")
-                                }
-                                activeOpacity={0.8}
-                              >
-                                <Ionicons
-                                  name="close"
-                                  size={16}
-                                  color={Colors.white}
-                                />
-                                <Text style={styles.btnText}>Reject</Text>
-                              </TouchableOpacity>
-                            </View>
-                          )}
-                        </View>
-                      ))}
-                    </View>
-                  )}
-
-                  {/* Cancel Button */}
-                  {ride.status !== "cancelled" &&
-                    ride.status !== "completed" && (
-                      <TouchableOpacity
-                        style={styles.cancelRideBtn}
-                        onPress={() => cancelRide(ride.id)}
-                        activeOpacity={0.7}
-                      >
-                        <Ionicons
-                          name="trash-outline"
-                          size={16}
-                          color={Colors.error}
-                        />
-                        <Text style={styles.cancelBtnText}>Cancel Ride</Text>
-                      </TouchableOpacity>
-                    )}
-                </TouchableOpacity>
-              ))
+              getFilteredRides().map(renderPostedRideCard)
             )}
           </>
         )}
 
-        {/* REQUESTED RIDES */}
-        {activeTab === "requested" &&
-          (requestedRides.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Ionicons
-                name="document-text-outline"
-                size={64}
-                color={Colors.gray}
-              />
-              <Text style={styles.emptyTitle}>No requests yet</Text>
-              <Text style={styles.emptySubtitle}>
-                Your booking requests will appear here
-              </Text>
-            </View>
-          ) : (
-            requestedRides.map((booking) => (
-              <TouchableOpacity
-                key={booking.id}
-                style={styles.card}
-                activeOpacity={0.85}
-              >
-                <View style={styles.cardHeader}>
-                  <View style={styles.bookingIdContainer}>
-                    <Ionicons
-                      name="car-outline"
-                      size={20}
-                      color={Colors.primary}
-                    />
-                    <Text style={styles.bookingIdText}>
-                      Ride #{booking.ride_id}
-                    </Text>
-                  </View>
-
-                  <View
-                    style={[
-                      styles.statusBadge,
-                      { backgroundColor: getStatusColor(booking.status) },
-                    ]}
-                  >
-                    <Text style={styles.statusText}>
-                      {booking.status.charAt(0).toUpperCase() +
-                        booking.status.slice(1)}
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.requestDetails}>
-                  <View style={styles.detailItem}>
-                    <Ionicons
-                      name="time-outline"
-                      size={16}
-                      color={Colors.gray}
-                    />
-                    <Text style={styles.detailText}>Requested</Text>
-                    <Text style={styles.detailTextSecondary}>
-                      {formatDate(booking.created_at).dayText}
-                    </Text>
-                  </View>
-
-                  <View style={styles.detailDivider} />
-
-                  <View style={styles.detailItem}>
-                    <Ionicons
-                      name="calendar-outline"
-                      size={16}
-                      color={Colors.gray}
-                    />
-                    <Text style={styles.detailText}>Travel Date</Text>
-                    <Text style={styles.detailTextSecondary}>
-                      {booking.departure_time
-                        ? formatDate(booking.departure_time).dayText
-                        : "-"}
-                    </Text>
-                  </View>
-                </View>
-
-                {booking.status !== "cancelled" &&
-                  booking.status !== "rejected" && (
-                    <TouchableOpacity
-                      style={styles.cancelRideBtn}
-                      onPress={() => cancelBooking(booking.id)}
-                      activeOpacity={0.7}
-                    >
-                      <Ionicons
-                        name="trash-outline"
-                        size={16}
-                        color={Colors.error}
-                      />
-                      <Text style={styles.cancelBtnText}>Cancel Booking</Text>
-                    </TouchableOpacity>
-                  )}
-              </TouchableOpacity>
-            ))
-          ))}
+        {activeTab === "requested" && (
+          <>
+            {requestedRides.length === 0 ? (
+              <View style={styles.emptyState}>
+                <Ionicons
+                  name="document-text-outline"
+                  size={64}
+                  color={Colors.gray}
+                />
+                <Text style={styles.emptyTitle}>No requests yet</Text>
+                <Text style={styles.emptySubtitle}>
+                  Your booking requests will appear here
+                </Text>
+              </View>
+            ) : (
+              requestedRides.map(renderRequestedRideCard)
+            )}
+          </>
+        )}
 
         <View style={styles.bottomSpacer} />
       </ScrollView>
@@ -764,14 +910,12 @@ export default function MyRides({ route, navigation }) {
   );
 }
 
-/* ================= STYLES ================= */
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.white,
   },
 
-  // Header
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -800,7 +944,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 
-  // Tabs
   tabContainer: {
     flexDirection: "row",
     backgroundColor: Colors.white,
@@ -853,22 +996,17 @@ const styles = StyleSheet.create({
     color: Colors.white,
   },
 
-  // Content
   list: {
     padding: 16,
     paddingBottom: 40,
   },
 
-  // Sticky Filters
   stickyFilterContainer: {
     backgroundColor: Colors.white,
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 0.5,
     borderBottomColor: "#E5E7EB",
-  },
-  filterContainer: {
-    marginBottom: 16,
   },
   filterRow: {
     flexDirection: "row",
@@ -902,7 +1040,6 @@ const styles = StyleSheet.create({
     color: Colors.white,
   },
 
-  // Cards
   card: {
     padding: 14,
     borderRadius: 16,
@@ -910,6 +1047,10 @@ const styles = StyleSheet.create({
     borderColor: "#E5E7EB",
     backgroundColor: "#F9FAFB",
     marginBottom: 12,
+  },
+  highlightRideCard: {
+    borderWidth: 2,
+    borderColor: Colors.primary,
   },
   cardHeader: {
     flexDirection: "row",
@@ -921,6 +1062,14 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
+  },
+  requestRouteBlock: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 12,
+    backgroundColor: Colors.white,
+    borderRadius: 12,
+    padding: 12,
   },
   locationDot: {
     width: 20,
@@ -953,7 +1102,6 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.secondary.regular,
   },
 
-  // Status Badge
   statusBadge: {
     flexDirection: "row",
     alignItems: "center",
@@ -970,8 +1118,15 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 
-  // Card Details
   cardDetails: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: Colors.white,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+  },
+  requestDetails: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: Colors.white,
@@ -1013,25 +1168,83 @@ const styles = StyleSheet.create({
     marginHorizontal: 8,
   },
 
-  // Bookings Section
+  driverActionWrapper: {
+    marginBottom: 8,
+  },
+  startRideBtn: {
+    backgroundColor: Colors.primary,
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 10,
+  },
+  startRideBtnText: {
+    color: Colors.white,
+    fontSize: 15,
+    fontWeight: "700",
+    fontFamily: FontFamily.secondary.semiBold,
+  },
+  secondaryActionsRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  secondaryBtn: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: "#D1D5DB",
+    backgroundColor: Colors.white,
+    borderRadius: 14,
+    paddingVertical: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  secondaryBtnText: {
+    color: Colors.dark,
+    fontSize: 14,
+    fontWeight: "600",
+    fontFamily: FontFamily.secondary.medium,
+  },
+
   bookingsSection: {
     borderTopWidth: 1,
     borderTopColor: "#E5E7EB",
     paddingTop: 12,
-    marginTop: 4,
+    marginTop: 6,
+  },
+  bookingSectionHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 10,
   },
   bookingsTitle: {
     fontSize: 14,
     fontWeight: "700",
     color: Colors.dark,
-    marginBottom: 10,
     fontFamily: FontFamily.secondary.semiBold,
+  },
+  pendingChip: {
+    backgroundColor: "#FEF3C7",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  pendingChipText: {
+    color: "#92400E",
+    fontSize: 11,
+    fontWeight: "700",
   },
   bookingCard: {
     backgroundColor: Colors.white,
     borderRadius: 12,
     padding: 12,
     marginBottom: 8,
+  },
+  highlightBookingCard: {
+    borderWidth: 2,
+    borderColor: Colors.primary,
+    backgroundColor: "#FFF7ED",
   },
   bookingHeader: {
     flexDirection: "row",
@@ -1041,6 +1254,7 @@ const styles = StyleSheet.create({
   bookingInfo: {
     flexDirection: "row",
     alignItems: "center",
+    flex: 1,
   },
   avatarContainer: {
     width: 40,
@@ -1074,7 +1288,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 
-  // Action Buttons
   actionRow: {
     flexDirection: "row",
     marginTop: 12,
@@ -1101,7 +1314,24 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 
-  // Cancel Button
+  waitingBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFBEB",
+    borderWidth: 1,
+    borderColor: "#FDE68A",
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    marginBottom: 10,
+  },
+  waitingText: {
+    marginLeft: 8,
+    color: "#92400E",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+
   cancelRideBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -1119,15 +1349,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 
-  // Request Details (for requested tab)
-  requestDetails: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: Colors.white,
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 12,
-  },
   bookingIdContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -1140,7 +1361,6 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.secondary.semiBold,
   },
 
-  // Empty State
   emptyState: {
     alignItems: "center",
     justifyContent: "center",
@@ -1162,7 +1382,6 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.secondary.regular,
   },
 
-  // Loading
   loader: {
     flex: 1,
     justifyContent: "center",

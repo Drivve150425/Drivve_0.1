@@ -32,11 +32,8 @@ export default function HomeScreen({ navigation }) {
 
   const userId = user?.id;
   const phoneNumber = user?.phone_number;
-
-const firstName = user?.first_name || 'User';
+  const firstName = user?.first_name || 'User';
   const lastName = user?.last_name || '';
-// export default function HomeScreen({ navigation, route }) {
-//   const { firstName, lastName, userId, userData, isNewUser, phoneNumber } = route.params || {};
 
   // Tab state - 'ride' or 'drive'
   const [activeTab, setActiveTab] = useState('ride');
@@ -50,6 +47,8 @@ const firstName = user?.first_name || 'User';
   // Form states
   const [fromLocation, setFromLocation] = useState('');
   const [toLocation, setToLocation] = useState('');
+  const [fromCoords, setFromCoords] = useState(null); // [lng, lat]
+  const [toCoords, setToCoords] = useState(null);     // [lng, lat]
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
@@ -97,7 +96,7 @@ const firstName = user?.first_name || 'User';
   // Bottom navigation active button
   const [activeBottomTab, setActiveBottomTab] = useState('home');
 
-  const backgroundGradientColors = [Colors.primary, '#2563eb', '#3b82f6', '#2980b9', Colors.blue, '#1e40af'];
+  //const backgroundGradientColors = [Colors.primary, '#2563eb', '#3b82f6', '#2980b9', Colors.blue, '#1e40af'];
 
   // Format date and time
   const formatDateTime = () => {
@@ -211,23 +210,16 @@ const firstName = user?.first_name || 'User';
     }
   };
 
- const navigateToProfile = () => {
-  navigation.navigate('ProfileDetails'//,{
-  //   phoneNumber: userData.phone_number, // ✅ REQUIRED
-  //   userData,
-  //   userId,
-  //   firstName,
-  //   lastName,
-  // }
-  );
-};
-
 const openNotifications = () => {
+  if (!user?.phone_number) {
+    Alert.alert('Session missing', 'Please log in again.');
+    return;
+  }
   // Instantly clear badge for UX
   setUnreadCount(0);
 
   // Navigate to notification screen
-  navigation.navigate('UserNotificationScreen');
+  navigation.navigate('UserNotificationScreen', {phoneNumber: user?.phone_number});
 };
 
 // Handle bottom navigation
@@ -236,64 +228,66 @@ const openNotifications = () => {
     
     switch (tabName) {
       case 'home':
-        navigation.navigate('Home');
+        navigation.navigate('Home', { phoneNumber: user?.phone_number});
         break;
       case 'myride':
-        navigation.navigate('MyRides');
+        navigation.navigate('MyRides', {phoneNumber: user?.phone_number});
         break;
       case 'chat':
-        navigation.navigate('ChatList');
+        navigation.navigate('ChatList', {phoneNumber: user?.phone_number});
         break;
       case 'profile':
         navigation.navigate('ProfileDetails', {phoneNumber: user?.phone_number});
         break;
+      default:
+        break;
     }
   };
 
-  const handleAction = () => {
-    if (!fromLocation.trim() || !toLocation.trim()) {
-      Alert.alert('Required Fields', 'Please enter both pickup and destination locations');
-      return;
-    }
+    const handleAction = () => {
+      if (!fromLocation || !toLocation || !fromCoords || !toCoords) {
+        Alert.alert(
+          'Required Fields',
+          'Please select both pickup and destination from the map'
+        );
+        return;
+      }
 
-    
+      const searchData = {
+        type: activeTab,
+        from: fromLocation,
+        to: toLocation,
+        fromCoords,
+        toCoords,
+        dateTime: selectedDate,
+        seats: seatCount,
+      };
 
-    const rideData = {
-      type: activeTab,
-      from: fromLocation,
-      to: toLocation,
-      dateTime: selectedDate,
-      seats: seatCount,
-      userId: userId
+      console.log('🔎 Search data:', searchData);
+
+      navigation.navigate('RideNext', {
+        searchData,
+      });
     };
-    console.log('🚗 Ride data:', rideData);
-
-    navigation.navigate('RideNext', {
-      rideData,
-    });
-  }
-
-
 
     const handleRecurring = () => {
       navigation.navigate('Recurring');
-    }
+    };
 
     //greetings
     const getGreeting = (name) => {
       const now = new Date();
       const hour = now.getHours();
+      const dateKey = `${now.getMonth()}-${now.getDate()}`;
 
       // Define special greetings for specific dates (month is 0-based)
       const specialGreetings = {                      // 0= jan and 11=december
-        '11-08': `Happy Diwali ✨,/${name}!`,         // Oct 24 example, update accordingly
-        '3-20': `Eid Mubarak,/${name}! 🌙`,          // Apr 10 example, update accordingly
-        '11-24': `Gurpurab di vadhaiyan,/${name}! ☬`, // Oct 24 example, update accordingly
-        '12-25': `Merry Christmas,/${name}! 🎄`,     // Dec 25 example, update accordingly
-        '01-01': `Happy New Year,/${name}! 🎉`,        // Jan 1
+        '11-08': {line1: `Happy Diwali ✨,`,line2: `${name}!`},         // Nov 08 example, update accordingly
+        '3-20': { line1: 'Eid Mubarak 🌙,', line2: `${name}!` },
+        '11-24': { line1: 'Gurpurab di vadhaiyan ☬,', line2: `${name}!` },
+        '12-25': { line1: 'Merry Christmas 🎄,', line2: `${name}!` },
+        '01-01': { line1: 'Happy New Year 🎉,', line2: `${name}!` },       // Jan 1
       };
-
-      const dateKey = `${now.getMonth()}-${now.getDate()}`;
 
       // Check if today is a special holiday with greeting
       if (specialGreetings[dateKey]) {
@@ -302,19 +296,20 @@ const openNotifications = () => {
 
       // Time-based greetings
       if (hour >= 6 && hour < 12) {
-        return `Good Morning,/${name}!`;
+        return { line1: 'Good Morning,', line2: `${name}!` };
       } else if (hour >= 12 && hour < 16) {
-        return `Good Afternoon,/${name}!`;
+        return { line1: 'Good Afternoon,', line2: `${name}!` };
       } else if (hour >= 16 && hour < 22) {
-        return `Good Evening,/${name}!`;
+        return { line1: 'Good Evening,', line2: `${name}!` };
       } else {
-        return `Welcome Back,/${name}!`;
+        return { line1: 'Welcome Back,', line2: `${name}!` };
       }
     };
 
     // const greeting = getGreeting(userData?.firstName || firstName || 'User');
     const greeting = getGreeting(firstName);
-    const [firstLine, secondLine] = greeting.split('/');
+    const firstLine = greeting.line1;
+    const secondLine = greeting.line2;
 
   return (
     <View style={styles.container}>
@@ -357,7 +352,7 @@ const openNotifications = () => {
             <View style={styles.earningSection}>
               <Text style={styles.earningTitle}>Total Earning</Text>
               <Text style={styles.earningAmount}>₹10</Text>
-              <Text style={styles.earningSubtext}>CO2 Saved: 50%</Text>
+              <Text style={styles.earningSubtext}>CO₂ Saved: 50%</Text>
             </View>
           </Animated.View>
 
@@ -393,33 +388,42 @@ const openNotifications = () => {
                     <Text style={styles.sectionTitle}>Where are you going?</Text>
                   </View>
 
-                  <View style={styles.locationContainer}>
+                  <TouchableOpacity
+                    style={styles.locationContainer}
+                    onPress={() =>
+                      navigation.navigate('LocationSearch', {
+                        type: 'from',
+                        onSelect: (location) => {
+                          setFromLocation(location.label);
+                          setFromCoords(location.coordinates);
+                        },
+                      })
+                    }
+                  >
                     <Ionicons name="location-sharp" size={20} color={Colors.gray} style={styles.inputIcon} />
-                    <TextInput
-                      style={styles.locationInput}
-                      placeholder="From"
-                      placeholderTextColor={Colors.gray}
-                      textAlign='left'
-                      textAlignVertical='center'
-                      value={fromLocation}
-                      onChangeText={setFromLocation}
-                      editable={true}
-                    />
-                  </View>
+                    <Text style={styles.locationInput}>
+                      {fromLocation || 'From'}
+                    </Text>
+                  </TouchableOpacity>
 
-                  <View style={styles.locationContainer}>
+                  <TouchableOpacity
+                    style={styles.locationContainer}
+                    onPress={() =>
+                      navigation.navigate('LocationSearch', {
+                        type: 'to',
+                        onSelect: (location) => {
+                          setToLocation(location.label);
+                          setToCoords(location.coordinates);
+                        },
+                      })
+                    }
+                  >
                     <Ionicons name="location-sharp" size={20} color={Colors.gray} style={styles.inputIcon} />
-                    <TextInput
-                      style={styles.locationInput}
-                      placeholder="To"
-                      placeholderTextColor={Colors.gray}
-                      textAlign='left'
-                      textAlignVertical='center'
-                      value={toLocation}
-                      onChangeText={setToLocation}
-                      editable={true}
-                    />
-                  </View>
+                    <Text style={styles.locationInput}>
+                      {toLocation || 'To'}
+                    </Text>
+                  </TouchableOpacity>
+
 
                   <View style={styles.whenSection}>
                     <Text style={styles.sectionTitle}>When?</Text>

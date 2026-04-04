@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -10,13 +10,13 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
-
+import { useFocusEffect } from "@react-navigation/native";
 import DatabaseService from "../services/DatabaseService";
 import { Colors, Typography } from "../constants/Colors";
 import { useAuth } from "../context/AuthContext";
 
 /* ================= SCREEN ================= */
-export default function NotificationScreen({ navigation, route }) {
+export default function UserNotificationScreen({ navigation, route }) {
   const { user } = useAuth();
   const phoneNumber = user?.phone_number;
 
@@ -24,20 +24,26 @@ export default function NotificationScreen({ navigation, route }) {
   const [loading, setLoading] = useState(true);
 
   /* ================= FETCH ================= */
-  useEffect(() => {
-    fetchNotifications();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      if (!phoneNumber) return;
+      fetchNotifications();
+    }, [phoneNumber])
+  );
 
   const fetchNotifications = async () => {
     try {
-      if (!phoneNumber) return;
+      if (!phoneNumber) {
+        setNotifications([]);
+        return;
+      }
+
+      setLoading(true);
 
       const cleanPhone = phoneNumber.replace(/\s/g, "");
       const res = await DatabaseService.getNotifications(cleanPhone);
 
-      if (res?.notifications) {
-        setNotifications(res.notifications);
-      }
+      setNotifications(Array.isArray(res?.notifications) ? res.notifications : []);
     } catch (e) {
       console.error("❌ Notification fetch error:", e);
     } finally {
@@ -52,12 +58,37 @@ export default function NotificationScreen({ navigation, route }) {
         await DatabaseService.markNotificationRead(item.id);
       }
 
+      setNotifications((prev) =>
+        prev.map((n) =>
+          n.id === item.id ? { ...n, is_read: true } : n
+        )
+      );
+
       if (item.action_type === "document") {
         navigation.navigate("MyDocuments");
-      } else if (item.action_type === "wallet") {
+        return;
+      } 
+      if (item.action_type === "wallet") {
         navigation.navigate("Wallet");
-      } else if (item.action_type === "ride") {
-        navigation.navigate("MyRides");
+        return;
+      } 
+      if (item.action_type === "ride") {
+        navigation.navigate("MyRides", {
+          initialTab: "Posted",
+          rideId: item.action_value ? Number(item.action_value) : null,
+        });
+        return;
+      }
+      if (item.action_type === "booking") {
+        navigation.navigate("MyRides", {
+          initialTab: "posted",
+          bookingId: item.action_value ? Number(item.action_value) : null,
+        });
+        return;
+      }
+      if (item.action_type === "chat") {
+        navigation.navigate("ChatList");
+        return;
       }
     } catch (e) {
       console.error("❌ Open notification error:", e);
@@ -67,10 +98,44 @@ export default function NotificationScreen({ navigation, route }) {
   const clearAll = async () => {
     if (!phoneNumber) return;
 
-    await DatabaseService.clearNotifications(
-      phoneNumber.replace(/\s/g, "")
+    Alert.alert(
+      "Clear Notifications",
+      "Are you sure you want to clear all notifications?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Clear",
+          style: "destructive",
+          onPress: async () => {
+            await DatabaseService.clearNotifications(
+              phoneNumber.replace(/\s/g, "")
+            );
+            setNotifications([]);
+          },
+        },
+      ]
     );
-    setNotifications([]);
+  };
+
+  /* ================= HELPERS ================= */
+  const getIcon = (type) => {
+    switch (type) {
+      case "reward":
+        return "gift-outline";
+      case "document":
+        return "document-text-outline";
+      case "ride":
+        return "car-outline";
+      case "promotion":
+        return "pricetag-outline";
+      default:
+        return "notifications-outline";
+    }
+  };
+
+  const formatDate = (date) => {
+    const d = new Date(date);
+    return d.toLocaleDateString() + " • " + d.toLocaleTimeString();
   };
 
   /* ================= UI ================= */
@@ -154,27 +219,6 @@ export default function NotificationScreen({ navigation, route }) {
     </SafeAreaView>
   );
 }
-
-/* ================= HELPERS ================= */
-const getIcon = (type) => {
-  switch (type) {
-    case "reward":
-      return "gift-outline";
-    case "document":
-      return "document-text-outline";
-    case "ride":
-      return "car-outline";
-    case "promotion":
-      return "pricetag-outline";
-    default:
-      return "notifications-outline";
-  }
-};
-
-const formatDate = (date) => {
-  const d = new Date(date);
-  return d.toLocaleDateString() + " • " + d.toLocaleTimeString();
-};
 
 /* ================= STYLES ================= */
 const styles = StyleSheet.create({

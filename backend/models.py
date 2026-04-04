@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, Text, Enum, Date, JSON,Float
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, Text, Enum, Date, JSON, Float
 from sqlalchemy.sql import func
 from database import Base
 import enum
@@ -103,10 +103,13 @@ class Ride(Base):
     destination = Column(String(255), nullable=False)
 
     origin_lat = Column(Float, nullable=True)
-    origin_lng = Column(Float, nullable=True)
+    origin_lon = Column(Float, nullable=True)
 
     destination_lat = Column(Float, nullable=True)
-    destination_lng = Column(Float, nullable=True)
+    destination_lon = Column(Float, nullable=True)
+
+    route_coordinates = Column(JSON, nullable=True)
+
 
     departure_time = Column(DateTime(timezone=True), nullable=False)
 

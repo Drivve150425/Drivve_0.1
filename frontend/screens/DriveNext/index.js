@@ -154,13 +154,17 @@ export default function DriveNextScreen({ navigation, route }) {
         departure_time: new Date(dateTime).toISOString(),
 
         available_seats: seatsAvailable,
-        price_per_seat: pricePerSeat,
+        price_per_seat: Number(pricePerSeat),
         vehicleId: vehicleId,
+
+        origin_coords: fromCoords,
+        destination_coords: toCoords,
+        route_coordinates: selectedRoute.geometry.map((p) => [p.longitude, p.latitude]),
 
         distance_km: selectedRoute.distance,
         duration_text: selectedRoute.duration,
         total_estimated_price: selectedRoute.price,
-        preferences: prefs
+        preferences: prefs,
       };
     console.log('Post Ride payload:', payload);
     const response = await axios.post(
