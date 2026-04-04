@@ -7,16 +7,21 @@ import {
   ScrollView,
   StatusBar,
   Switch,
+    KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { Colors, Typography } from '../constants/Colors';
-import DatabaseService from '../services/DatabaseService';
+import DatabaseService from '../services/notificationscreen_ds';
+import GETDatabaseService from '../services/usernotification_ds';
+
 import { useAuth } from '../context/AuthContext';
 
 export default function NotificationSettingsScreen({ navigation, route }) {
-  const { user } = useAuth();
+   const { user } = useAuth();
   const phoneNumber = user?.phone_number;
+
 
   const [notifications, setNotifications] = useState({
     rideUpdates: true,
@@ -31,7 +36,7 @@ export default function NotificationSettingsScreen({ navigation, route }) {
     if (!phoneNumber) return;
 
     const loadSettings = async () => {
-      const res = await DatabaseService.getNotificationSettings(phoneNumber);
+      const res = await GETDatabaseService.getNotifications(phoneNumber);
       if (res?.notifications) {
         setNotifications(res.notifications);
       }
@@ -51,27 +56,25 @@ export default function NotificationSettingsScreen({ navigation, route }) {
 
     await DatabaseService.updateNotificationSettings(phoneNumber, updated);
   };
-
+const handleBack = () => {
+    navigation.goBack();
+  };
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
-
-      {/* HEADER */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.modernBackButton}
-          onPress={() => navigation.goBack()}
-        >
-          <MaterialIcons
-            name="arrow-back-ios"
-            size={28}
-            color={Colors.orange1}
-          />
-        </TouchableOpacity>
-
-        <Text style={styles.headerTitle}>Notification Settings</Text>
-        <View style={styles.headerSpacer} />
-      </View>
+                                 <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
+                                 
+                                 <KeyboardAvoidingView
+                                   style={styles.keyboardAvoidingView}
+                                   behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+                                 >
+                                   {/* Header */}
+                                   <View style={styles.header}>
+                                     <TouchableOpacity style={styles.modernBackButton} onPress={handleBack}>
+                                       <MaterialIcons name="arrow-back-ios" size={28} color={Colors.secondary} />
+                                     </TouchableOpacity>
+                                     <Text style={styles.headerTitle}>Notification</Text>
+                                     <View style={styles.headerSpacer} />
+                                   </View>
 
       {/* CONTENT */}
       <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -133,6 +136,7 @@ export default function NotificationSettingsScreen({ navigation, route }) {
           ))}
         </View>
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -145,33 +149,36 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
   },
 
-  /* HEADER */
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 0.5,
-    borderBottomColor: '#F3F4F6',
-  },
-  modernBackButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  headerTitle: {
-    ...Typography.h2,
-    fontSize: 28,
-    fontWeight: '700',
-    color: Colors.primary,
-    flex: 1,
-    textAlign: 'center',
-  },
-  headerSpacer: {
-    width: 44,
-  },
+  keyboardAvoidingView: {
+     flex: 1,
+   },
+   header: {
+     flexDirection: 'row',
+     alignItems: 'center',
+     paddingHorizontal: 16,
+     paddingVertical: 12,
+     borderBottomWidth: 0.5,
+     borderBottomColor: '#F3F4F6',
+   },
+   modernBackButton: {
+     width: 44,
+     height: 44,
+     borderRadius: 22,
+     justifyContent: 'center',
+     alignItems: 'center',
+   },
+   headerTitle: {
+     ...Typography.h2,
+     fontSize: 28,
+     fontWeight: '700',
+     color: Colors.primary,
+     flex: 1,
+     textAlign: 'center',
+   },
+   headerSpacer: {
+     width: 44,
+   },
+
 
   scrollContent: {
     paddingHorizontal: 20,
@@ -190,13 +197,11 @@ const styles = StyleSheet.create({
   },
 
   cardTitle: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '700',
-    color: Colors.dark,
+    color: Colors.primary,
     paddingHorizontal: 16,
     paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
   },
 
   /* ROW */

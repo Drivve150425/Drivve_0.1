@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -10,13 +10,15 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
-import { useFocusEffect } from "@react-navigation/native";
-import DatabaseService from "../services/DatabaseService";
+import CommonHeader from "../components/CommonHeader";
+
+import DatabaseService from "../services/usernotification_ds";
 import { Colors, Typography } from "../constants/Colors";
+import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
 import { useAuth } from "../context/AuthContext";
 
 /* ================= SCREEN ================= */
-export default function UserNotificationScreen({ navigation, route }) {
+export default function NotificationScreen({ navigation, route }) {
   const { user } = useAuth();
   const phoneNumber = user?.phone_number;
 
@@ -24,26 +26,20 @@ export default function UserNotificationScreen({ navigation, route }) {
   const [loading, setLoading] = useState(true);
 
   /* ================= FETCH ================= */
-  useFocusEffect(
-    useCallback(() => {
-      if (!phoneNumber) return;
-      fetchNotifications();
-    }, [phoneNumber])
-  );
+  useEffect(() => {
+    fetchNotifications();
+  }, []);
 
   const fetchNotifications = async () => {
     try {
-      if (!phoneNumber) {
-        setNotifications([]);
-        return;
-      }
-
-      setLoading(true);
+      if (!phoneNumber) return;
 
       const cleanPhone = phoneNumber.replace(/\s/g, "");
       const res = await DatabaseService.getNotifications(cleanPhone);
 
-      setNotifications(Array.isArray(res?.notifications) ? res.notifications : []);
+      if (res?.notifications) {
+        setNotifications(res.notifications);
+      }
     } catch (e) {
       console.error("❌ Notification fetch error:", e);
     } finally {
@@ -58,37 +54,12 @@ export default function UserNotificationScreen({ navigation, route }) {
         await DatabaseService.markNotificationRead(item.id);
       }
 
-      setNotifications((prev) =>
-        prev.map((n) =>
-          n.id === item.id ? { ...n, is_read: true } : n
-        )
-      );
-
       if (item.action_type === "document") {
         navigation.navigate("MyDocuments");
-        return;
-      } 
-      if (item.action_type === "wallet") {
+      } else if (item.action_type === "wallet") {
         navigation.navigate("Wallet");
-        return;
-      } 
-      if (item.action_type === "ride") {
-        navigation.navigate("MyRides", {
-          initialTab: "Posted",
-          rideId: item.action_value ? Number(item.action_value) : null,
-        });
-        return;
-      }
-      if (item.action_type === "booking") {
-        navigation.navigate("MyRides", {
-          initialTab: "posted",
-          bookingId: item.action_value ? Number(item.action_value) : null,
-        });
-        return;
-      }
-      if (item.action_type === "chat") {
-        navigation.navigate("ChatList");
-        return;
+      } else if (item.action_type === "ride") {
+        navigation.navigate("MyRides");
       }
     } catch (e) {
       console.error("❌ Open notification error:", e);
@@ -98,44 +69,10 @@ export default function UserNotificationScreen({ navigation, route }) {
   const clearAll = async () => {
     if (!phoneNumber) return;
 
-    Alert.alert(
-      "Clear Notifications",
-      "Are you sure you want to clear all notifications?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Clear",
-          style: "destructive",
-          onPress: async () => {
-            await DatabaseService.clearNotifications(
-              phoneNumber.replace(/\s/g, "")
-            );
-            setNotifications([]);
-          },
-        },
-      ]
+    await DatabaseService.clearNotifications(
+      phoneNumber.replace(/\s/g, "")
     );
-  };
-
-  /* ================= HELPERS ================= */
-  const getIcon = (type) => {
-    switch (type) {
-      case "reward":
-        return "gift-outline";
-      case "document":
-        return "document-text-outline";
-      case "ride":
-        return "car-outline";
-      case "promotion":
-        return "pricetag-outline";
-      default:
-        return "notifications-outline";
-    }
-  };
-
-  const formatDate = (date) => {
-    const d = new Date(date);
-    return d.toLocaleDateString() + " • " + d.toLocaleTimeString();
+    setNotifications([]);
   };
 
   /* ================= UI ================= */
@@ -143,26 +80,19 @@ export default function UserNotificationScreen({ navigation, route }) {
     <SafeAreaView style={styles.container}>
       <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
 
-      {/* ================= HEADER ================= */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backBtn}
-          onPress={() => navigation.goBack()}
-        >
-          <MaterialIcons
-            name="arrow-back-ios"
-            size={26}
-            color={Colors.orange1}
-          />
-        </TouchableOpacity>
-
-        <Text style={styles.headerTitle}>Notifications</Text>
-
-        <TouchableOpacity onPress={clearAll}>
-          <Text style={styles.clearText}>Clear</Text>
-        </TouchableOpacity>
-      </View>
-
+    <CommonHeader
+    title="Notifications"
+    rightIcon={
+      <Text style={{ 
+        color: Colors.orange1, 
+        fontWeight: "700",
+        fontSize: moderateScale(14)
+      }}>
+        Clear
+      </Text>
+    }
+    onRightPress={clearAll}
+  />
       {/* ================= CONTENT ================= */}
       {loading ? (
         <View style={styles.loader}>
@@ -220,41 +150,32 @@ export default function UserNotificationScreen({ navigation, route }) {
   );
 }
 
+/* ================= HELPERS ================= */
+const getIcon = (type) => {
+  switch (type) {
+    case "reward":
+      return "gift-outline";
+    case "document":
+      return "document-text-outline";
+    case "ride":
+      return "car-outline";
+    case "promotion":
+      return "pricetag-outline";
+    default:
+      return "notifications-outline";
+  }
+};
+
+const formatDate = (date) => {
+  const d = new Date(date);
+  return d.toLocaleDateString() + " • " + d.toLocaleTimeString();
+};
+
 /* ================= STYLES ================= */
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.white,
-  },
-
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 0.5,
-    borderBottomColor: "#E5E7EB",
-  },
-
-  backBtn: {
-    width: 44,
-    height: 44,
-    justifyContent: "center",
-  },
-
-  headerTitle: {
-    ...Typography.h2,
-    fontSize: 26,
-    fontWeight: "700",
-    color: Colors.primary,
-    flex: 1,
-    textAlign: "center",
-  },
-
-  clearText: {
-    fontSize: 14,
-    color: Colors.orange1,
-    fontWeight: "700",
   },
 
   list: {

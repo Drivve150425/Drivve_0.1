@@ -6,6 +6,8 @@ import {
   TouchableOpacity,
   ScrollView,
   StatusBar,
+    KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
@@ -26,34 +28,41 @@ export default function LegalScreen({ navigation }) {
       screen: 'PrivacyPolicy',
     },
   ];
-
+const handleBack = () => {
+    navigation.goBack();
+  };
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
-
-      {/* ===== HEADER (UNCHANGED) ===== */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.modernBackButton}
-          onPress={() => navigation.goBack()}
-        >
-          <MaterialIcons
-            name="arrow-back-ios"
-            size={28}
-            color={Colors.orange1}
-          />
-        </TouchableOpacity>
-
-        <Text style={styles.headerTitle}>Legal</Text>
-        <View style={styles.headerSpacer} />
-      </View>
+     <SafeAreaView style={styles.container}>
+                                     <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
+                                     
+                                     <KeyboardAvoidingView
+                                       style={styles.keyboardAvoidingView}
+                                       behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+                                     >
+                                       {/* Header */}
+                                       <View style={styles.header}>
+                                         <TouchableOpacity style={styles.modernBackButton} onPress={handleBack}>
+                                           <MaterialIcons name="arrow-back-ios" size={28} color={Colors.secondary} />
+                                         </TouchableOpacity>
+                                         <Text style={styles.headerTitle}>Legal</Text>
+                                         <View style={styles.headerSpacer} />
+                                       </View>
 
       {/* ===== CONTENT ===== */}
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
+        
         <View style={styles.mainCard}>
+          
+           <View style={styles.infoBox}>
+            <MaterialIcons name="info" size={20} color={Colors.primary} />
+            <Text style={styles.infoText}>
+              These documents explain your rights, responsibilities,
+              and how we handle and protect your data.
+            </Text>
+          </View>
           <Text style={styles.sectionTitle}>Legal Documents</Text>
           <Text style={styles.sectionSubtitle}>
             Review our terms, policies, and agreements
@@ -84,7 +93,7 @@ export default function LegalScreen({ navigation }) {
                 <MaterialIcons
                   name="chevron-right"
                   size={26}
-                  color={Colors.dark}
+                  color={Colors.orange1}
                   style={{ opacity: 0.4 }}
                 />
               </TouchableOpacity>
@@ -92,15 +101,10 @@ export default function LegalScreen({ navigation }) {
           </View>
 
           {/* INFO */}
-          <View style={styles.infoBox}>
-            <MaterialIcons name="info" size={20} color={Colors.primary} />
-            <Text style={styles.infoText}>
-              These documents explain your rights, responsibilities,
-              and how we handle and protect your data.
-            </Text>
-          </View>
+         
         </View>
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -113,33 +117,38 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
   },
 
-  /* HEADER */
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 0.5,
-    borderBottomColor: '#F3F4F6',
-  },
-  modernBackButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  headerTitle: {
-    ...Typography.h2,
-    fontSize: 28,
-    fontWeight: '700',
-    color: Colors.primary,
-    flex: 1,
-    textAlign: 'center',
-  },
-  headerSpacer: {
-    width: 44,
-  },
+ 
+  keyboardAvoidingView: {
+     flex: 1,
+   },
+   header: {
+     flexDirection: 'row',
+     alignItems: 'center',
+     paddingHorizontal: 16,
+     paddingVertical: 12,
+     borderBottomWidth: 0.5,
+     borderBottomColor: '#F3F4F6',
+   },
+   modernBackButton: {
+     width: 44,
+     height: 44,
+     borderRadius: 22,
+     justifyContent: 'center',
+     alignItems: 'center',
+   },
+   headerTitle: {
+     ...Typography.h2,
+     fontSize: 28,
+     fontWeight: '700',
+     color: Colors.primary,
+     flex: 1,
+     textAlign: 'center',
+   },
+   headerSpacer: {
+     width: 44,
+   },
+
+
 
   scrollContent: {
     paddingHorizontal: 20,
@@ -158,18 +167,20 @@ const styles = StyleSheet.create({
     shadowRadius: 14,
     shadowOffset: { width: 0, height: 8 },
     elevation: 4,
+    bottom:10
   },
 
   sectionTitle: {
     fontSize: 18,
     fontWeight: '700',
     color: Colors.primary,
+    top:10
   },
   sectionSubtitle: {
     fontSize: 15,
     color: Colors.dark,
     opacity: 0.7,
-    marginTop: 6,
+    marginTop: 15,
     marginBottom: 20,
   },
 
@@ -207,9 +218,9 @@ const styles = StyleSheet.create({
 
   legalTitle: {
     flex: 1,
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '600',
-    color: Colors.dark,
+    color: Colors.primary,
   },
 
   /* INFO */

@@ -26,8 +26,10 @@ import * as ImagePicker from 'expo-image-picker';
 import EmailOTPModal from '../components/EmailOTPModal';
 import { useFocusEffect } from "@react-navigation/native";
 import { useCallback } from "react";
+import { ImageStyle } from 'react-native';
+import DatabaseService from "../services/myprofile_ds";
+import createDatabaseService from "../services/createprofile_ds";
 
-import DatabaseService from "../services/DatabaseService";
 import { Colors, Typography } from "../constants/Colors";
 import { STATES, getCitiesByState } from "../constants/IndianStatesData";
 import CustomAlert from '../components/CustomAlert';
@@ -41,10 +43,9 @@ const { width, height } = Dimensions.get("window");
 
 
 export default function MyProfileScreen({ navigation, route })  {
-  const { user } = useAuth();
-  const phoneNumber = user?.phone_number;
   const scrollViewRef = useRef<ScrollView>(null);
-
+  const { user } = useAuth();
+  const phoneFromRoute = user?.phone_number;
   // Animation refs
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
@@ -67,7 +68,7 @@ export default function MyProfileScreen({ navigation, route })  {
     setIsEmailLoading(true);
 
     try {
-      const res = await DatabaseService.sendEmailOTP(currentValue);
+      const res = await createDatabaseService.sendEmailOTP(currentValue);
       if (res?.success) {
         setShowEmailOTPModal(true);
       } else {
@@ -91,7 +92,7 @@ export default function MyProfileScreen({ navigation, route })  {
   setEmailVerificationError('');
 
   try {
-    const res = await DatabaseService.verifyEmailOTP(currentValue, otp);
+    const res = await createDatabaseService.verifyEmailOTP(currentValue, otp);
 
     if (res?.success) {
       setIsEmailVerified(true);
@@ -99,7 +100,7 @@ export default function MyProfileScreen({ navigation, route })  {
 
       // Save verified email
       DatabaseService.updateUserProfile({
-        phone_number: phoneNumber,
+        phone_number: phoneFromRoute,
         email: currentValue.trim(),
         email_verified: true,
       });
@@ -191,9 +192,12 @@ export default function MyProfileScreen({ navigation, route })  {
 
   /* ================= FETCH PROFILE FROM DB ================= */
   useEffect(() => {
-    if (!phoneNumber) return;
+    if (!phoneFromRoute) {
+      console.log("❌ No phone number passed to MyProfileScreen");
+      return;
+    }
 
-    DatabaseService.getUserProfile(phoneNumber)
+    DatabaseService.getUserProfile(phoneFromRoute)
       .then((res) => {
         if (res?.success && res.user) {
           const u = res.user;
@@ -228,7 +232,7 @@ export default function MyProfileScreen({ navigation, route })  {
       .catch((err) => {
         console.log("❌ Profile fetch error:", err);
       });
-  }, [phoneNumber]);
+  }, [phoneFromRoute]);
 
   // Age from DOB
   const calculateAge = (dob: string) => {
@@ -342,7 +346,7 @@ const isEmpty = (value?: string) => !value || value.trim() === "";
 
   // ---------- BACKEND PAYLOAD ----------
   const payload = {
-    phone_number: phoneNumber,
+    phone_number: phoneFromRoute,
     ...(currentField === "firstName" && { first_name: currentValue.trim() }),
     ...(currentField === "lastName" && { last_name: currentValue.trim() }),
     ...(currentField === "emailID" && { email: currentValue.trim() }),
@@ -381,7 +385,7 @@ const handleGenderSelect = (gender: string) => {
   setShowGenderModal(false);
 
   DatabaseService.updateUserProfile({
-    phone_number: phoneNumber,
+    phone_number: phoneFromRoute,
     gender,
   })
     .then(() => showProfileUpdateSuccess())
@@ -404,7 +408,7 @@ const handleStateSelect = (state: string) => {
   setShowStateModal(false);
 
   DatabaseService.updateUserProfile({
-    phone_number: phoneNumber,
+    phone_number: phoneFromRoute,
     state,
     city: "",
   })
@@ -424,7 +428,7 @@ const handleCitySelect = (city: string) => {
   setShowCityModal(false);
 
   DatabaseService.updateUserProfile({
-    phone_number: phoneNumber,
+    phone_number: phoneFromRoute,
     city,
   })
     .then(() => showProfileUpdateSuccess())
@@ -470,7 +474,7 @@ const handleDateConfirm = (date: Date) => {
   }));
 
   DatabaseService.updateUserProfile({
-    phone_number: phoneNumber,
+    phone_number: phoneFromRoute,
     date_of_birth: formatted,
   })
     .then(() => {
@@ -506,25 +510,33 @@ const takePhoto = async () => {
       aspect: [1, 1],
       quality: 0.8,
     });
+if (!result.canceled && result.assets[0]) {
 
-    if (!result.canceled && result.assets[0]) {
-      setProfileImage(result.assets[0]);
-      setSelectedAvatar(null);
+   const image = result.assets[0];
 
-      DatabaseService.updateUserProfile({
-        phone_number: phoneNumber,
-        profile_picture: result.assets[0].uri,
-      })
-        .then(() => showProfileUpdateSuccess())
-        .catch(() => {
-          setAlertMessage("Failed to update profile picture");
-          setShowErrorAlert(true);
-        });
+   setProfileImage(image);
+   setSelectedAvatar(null);
 
-      if (Platform.OS !== "web") {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      }
-    }
+   const res = await DatabaseService.updateProfilePicture(
+       phoneFromRoute,
+       image.uri
+   );
+
+   if(res?.success){
+
+      setProfileData(prev => ({
+        ...prev,
+        image: res.profile_picture
+      }));
+
+      showProfileUpdateSuccess();
+
+   } else {
+      setAlertMessage("Failed to update profile picture");
+      setShowErrorAlert(true);
+   }
+}
+
   } catch {
     setAlertMessage("Failed to open camera");
     setShowErrorAlert(true);
@@ -549,24 +561,33 @@ const takePhoto = async () => {
       quality: 0.8,
     });
 
-    if (!result.canceled && result.assets[0]) {
-      setProfileImage(result.assets[0]);
-      setSelectedAvatar(null);
+   if (!result.canceled && result.assets[0]) {
 
-      DatabaseService.updateUserProfile({
-        phone_number: phoneNumber,
-        profile_picture: result.assets[0].uri,
-      })
-        .then(() => showProfileUpdateSuccess())
-        .catch(() => {
-          setAlertMessage("Failed to update profile picture");
-          setShowErrorAlert(true);
-        });
+   const image = result.assets[0];
 
-      if (Platform.OS !== "web") {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      }
-    }
+   setProfileImage(image);
+   setSelectedAvatar(null);
+
+   const res = await DatabaseService.updateProfilePicture(
+       phoneFromRoute,
+       image.uri
+   );
+
+   if(res?.success){
+
+      setProfileData(prev => ({
+        ...prev,
+        image: res.profile_picture
+      }));
+
+      showProfileUpdateSuccess();
+
+   } else {
+      setAlertMessage("Failed to update profile picture");
+      setShowErrorAlert(true);
+   }
+}
+
   } catch {
     setAlertMessage("Failed to open gallery");
     setShowErrorAlert(true);
@@ -576,7 +597,7 @@ const takePhoto = async () => {
 
   const renderProfileImage = () => {
     if (profileImage) {
-      return <Image source={{ uri: profileImage.uri }} style={styles.profileImage} />;
+      return <Image source={{ uri: profileImage.uri }} style={styles.profileImage as ImageStyle} />;
     } else if (selectedAvatar) {
       const Icon = selectedAvatar.component;
       if (Icon) {
@@ -584,7 +605,7 @@ const takePhoto = async () => {
       }
       return <Text style={styles.avatarPreview}>{selectedAvatar.emoji || selectedAvatar.name || selectedAvatar.id}</Text>;
     } else if (profileData.image) {
-      return <Image source={{ uri: profileData.image }} style={styles.profileImage} />;
+      return <Image source={{ uri: profileData.image }} style={styles.profileImage as ImageStyle} />;
     } else {
       return <MaterialIcons name="add-a-photo" size={45} color={Colors.white} />;
     }
@@ -742,8 +763,16 @@ const takePhoto = async () => {
   activeOpacity={0.85}
 >
   <View style={styles.profileImageWrapper}>
-    {renderProfileImage()}
+  {renderProfileImage()}
+
+  {/* Transparent Overlay */}
+  <View style={styles.imageOverlay} />
+
+  {/* Center Pencil Icon */}
+  <View style={styles.editIconContainer}>
+    <MaterialIcons name="edit" size={22} color={Colors.white} />
   </View>
+</View>
 
   <View style={styles.profileInfo}>
     <Text style={styles.profileName}>{profileData.name}</Text>
@@ -816,7 +845,7 @@ const takePhoto = async () => {
         visible={showGenderModal}
         onClose={() => setShowGenderModal(false)}
         title="Select Gender"
-        data={['Male', 'Female', 'Prefer Not To Say', 'Other']}
+        data={['Male', 'Female', 'Prefer Not To Say']}
         onSelect={handleGenderSelect}
         selectedValue={profileData.gender}
       />
@@ -1048,7 +1077,7 @@ const takePhoto = async () => {
     setProfileImage(null);
 
     DatabaseService.updateUserProfile({
-      phone_number: phoneNumber,
+      phone_number: phoneFromRoute,
       avatar: avatar.id,
     })
       .then(() => showProfileUpdateSuccess())
@@ -1099,7 +1128,7 @@ const styles = StyleSheet.create({
   keyboardAvoidingView: {
     flex: 1,
   },
-  header: {
+   header: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
@@ -1135,6 +1164,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 40,
   },
+  imageOverlay: {
+  ...StyleSheet.absoluteFillObject,
+  backgroundColor: "rgba(0,0,0,0.3)", // transparent dark layer
+  borderRadius: 40,
+},
+
+editIconContainer: {
+  position: "absolute",
+  top: "50%",
+  left: "50%",
+  transform: [{ translateX: -18 }, { translateY: -18 }],
+  padding: 8,
+  borderRadius: 20,
+  justifyContent: "center",
+  alignItems: "center",
+},
   profileImageContainer: {
     width: 140,
     height: 140,
@@ -1176,11 +1221,12 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     ...Typography.h2,
-    marginLeft: 0,
+    marginLeft: 5,
     marginTop: 0,
-    marginBottom: 20,
+    marginBottom: 5,
     color: Colors.primary,
   },
+  
   infoCard: {
     backgroundColor: Colors.white,
     marginHorizontal: 0,
@@ -1227,6 +1273,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 20,
+    bottom:14
   },
   ageBadgeText: {
     fontSize: 12,
@@ -1435,7 +1482,7 @@ const styles = StyleSheet.create({
   backgroundColor: Colors.white,
   padding: 16,
   borderRadius: 20,
-  marginBottom: 30,
+  marginBottom: 15,
   borderWidth: 1.5,
   borderColor: '#E5E7EB',
   shadowColor: '#000',
@@ -1446,9 +1493,9 @@ const styles = StyleSheet.create({
 },
 
 profileImageWrapper: {
-  width: 80,
-  height: 80,
-  borderRadius: 40,
+  width: 70,
+  height: 70,
+  borderRadius: 35,
   overflow: 'hidden',
   marginRight: 16,
   backgroundColor: '#F3F4F6',
@@ -1461,14 +1508,14 @@ profileInfo: {
 },
 
 profileName: {
-  fontSize: 20,
+  fontSize: 24,
   fontWeight: '700',
   color: Colors.primary,
 },
 
 profileMember: {
   marginTop: 4,
-  fontSize: 18,
+  fontSize: 16,
   color: Colors.gray,
 },
 centerModalOverlay: {

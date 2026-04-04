@@ -4,15 +4,14 @@ from sqlalchemy.orm import sessionmaker
 import os
 
 # Database configuration - CORRECTED
-POSTGRES_USER = "postgres"
-POSTGRES_PASSWORD = "Drivve"  # Your actual password ✅
-POSTGRES_SERVER = "localhost"  # Changed from "db" to "localhost" 
-POSTGRES_PORT = "5432"
-POSTGRES_DB = "drivve_db"  # Your database name ✅
+POSTGRES_USER = "postgres.stohdpgkkhdfrvfwcrzd"
+POSTGRES_PASSWORD = "Shandrivve2026"  # Your actual password ✅
+POSTGRES_SERVER = "aws-1-ap-southeast-2.pooler.supabase.com"  # Changed from "db" to "localhost" 
+POSTGRES_PORT = "6543"
+POSTGRES_DB = "postgres"  # Your database name ✅
 
 # Create database URL
-DATABASE_URL = f"postgresql://postgres:Drivve@localhost:5432/drivve_db"
-
+DATABASE_URL=f"postgresql://postgres.stohdpgkkhdfrvfwcrzd:Shandrivve2026@aws-1-ap-southeast-2.pooler.supabase.com:6543/postgres"
 print(f"🔗 DATABASE_URL: {DATABASE_URL}")  # For debugging
 
 # Create engine

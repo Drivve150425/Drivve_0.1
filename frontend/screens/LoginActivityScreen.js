@@ -7,18 +7,19 @@ import {
   ScrollView,
   StatusBar,
   Alert,
+   KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { Colors, Typography } from '../constants/Colors';
-import DatabaseService from '../services/DatabaseService';
+import DatabaseService from '../services/loginactivity_ds';
 import { useAuth } from '../context/AuthContext';
 
 export default function DeviceManagementScreen({ navigation, route }) {
   const { user } = useAuth();
   const phoneNumber = user?.phone_number;
-  
-  const [devices, setDevices] = useState([]);
+   const [devices, setDevices] = useState([]);
   const [loading, setLoading] = useState(true);
 
   /* ================= LOAD DEVICES ================= */
@@ -100,31 +101,35 @@ export default function DeviceManagementScreen({ navigation, route }) {
       ]
     );
   };
-
+const handleBack = () => {
+    navigation.goBack();
+  };
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
-
-      {/* HEADER */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.modernBackButton}
-          onPress={() => navigation.goBack()}
-        >
-          <MaterialIcons
-            name="arrow-back-ios"
-            size={28}
-            color={Colors.orange1}
-          />
-        </TouchableOpacity>
-
-        <Text style={styles.headerTitle}>Device Management</Text>
-        <View style={styles.headerSpacer} />
-      </View>
+     <SafeAreaView style={styles.container}>
+                                             <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
+                                             
+                                             <KeyboardAvoidingView
+                                               style={styles.keyboardAvoidingView}
+                                               behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+                                             >
+                                               {/* Header */}
+                                               <View style={styles.header}>
+                                                 <TouchableOpacity style={styles.modernBackButton} onPress={handleBack}>
+                                                   <MaterialIcons name="arrow-back-ios" size={28} color={Colors.secondary} />
+                                                 </TouchableOpacity>
+                                                 <Text style={styles.headerTitle}>Login Activity</Text>
+                                                 <View style={styles.headerSpacer} />
+                                               </View>
 
       {/* CONTENT */}
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.mainCard}>
+           <View style={styles.infoBox}>
+            <MaterialIcons name="info" size={20} color={Colors.primary} />
+            <Text style={styles.infoText}>
+              Logging out will require you to sign in again on that device.
+            </Text>
+          </View>
           <Text style={styles.sectionTitle}>Active Sessions</Text>
           <Text style={styles.sectionSubtitle}>
             Manage devices where you’re currently signed in
@@ -182,20 +187,16 @@ export default function DeviceManagementScreen({ navigation, route }) {
             onPress={handleLogoutAll}
             disabled={devices.filter(d => !d.current).length === 0}
           >
-            <MaterialIcons name="logout" size={20} color="#D32F2F" />
+            <MaterialIcons name="logout" size={20} color={Colors.white}/>
             <Text style={styles.logoutAllText}>
               Log out of all other devices
             </Text>
           </TouchableOpacity>
 
-          <View style={styles.infoBox}>
-            <MaterialIcons name="info" size={20} color={Colors.primary} />
-            <Text style={styles.infoText}>
-              Logging out will require you to sign in again on that device.
-            </Text>
-          </View>
+         
         </View>
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -209,32 +210,36 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
   },
 
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 0.5,
-    borderBottomColor: '#F3F4F6',
-  },
-  modernBackButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  headerTitle: {
-    ...Typography.h2,
-    fontSize: 28,
-    fontWeight: '700',
-    color: Colors.primary,
-    flex: 1,
-    textAlign: 'center',
-  },
-  headerSpacer: {
-    width: 44,
-  },
+  keyboardAvoidingView: {
+     flex: 1,
+   },
+   header: {
+     flexDirection: 'row',
+     alignItems: 'center',
+     paddingHorizontal: 16,
+     paddingVertical: 12,
+     borderBottomWidth: 0.5,
+     borderBottomColor: '#F3F4F6',
+   },
+   modernBackButton: {
+     width: 44,
+     height: 44,
+     borderRadius: 22,
+     justifyContent: 'center',
+     alignItems: 'center',
+   },
+   headerTitle: {
+     ...Typography.h2,
+     fontSize: 28,
+     fontWeight: '700',
+     color: Colors.primary,
+     flex: 1,
+     textAlign: 'center',
+   },
+   headerSpacer: {
+     width: 44,
+   },
+
 
   scrollContent: {
     paddingHorizontal: 20,
@@ -259,13 +264,15 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     color: Colors.primary,
+    top:10
   },
   sectionSubtitle: {
-    fontSize: 15,
+    fontSize: 16,
     color: Colors.dark,
     opacity: 0.7,
-    marginTop: 6,
+    marginTop: 12,
     marginBottom: 20,
+
   },
 
   deviceItem: {
@@ -321,12 +328,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 8,
-    backgroundColor: '#FFEBEE',
+    backgroundColor: Colors.primary,
   },
   logoutText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#D32F2F',
+    color: Colors.white,
   },
 
   logoutAllButton: {
@@ -336,9 +343,9 @@ const styles = StyleSheet.create({
     gap: 8,
     padding: 16,
     borderRadius: 12,
-    backgroundColor: '#FFEBEE',
+    backgroundColor:Colors.primary,
     borderWidth: 1,
-    borderColor: '#FFCDD2',
+    borderColor: Colors.primary,
     marginTop: 20,
     marginBottom: 24,
   },
@@ -348,7 +355,7 @@ const styles = StyleSheet.create({
   logoutAllText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#D32F2F',
+    color: Colors.white,
   },
 
   infoBox: {

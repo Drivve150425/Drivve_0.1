@@ -258,7 +258,7 @@ interface Coordinate {
   longitude: number;
 }
 
-const API_BASE = "http://192.168.1.2:8000";
+import { API_BASE_URL } from "../config/config_ip";
 
 export default function RouteScreen() {
 
@@ -286,7 +286,7 @@ export default function RouteScreen() {
   const searchLocation = async (text: string) => {
     if (text.length < 3) return;
 
-    const res = await axios.post(`${API_BASE}/search-location`, {
+    const res = await axios.post(`${API_BASE_URL}/search-location`, {
       query: text
     });
 
@@ -336,7 +336,7 @@ export default function RouteScreen() {
       return;
     }
 
-    const res = await axios.post(`${API_BASE}/get-route`, {
+    const res = await axios.post(`${API_BASE_URL}/get-route`, {
       from_coords: [fromCoords.longitude, fromCoords.latitude],
       to_coords: [toCoords.longitude, toCoords.latitude]
     });

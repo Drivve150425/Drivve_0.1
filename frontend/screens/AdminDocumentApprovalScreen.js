@@ -22,7 +22,7 @@ import DatabaseService from "../services/DatabaseService";
 const { width, height } = Dimensions.get("window");
 const isSmallScreen = width < 375;
 
-const BASE_URL = process.env.EXPO_PUBLIC_API_URL;
+import { API_BASE_URL } from "../config/config_ip";
 
 
 export default function AdminApprovalScreen({ navigation, route }) {
@@ -152,14 +152,14 @@ export default function AdminApprovalScreen({ navigation, route }) {
     }
     
     if (imagePath.startsWith('/uploads')) {
-      return `${BASE_URL}${imagePath}`;
+      return `${API_BASE_URL}${imagePath}`;
     }
     
     if (imagePath.startsWith('uploads')) {
-      return `${BASE_URL}/${imagePath}`;
+      return `${API_BASE_URL}/${imagePath}`;
     }
     
-    return `${BASE_URL}/uploads/${imagePath}`;
+    return `${API_BASE_URL}/uploads/${imagePath}`;
   };
 
   const getDocumentTypeName = (type) => {

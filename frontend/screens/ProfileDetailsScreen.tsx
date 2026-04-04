@@ -9,50 +9,72 @@ import {
   Text,
   TouchableOpacity,
   View,
-  Dimensions,
-  SafeAreaView,
-} from "react-native";
-import DatabaseService from "../services/DatabaseService";
+  KeyboardAvoidingView,
+   Platform,
+  Dimensions} from "react-native";
+import DatabaseService from "../services/myprofile_ds";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Animatable from "react-native-animatable";
 import { ImageBackground } from "react-native";
 import { Colors, Typography } from '../constants/Colors';
 import { MaterialIcons } from '@expo/vector-icons';
-import React, { useCallback } from "react";
+import React, {useCallback} from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { CommonActions } from "@react-navigation/native";
 import { Alert } from "react-native";
-import { useAuth } from "../context/AuthContext";
 const { width, height } = Dimensions.get('window');
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useAuth } from "../context/AuthContext";
 
-/* ================= NAVIGATION TYPE ================= */
 type RootStackParamList = {
-  MyVehicleScreen: undefined;
-  SavedAddressScreen: undefined;
-  DocumentVerificationScreen: undefined;
-  MatchingPreferenceScreen: undefined;
-  EmergencyContactsscreen: undefined;
+  MyVehicleScreen: { phoneNumber: string };
+  SavedAddressScreen: { phoneNumber: string };
+  DocumentVerificationScreen: { phoneNumber: string };
+  MatchingPreferenceScreen: { phoneNumber: string };
+  EmergencyContactsscreen: { phoneNumber: string };
   PaymentScreen: undefined;
-  DCoinScreen: undefined;
-  RewardsScreen: undefined;
+  DCoinScreen: { phoneNumber: string };
+  RewardsScreen: { phoneNumber: string };
   ReferEarn: undefined;
-  ShareAppScreen: undefined;
+  ShareAppScreen: { phoneNumber: string };
   AboutUsScreen: undefined;
-  PromotionScreen: undefined;
-  Settings: undefined;
+  PromotionScreen: { phoneNumber: string };
+  Settings: { phoneNumber: string };
   HelpSupportScreen: undefined;
-  myprofilescreen: undefined;
+  myprofilescreen: { phoneNumber: string };
   AdminDocumentApprovalScreen: undefined;
-  FeedbackScreen: undefined;
-  RideFeedbackScreen: undefined;
+  FeedbackScreen: { phoneNumber: string };
+  RideFeedbackScreen: { phoneNumber: string };
 };
+import { NativeStackScreenProps } from "@react-navigation/native-stack";
+type Props = NativeStackScreenProps<RootStackParamList, "myprofilescreen">;
+type ScreensWithPhone =
+  | "MyVehicleScreen"
+  | "SavedAddressScreen"
+  | "DocumentVerificationScreen"
+  | "MatchingPreferenceScreen"
+  | "EmergencyContactsscreen"
+  | "DCoinScreen"
+  | "RewardsScreen"
+  | "ShareAppScreen"
+  | "PromotionScreen"
+  | "Settings"
+  | "FeedbackScreen"
+  | "RideFeedbackScreen";
 
-export default function ProfileScreen({ navigation, route }) {
-  const scrollViewRef = useRef(null);
+type ScreensWithoutPhone =
+  | "PaymentScreen"
+  | "ReferEarn"
+  | "AboutUsScreen"
+  | "HelpSupportScreen"
+  | "AdminDocumentApprovalScreen";
+export default function ProfileScreen({ navigation, route }: Props) {
+    const scrollViewRef = useRef(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
+  const [profileImage, setProfileImage] = useState(null);
 
-  // ✅ Use AuthContext for session management
+ // ✅ Use AuthContext for session management
   const { user, logout: authLogout } = useAuth();
 
   /* ✅ Get phone from route params or AuthContext */
@@ -74,8 +96,7 @@ const handleLogout = () => {
         text: "Logout",
         style: "destructive",
         onPress: async () => {
-          // ✅ Use AuthContext logout
-          await authLogout();
+         await authLogout();
           navigation.dispatch(
             CommonActions.reset({
               index: 0,
@@ -87,20 +108,26 @@ const handleLogout = () => {
     ]
   );
 };
-
 const loadProfile = async () => {
   try {
-    // ✅ Use phone from AuthContext as fallback
     const phoneToUse = phoneFromRouteOrAuth;
     if (!phoneToUse) return;
 
     const res = await DatabaseService.getUserProfile(phoneToUse);
 
     if (res?.success && res.user) {
+
       setUserName(res.user.full_name || "User");
 
       const dbPhone = res.user.phone_number || "";
       setPhoneNumber(dbPhone.startsWith("+") ? dbPhone : `+91 ${dbPhone}`);
+
+      // ✅ SET PROFILE IMAGE
+      if (res.user.profile_picture) {
+        setProfileImage(res.user.profile_picture);
+        console.log("PROFILE IMAGE:", res.user.profile_picture);
+      }
+
     }
   } catch (err) {
     console.log("Profile fetch error:", err);
@@ -134,7 +161,7 @@ useFocusEffect(
   }[] = [
     { title: "D-coins", icon: "diamond-outline", screen: "DCoinScreen" },
     { title: "Rewards", icon: "gift-outline", screen: "RewardsScreen" },
-    // {title:"Ride Feedback", icon:"chatbox-ellipses-outline", screen:"RideFeedbackScreen"},
+    {title:"Ride Feedback", icon:"chatbox-ellipses-outline", screen:"RideFeedbackScreen"},
   ];
 
   const otherItems: {
@@ -145,7 +172,7 @@ useFocusEffect(
     { title: "Refer & Earn", icon: "person-add-outline", screen: "ShareAppScreen" },
     { title: "About Us", icon: "information-circle-outline", screen: "AboutUsScreen" },
     { title: "Promotions & Offers", icon: "pricetags-outline", screen: "PromotionScreen" },
-    { title: "Account Settings", icon: "cog-outline", screen: "Settings" },
+    { title: "Settings", icon: "cog-outline", screen: "Settings" },
     { title: "Help & Support", icon: "help-circle-outline", screen: "HelpSupportScreen" },
         {title:"Feedback", icon:"chatbubbles-outline", screen:"FeedbackScreen"},
 
@@ -156,63 +183,32 @@ useFocusEffect(
     setShowScrollTop(scrollY > 200);
   };
 
- const handleMenuItemPress = (screen) => {
-  if (screen === "ShareAppScreen") {
-    navigation.navigate("ShareAppScreen", {
-      phoneNumber: phoneNumber, // ✅ PASS IT HERE
-    });
+ const handleMenuItemPress = (screen: keyof RootStackParamList) => {
+  const screensWithPhone: ScreensWithPhone[] = [
+    "MyVehicleScreen",
+    "SavedAddressScreen",
+    "DocumentVerificationScreen",
+    "MatchingPreferenceScreen",
+    "EmergencyContactsscreen",
+    "DCoinScreen",
+    "RewardsScreen",
+    "ShareAppScreen",
+    "PromotionScreen",
+    "Settings",
+    "FeedbackScreen",
+    "RideFeedbackScreen",
+  ];
 
-  } 
-  if ( screen === "SavedAddressScreen") {
-    navigation.navigate("SavedAddressScreen", {
-      phoneNumber: phoneNumber, // ✅ PASS IT HERE
-    });
-  }
-  if ( screen === "MyVehicleScreen") {
-    navigation.navigate("MyVehicleScreen", {
-      phoneNumber: phoneNumber, // ✅ PASS IT HERE
-    });}
-  if ( screen === "EmergencyContactsscreen") {
-    navigation.navigate("EmergencyContactsscreen", {
-      phoneNumber: phoneNumber, // ✅ PASS IT HERE
-    });}
-   if ( screen === "PromotionScreen") {
-    navigation.navigate("PromotionScreen", {
-      phoneNumber: phoneNumber, // ✅ PASS IT HERE
-    });}
-    if ( screen === "DCoinScreen") {
-    navigation.navigate("DCoinScreen", {
-      phoneNumber: phoneNumber, // ✅ PASS IT HERE
-    });}
-    if ( screen === "RewardsScreen") {
-    navigation.navigate("RewardsScreen", {
-      phoneNumber: phoneNumber, // ✅ PASS IT HERE
-    });}
-     if ( screen === "DocumentVerificationScreen") {
-    navigation.navigate("DocumentVerificationScreen", {
-      phoneNumber: phoneNumber, // ✅ PASS IT HERE
-    });}
-     if ( screen === "MatchingPreferenceScreen") {
-    navigation.navigate("MatchingPreferenceScreen", {
-      phoneNumber: phoneNumber, // ✅ PASS IT HERE
-    });}
-      if ( screen === "Settings") {
-    navigation.navigate("Settings", {
-      phoneNumber: phoneNumber, // ✅ PASS IT HERE
-    });}
-    if ( screen === "FeedbackScreen") {
-    navigation.navigate("FeedbackScreen", {
-      phoneNumber: phoneNumber, // ✅ PASS IT HERE
-    });
-    }if ( screen === "RideFeedbackScreen") {
-    navigation.navigate("RideFeedbackScreen", {
-      phoneNumber: phoneNumber, // ✅ PASS IT HERE
-    });
-  }else {
-    navigation.navigate(screen);
+  if (screensWithPhone.includes(screen as ScreensWithPhone)) {
+    navigation.navigate(screen as ScreensWithPhone, { phoneNumber });
+  } else {
+    navigation.navigate(screen as ScreensWithoutPhone);
   }
 };
 
+  const handleBack = () => {
+    navigation.goBack();
+  };
 
   const handleEditProfile = () => {
     navigation.navigate("myprofilescreen", {
@@ -223,18 +219,18 @@ useFocusEffect(
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
-      
+       <KeyboardAvoidingView
+              style={styles.keyboardAvoidingView}
+              behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+            >
       {/* Header - Moved down slightly */}
-      <View style={styles.headerContainer}>
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.modernBackButton} onPress={() => navigation.navigate('Home')}>
-            <MaterialIcons name="arrow-back-ios" size={28} color={Colors.orange1} />
+      <View style={styles.header}>
+          <TouchableOpacity style={styles.modernBackButton} onPress={handleBack}>
+            <MaterialIcons name="arrow-back-ios" size={28} color={Colors.secondary} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Profile</Text>
           <View style={styles.headerSpacer} />
         </View>
-      </View>
-
       <ScrollView
         ref={scrollViewRef}
         showsVerticalScrollIndicator={false}
@@ -264,12 +260,15 @@ useFocusEffect(
                 end={{ x: 1, y: 1 }}
                 style={styles.profileImageCircle}
               >
-                <Image
-                  source={{
-                    uri: "https://cdn-icons-png.flaticon.com/512/3011/3011270.png",
-                  }}
+               <Image
+                  source={
+                    profileImage
+                      ? { uri: profileImage }
+                      : require("../assets/icon.png") // optional fallback
+                  }
                   style={styles.profileImage}
                 />
+
               </LinearGradient>
 
               {/* Edit icon overlay */}
@@ -389,7 +388,10 @@ useFocusEffect(
           </View>
         </View>
       </ScrollView>
+</KeyboardAvoidingView>
+
     </SafeAreaView>
+    
   );
 }
 
@@ -398,10 +400,13 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.white,
   },
+   keyboardAvoidingView: {
+    flex: 1,
+  },
   headerContainer: {
     paddingTop: 30, // Added padding to move header down slightly
   },
-  header: {
+ header: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,

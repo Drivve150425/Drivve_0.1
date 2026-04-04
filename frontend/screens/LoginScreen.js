@@ -22,10 +22,8 @@ import { getDefaultCountry } from '../constants/CountryData';
 import FirebaseAuthService from '../services/FirebaseAuthService';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import DatabaseService from '../services/DatabaseService';
+import DatabaseService from '../services/loginscreen_ds';
 import { Button } from 'react-native';  // Explicit import
-
-
 
 const { width } = Dimensions.get('window');
 
@@ -357,13 +355,13 @@ export default function LoginScreen({ navigation }) {
           </Animated.View>
           </ScrollView>
           </KeyboardAvoidingView>
-
-          {/* temp. button map testing*/}
+          
+          {/* temp. button map testing
             <Button
               title="🚗 TEST ROUTE SCREEN"
               onPress={() => navigation.navigate('RouteScreen')}  // Or 'Route' if named differently
               color="#007AFF"
-            />
+            />*/}
         
         {/* Terms Section */}
             <View style={styles.termsContainer}>

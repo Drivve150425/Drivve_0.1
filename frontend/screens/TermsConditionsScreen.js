@@ -6,33 +6,33 @@ import {
   ScrollView,
   StatusBar,
   TouchableOpacity,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, Typography } from '../constants/Colors';
 
 export default function TermsConditionsScreen({ navigation }) {
+  const handleBack = () => {
+    navigation.goBack();
+  };
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
-
-      {/* ===== HEADER (UNCHANGED) ===== */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.modernBackButton}
-          onPress={() => navigation.goBack()}
-        >
-          <MaterialIcons
-            name="arrow-back-ios"
-            size={28}
-            color={Colors.orange1}
-          />
-        </TouchableOpacity>
-
-        <Text style={styles.headerTitle}>Terms & Conditions</Text>
-        <View style={styles.headerSpacer} />
-      </View>
-
+                                                     <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
+                                                     
+                                                     <KeyboardAvoidingView
+                                                       style={styles.keyboardAvoidingView}
+                                                       behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+                                                     >
+                                                       {/* Header */}
+                                                       <View style={styles.header}>
+                                                         <TouchableOpacity style={styles.modernBackButton} onPress={handleBack}>
+                                                           <MaterialIcons name="arrow-back-ios" size={28} color={Colors.secondary} />
+                                                         </TouchableOpacity>
+                                                         <Text style={styles.headerTitle}>Terms & Conditions</Text>
+                                                         <View style={styles.headerSpacer} />
+                                                       </View>
       {/* ===== CONTENT ===== */}
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.card}>
@@ -86,6 +86,7 @@ export default function TermsConditionsScreen({ navigation }) {
 
         </View>
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -97,34 +98,35 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.white,
   },
-
-  /* HEADER */
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 0.5,
-    borderBottomColor: '#F3F4F6',
-  },
-  modernBackButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  headerTitle: {
-    ...Typography.h2,
-    fontSize: 26,
-    fontWeight: '700',
-    color: Colors.primary,
-    flex: 1,
-    textAlign: 'center',
-  },
-  headerSpacer: {
-    width: 44,
-  },
+keyboardAvoidingView: {
+     flex: 1,
+   },
+   header: {
+     flexDirection: 'row',
+     alignItems: 'center',
+     paddingHorizontal: 16,
+     paddingVertical: 12,
+     borderBottomWidth: 0.5,
+     borderBottomColor: '#F3F4F6',
+   },
+   modernBackButton: {
+     width: 44,
+     height: 44,
+     borderRadius: 22,
+     justifyContent: 'center',
+     alignItems: 'center',
+   },
+   headerTitle: {
+     ...Typography.h2,
+     fontSize: 28,
+     fontWeight: '700',
+     color: Colors.primary,
+     flex: 1,
+     textAlign: 'center',
+   },
+   headerSpacer: {
+     width: 44,
+   },
 
   /* CONTENT */
   scrollContent: {

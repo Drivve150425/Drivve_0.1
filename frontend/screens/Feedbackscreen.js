@@ -8,24 +8,32 @@ import {
   StatusBar,
   TextInput,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
+  Animated,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Ionicons, MaterialIcons } from "@expo/vector-icons";
-import DatabaseService from "../services/DatabaseService";
+import { Ionicons, MaterialIcons, Feather } from "@expo/vector-icons";
+import DatabaseService from "../services/feedback_ds";
 import { useAuth } from "../context/AuthContext";
 
 /* ================= COLORS ================= */
 import { Colors, Typography } from "../constants/Colors";
 
 const REASONS = [
-  "App is slow",
-  "Bug or crash",
-  "UI is confusing",
-  "Driver issue",
-  "Great experience",
+  { id: "slow", label: "App is slow" },
+  { id: "bug", label: "Bug or crash" },
+  { id: "confusing", label: "UI is confusing"},
+  { id: "driver", label: "Driver issue" },
+  { id: "great", label: "Great experience" },
 ];
 
 export default function FeedbackScreen({ navigation, route }) {
+  const handleBack = () => {
+    navigation.goBack();
+  };
+  
   const { user } = useAuth();
   const phoneNumber = user?.phone_number;
 
@@ -33,6 +41,18 @@ export default function FeedbackScreen({ navigation, route }) {
   const [selectedReason, setSelectedReason] = useState(null);
   const [comment, setComment] = useState("");
   const [loading, setLoading] = useState(false);
+  const [animatedRating] = useState(new Animated.Value(0));
+
+  const handleRatingPress = (star) => {
+    setRating(star);
+    Animated.spring(animatedRating, {
+      toValue: 1,
+      friction: 3,
+      useNativeDriver: true,
+    }).start(() => {
+      animatedRating.setValue(0);
+    });
+  };
 
   /* ================= SUBMIT FEEDBACK ================= */
   const submitFeedback = async () => {
@@ -69,108 +89,158 @@ export default function FeedbackScreen({ navigation, route }) {
     }
   };
 
+  const getRatingText = () => {
+    if (rating === 0) return "Tap to rate";
+    if (rating <= 2) return "We'll do better 🫡";
+    if (rating <= 3) return "Good to know 👍";
+    if (rating <= 4) return "Happy to hear! 😊";
+    return "Amazing! Thank you! 🌟";
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
-
-      {/* ================= HEADER ================= */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.modernBackButton}
-          onPress={() => navigation.goBack()}
-        >
-          <MaterialIcons
-            name="arrow-back-ios"
-            size={26}
-            color={Colors.orange1}
-          />
-        </TouchableOpacity>
-
-        <Text style={styles.headerTitle}>Feedback</Text>
-        <View style={styles.headerSpacer} />
-      </View>
-
-      {/* ================= CONTENT ================= */}
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.mainCard}>
-          {/* Title */}
-          <Text style={styles.sectionTitle}>Rate your experience</Text>
-          <Text style={styles.sectionSubtitle}>
-            Your feedback helps us improve DRIVVE
-          </Text>
-
-          {/* ================= STAR RATING ================= */}
-          <View style={styles.starRow}>
-            {[1, 2, 3, 4, 5].map(star => (
-              <TouchableOpacity
-                key={star}
-                onPress={() => setRating(star)}
-                activeOpacity={0.7}
-              >
-                <Ionicons
-                  name={star <= rating ? "star" : "star-outline"}
-                  size={36}
-                  color={Colors.orange1}
-                />
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* ================= REASONS ================= */}
-          <Text style={styles.label}>Reason (optional)</Text>
-
-          <View style={styles.reasonWrap}>
-            {REASONS.map(reason => (
-              <TouchableOpacity
-                key={reason}
-                style={[
-                  styles.reasonChip,
-                  selectedReason === reason && styles.reasonSelected,
-                ]}
-                onPress={() =>
-                  setSelectedReason(
-                    selectedReason === reason ? null : reason
-                  )
-                }
-              >
-                <Text
-                  style={[
-                    styles.reasonText,
-                    selectedReason === reason &&
-                      styles.reasonTextSelected,
-                  ]}
-                >
-                  {reason}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* ================= COMMENT ================= */}
-          <Text style={styles.label}>Additional feedback</Text>
-          <TextInput
-            placeholder="Write something (optional)"
-            style={styles.input}
-            multiline
-            value={comment}
-            onChangeText={setComment}
-          />
-
-          {/* ================= SUBMIT ================= */}
-          <TouchableOpacity
-            style={[
-              styles.submitBtn,
-              loading && { opacity: 0.6 },
-            ]}
-            onPress={submitFeedback}
-            disabled={loading}
-          >
-            <Text style={styles.submitText}>
-              {loading ? "Submitting..." : "Submit Feedback"}
-            </Text>
+      
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoidingView}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+      >
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.modernBackButton} onPress={handleBack}>
+            <MaterialIcons name="arrow-back-ios" size={28} color={Colors.secondary} />
           </TouchableOpacity>
+          <Text style={styles.headerTitle}>Feedback</Text>
+          <View style={styles.headerSpacer} />
         </View>
-      </ScrollView>
+
+        {/* ================= CONTENT ================= */}
+        <ScrollView 
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.mainCard}>
+            
+
+            {/* Title */}
+            <Text style={styles.sectionTitle}>Rate your experience</Text>
+            <Text style={styles.sectionSubtitle}>
+              Your feedback helps us improve DRIVVE
+            </Text>
+
+            {/* ================= STAR RATING ================= */}
+            <View style={styles.ratingContainer}>
+              <View style={styles.starRow}>
+                {[1, 2, 3, 4, 5].map(star => (
+                  <TouchableOpacity
+                    key={star}
+                    onPress={() => handleRatingPress(star)}
+                    activeOpacity={0.7}
+                    style={styles.starButton}
+                  >
+                    <Animated.View
+                      style={{
+                        transform: [
+                          {
+                            scale: animatedRating.interpolate({
+                              inputRange: [0, 1],
+                              outputRange: [1, 1.2],
+                            }),
+                          },
+                        ],
+                      }}
+                    >
+                      <Ionicons
+                        name={star <= rating ? "star" : "star-outline"}
+                        size={40}
+                        color={star <= rating ? Colors.orange1 : "#E5E7EB"}
+                      />
+                    </Animated.View>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <Text style={styles.ratingFeedbackText}>{getRatingText()}</Text>
+            </View>
+
+            {/* ================= REASONS - Always visible after rating ================= */}
+            {rating > 0 && (
+              <View style={styles.reasonsContainer}>
+                <Text style={styles.label}>Reason (optional)</Text>
+                <View style={styles.reasonWrap}>
+                  {REASONS.map(reason => (
+                    <TouchableOpacity
+                      key={reason.id}
+                      style={[
+                        styles.reasonChip,
+                        selectedReason === reason.label && styles.reasonSelected,
+                      ]}
+                      onPress={() =>
+                        setSelectedReason(
+                          selectedReason === reason.label ? null : reason.label
+                        )
+                      }
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons
+                        name={reason.icon}
+                        size={18}
+                        color={selectedReason === reason.label ? Colors.white : Colors.secondary}
+                        style={styles.reasonIcon}
+                      />
+                      <Text
+                        style={[
+                          styles.reasonText,
+                          selectedReason === reason.label && styles.reasonTextSelected,
+                        ]}
+                      >
+                        {reason.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            )}
+
+            {/* ================= COMMENT - Always visible after rating ================= */}
+            {rating > 0 && (
+              <View style={styles.commentContainer}>
+                <Text style={styles.additionallabel}>Additional feedback</Text>
+                <TextInput
+                  placeholder="Write something (optional)"
+                  placeholderTextColor="#9CA3AF"
+                  style={styles.input}
+                  multiline
+                  value={comment}
+                  onChangeText={setComment}
+                  textAlignVertical="top"
+                />
+              </View>
+            )}
+
+            {/* ================= SUBMIT - Always visible after rating ================= */}
+            {rating > 0 && (
+              <TouchableOpacity
+                style={[
+                  styles.submitBtn,
+                  loading && styles.submitBtnDisabled,
+                ]}
+                onPress={submitFeedback}
+                disabled={loading}
+                activeOpacity={0.8}
+              >
+                {loading ? (
+                  <View style={styles.loadingContainer}>
+                    <ActivityIndicator size="small" color={Colors.white} />
+                    <Text style={styles.submitText}>Submitting...</Text>
+                  </View>
+                ) : (
+                  <Text style={styles.submitText}>Submit Feedback</Text>
+                )}
+              </TouchableOpacity>
+            )}
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -181,131 +251,180 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.white,
   },
-
+  keyboardAvoidingView: {
+    flex: 1,
+  },
   header: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 0.5,
-    borderBottomColor: "#F3F4F6",
+    borderBottomColor: '#F3F4F6',
   },
-
   modernBackButton: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    justifyContent: "center",
-    alignItems: "center",
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-
   headerTitle: {
     ...Typography.h2,
     fontSize: 28,
-    fontWeight: "700",
+    fontWeight: '700',
     color: Colors.primary,
     flex: 1,
-    textAlign: "center",
+    textAlign: 'center',
   },
-
   headerSpacer: {
     width: 44,
   },
-
   scrollContent: {
     padding: 20,
     paddingBottom: 40,
   },
-
   mainCard: {
     backgroundColor: Colors.white,
     borderRadius: 16,
-    padding: 16,
+    padding: 20,
     borderWidth: 1,
     borderColor: "#F3F4F6",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 5,
   },
-
+  iconContainer: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  iconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: "#FEF3E8",
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   sectionTitle: {
     ...Typography.h1,
     fontSize: 18,
     fontWeight: "700",
     color: Colors.primary,
+    textAlign: 'center',
+    marginBottom: 12,
   },
-
   sectionSubtitle: {
-    fontSize: 16,
+    fontSize: 14,
     color: Colors.dark,
-    marginTop: 6,
-    marginBottom: 20,
+    marginBottom: 5,
     fontWeight: "500",
+    textAlign: 'center',
+    lineHeight: 20,
   },
-
+  ratingContainer: {
+    marginBottom: 10,
+  },
   starRow: {
     flexDirection: "row",
     justifyContent: "center",
-    marginBottom: 24,
+    gap: 12,
+    marginBottom: 10,
   },
-
+  starButton: {
+    padding: 4,
+  },
+  ratingFeedbackText: {
+    fontSize: 14,
+    color: "#6B7280",
+    textAlign: 'center',
+    marginTop: 4,
+  },
+  reasonsContainer: {
+    marginBottom: 28,
+  },
   label: {
     ...Typography.h2,
     fontSize: 15,
-    color: Colors.primary,
+    color: Colors.black,
     fontWeight: "600",
-    marginBottom: 8,
+    marginBottom: 5,
   },
-
   reasonWrap: {
     flexDirection: "row",
     flexWrap: "wrap",
-    marginBottom: 16,
+    
+    gap: 12,
   },
-
   reasonChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
     borderWidth: 1.5,
-    borderColor: Colors.borderGray,
-    borderRadius: 20,
+    borderColor: Colors.primary,
+    borderRadius: 24,
     paddingVertical: 6,
-    paddingHorizontal: 14,
-    margin: 6,
-    backgroundColor: "#F9FAFB",
+    paddingHorizontal: 5,
+    backgroundColor: "#fff",
+    gap: 4,
   },
-
   reasonSelected: {
     backgroundColor: Colors.primary,
     borderColor: Colors.primary,
   },
-
+  reasonIcon: {
+    marginRight: 0,
+  },
   reasonText: {
     fontSize: 14,
-    color: Colors.dark,
+    color: Colors.primary,
     fontWeight: "600",
+    
   },
-
   reasonTextSelected: {
     color: Colors.white,
   },
-
+  commentContainer: {
+    marginBottom: 5,
+  },
   input: {
     borderWidth: 1.5,
-    borderColor: Colors.borderGray,
-    borderRadius: 14,
-    padding: 14,
-    height: 100,
+    borderColor: Colors.primary,
+    borderRadius: 16,
+    padding: 16,
+    height: 110,
     textAlignVertical: "top",
-    marginBottom: 20,
-    backgroundColor: "#F9FAFB",
+    backgroundColor: "#fff",
+    marginTop: 5,
+    fontSize: 14,
   },
-
   submitBtn: {
     backgroundColor: Colors.primary,
     borderRadius: 16,
     paddingVertical: 16,
     alignItems: "center",
+    justifyContent: 'center',
+    marginTop: 8,
   },
-
+  submitBtnDisabled: {
+    opacity: 0.6,
+  },
   submitText: {
     color: Colors.white,
     fontSize: 16,
     fontWeight: "700",
+  },
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  additionallabel: {
+    ...Typography.h2,
+    fontSize: 15,
+    color: Colors.black,
+    fontWeight: "600",
+    marginTop: -20,
   },
 });

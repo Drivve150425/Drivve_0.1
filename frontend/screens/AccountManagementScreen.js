@@ -9,14 +9,16 @@ import {
   Alert,
   Modal,
   TextInput,
+    KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, Typography } from '../constants/Colors';
-import DatabaseService from '../services/DatabaseService';
+import DatabaseService from '../services/accountmanagement_ds';
 import { useAuth } from '../context/AuthContext';
 
-export default function AccountManagementScreen({ navigation }) {
+export default function AccountManagementScreen({ navigation, route }) {
   const { user, logout } = useAuth();
 
   const phone_number = user?.phone_number;
@@ -34,7 +36,7 @@ export default function AccountManagementScreen({ navigation }) {
 
     Alert.alert(
       'Deactivate Account',
-      'Your account will be disabled immediately. If you log in within 30 days, your account will be restored automatically. Otherwise, it will be permanently deleted after 30 days.',
+'Your account will be disabled immediately. If you log in within 30 days, your account will be restored automatically. Otherwise, it will be permanently deleted after 30 days.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -65,10 +67,7 @@ export default function AccountManagementScreen({ navigation }) {
     if (res?.success) {
       setShowDeactivateModal(false);
       setDeactivateReason('');
-
-// 🔥 Clear global session
       logout();
-
       Alert.alert(
         'Account Deactivated',
         'Your account has been deactivated.\n\nIt will be permanently deleted after 30 days.',
@@ -90,60 +89,65 @@ export default function AccountManagementScreen({ navigation }) {
       );
     }
   };
-
+const handleBack = () => {
+    navigation.goBack();
+  };
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
-
-      {/* ================= HEADER ================= */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.modernBackButton}
-          onPress={() => navigation.goBack()}
-        >
-          <MaterialIcons
-            name="arrow-back-ios"
-            size={28}
-            color={Colors.orange1}
-          />
-        </TouchableOpacity>
-
-        <Text style={styles.headerTitle}>Account Management</Text>
-        <View style={styles.headerSpacer} />
-      </View>
-
+                                         <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
+                                         
+                                         <KeyboardAvoidingView
+                                           style={styles.keyboardAvoidingView}
+                                           behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+                                         >
+                                           {/* Header */}
+                                           <View style={styles.header}>
+                                             <TouchableOpacity style={styles.modernBackButton} onPress={handleBack}>
+                                               <MaterialIcons name="arrow-back-ios" size={28} color={Colors.secondary} />
+                                             </TouchableOpacity>
+                                             <Text style={styles.headerTitle}>Account Management</Text>
+                                             <View style={styles.headerSpacer} />
+                                           </View>
+    
       {/* ================= CONTENT ================= */}
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.mainCard}>
           <Text style={styles.sectionTitle}>Deactivate Account</Text>
           <Text style={styles.sectionSubtitle}>
-            Temporarily disable your account. It will be permanently deleted
-            after 30 days.
+            Temporarily deactivate your account.You can restore it within 30 days before it is permanently deleted
+            .
           </Text>
 
+          {/* WARNING */}
           <View style={styles.warningBox}>
-            <MaterialIcons name="warning" size={24} color="#D32F2F" />
-            <View style={styles.warningText}>
-              <Text style={styles.warningTitle}>Read carefully</Text>
-              <Text style={styles.warningDescription}>
-                • Your account will be disabled immediately{'\n'}
-                • You will be logged out from all devices{'\n'}
-                • Your data will be permanently deleted after 30 days{'\n'}
-                • This action cannot be undone
-              </Text>
-            </View>
-          </View>
+  
+  {/* Top Row (Icon + Title same line) */}
+  <View style={styles.warningHeader}>
+    <MaterialIcons name="warning" size={22} color={Colors.primary} style={{ marginLeft: -4 }} />
+    <Text style={styles.warningTitle}>Before you continue</Text>
+  </View>
 
+  {/* Bullet Points BELOW */}
+  {[
+    'Your account will be deactivated immediately',
+    'You will be logged out of all devices',
+    'Your data will be permanently deleted after 30 days',
+    'This action cannot be undone after deletion',
+  ].map((item, index) => (
+    <View key={index} style={styles.bulletRow}>
+      <Text style={styles.bullet}>•</Text>
+      <Text style={styles.bulletText}>{item}</Text>
+    </View>
+  ))}
+</View>
+
+          {/* ACTION */}
           <TouchableOpacity
             style={styles.deactivateButton}
             onPress={() => setShowDeactivateModal(true)}
             activeOpacity={0.8}
           >
-            <MaterialIcons
-              name="person-remove"
-              size={24}
-              color={Colors.white}
-            />
+           
             <Text style={styles.deactivateButtonText}>
               Deactivate Account
             </Text>
@@ -182,7 +186,10 @@ export default function AccountManagementScreen({ navigation }) {
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.modalButton, styles.deactivateModalButton]}
+                style={[
+                  styles.modalButton,
+                  styles.deactivateModalButton,
+                ]}
                 onPress={handleDeactivate}
                 disabled={loading}
               >
@@ -194,11 +201,12 @@ export default function AccountManagementScreen({ navigation }) {
           </View>
         </View>
       </Modal>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
-/* ================= STYLES (UNCHANGED) ================= */
+/* ================= STYLES ================= */
 
 const styles = StyleSheet.create({
   container: {
@@ -206,30 +214,35 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
   },
 
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 0.5,
-    borderBottomColor: '#F3F4F6',
-  },
-  modernBackButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  headerTitle: {
-    ...Typography.h2,
-    fontSize: 28,
-    fontWeight: '700',
-    color: Colors.primary,
-    flex: 1,
-    textAlign: 'center',
-  },
-  headerSpacer: { width: 44 },
+  keyboardAvoidingView: {
+     flex: 1,
+   },
+   header: {
+     flexDirection: 'row',
+     alignItems: 'center',
+     paddingHorizontal: 16,
+     paddingVertical: 12,
+     borderBottomWidth: 0.5,
+     borderBottomColor: '#F3F4F6',
+   },
+   modernBackButton: {
+     width: 44,
+     height: 44,
+     borderRadius: 22,
+     justifyContent: 'center',
+     alignItems: 'center',
+   },
+   headerTitle: {
+     ...Typography.h2,
+     fontSize: 28,
+     fontWeight: '700',
+     color: Colors.primary,
+     flex: 1,
+     textAlign: 'center',
+   },
+   headerSpacer: {
+     width: 44,
+   },
 
   scrollContent: {
     paddingHorizontal: 20,
@@ -238,46 +251,83 @@ const styles = StyleSheet.create({
   },
 
   mainCard: {
-    backgroundColor: Colors.white,
-    borderRadius: 20,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: '#F3F4F6',
-    elevation: 4,
-  },
+  backgroundColor: Colors.white,
+  borderRadius: 20,
+  padding: 18,
+  borderWidth: 1,
+  borderColor: '#F3F4F6',
 
+  // Android shadow
+  elevation: 4,
+
+  // iOS shadow
+  shadowColor: '#000',
+  shadowOffset: {
+    width: 0,
+    height: 3,
+  },
+  shadowOpacity: 0.1,
+  shadowRadius: 6,
+},
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '700',
     color: Colors.primary,
   },
   sectionSubtitle: {
-    fontSize: 15,
+    fontSize: 17,
     color: Colors.dark,
     opacity: 0.7,
     marginTop: 6,
     marginBottom: 20,
   },
 
-  warningBox: {
-    flexDirection: 'row',
-    backgroundColor: '#FFEBEE',
-    borderRadius: 14,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#FFCDD2',
-    marginBottom: 24,
-  },
+ warningBox: {
+  borderWidth: 1,
+  borderColor: '#1F3B6F',
+  borderRadius: 16,
+  padding: 14,
+  marginBottom: 24,
+},
+
+warningHeader: {
+  flexDirection: 'row',
+  alignItems: 'center', // 🔥 keeps icon + text aligned
+  marginBottom: 10,
+},
+
+warningTitle: {
+  fontSize: 18,
+  fontWeight: '600',
+  color: '#1F3B6F',
+  marginLeft: 8,
+},
+
+bulletRow: {
+  flexDirection: 'row',
+  alignItems: 'flex-start',
+  marginBottom: 4,
+
+},
+
+bullet: {
+  fontSize: 16,
+  marginRight: 6,
+  lineHeight: 20,
+  color: '#374151',
+},
+
+bulletText: {
+  flex: 1,
+  fontSize: 16,
+  color: '#374151',
+  lineHeight: 20,
+},
   warningText: { flex: 1, marginLeft: 12 },
-  warningTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#D32F2F',
-    marginBottom: 6,
-  },
+  
   warningDescription: {
-    fontSize: 14,
-    color: '#D32F2F',
+    fontSize: 17,
+    color: Colors.dark,
     lineHeight: 20,
   },
 
@@ -286,13 +336,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 12,
-    backgroundColor: '#FF3B30',
+    backgroundColor: Colors.primary,
     borderRadius: 14,
     paddingVertical: 16,
   },
   deactivateButtonText: {
     color: Colors.white,
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '700',
   },
 

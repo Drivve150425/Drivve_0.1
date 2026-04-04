@@ -9,6 +9,7 @@ import Step4 from './Step4';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 
+import { API_BASE_URL } from "../../config/config_ip";
 
 export default function DriveNextScreen({ navigation, route }) {
   // ✅ Use AuthContext for session management
@@ -90,7 +91,7 @@ export default function DriveNextScreen({ navigation, route }) {
         setLoadingRoute(true);
 
         const response = await axios.post(
-          'http://192.168.1.2:8000/get-route',
+          `${API_BASE_URL}/get-route`,
           {
             from_coords: fromCoords,
             to_coords: toCoords
@@ -168,7 +169,7 @@ export default function DriveNextScreen({ navigation, route }) {
       };
     console.log('Post Ride payload:', payload);
     const response = await axios.post(
-      'http://192.168.1.2:8000/post-ride',
+      `${API_BASE_URL}/post-ride`,
       payload
     );
     console.log('Ride Created:', response.data);

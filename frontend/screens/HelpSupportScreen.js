@@ -5,29 +5,33 @@ import {
   StyleSheet,
   TouchableOpacity,
   StatusBar,
+    KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { Colors, Typography } from "../constants/Colors";
 
 export default function HelpSupportScreen({ navigation }) {
+   const handleBack = () => {
+    navigation.goBack();
+  };
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor={Colors.white} />
-
-      {/* ================= HEADER ================= */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <MaterialIcons
-            name="arrow-back-ios"
-            size={26}
-            color={Colors.orange1}
-          />
-        </TouchableOpacity>
-
-        <Text style={styles.headerTitle}>Help & Support</Text>
-        <View style={{ width: 40 }} />
-      </View>
+                 <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
+                 
+                 <KeyboardAvoidingView
+                   style={styles.keyboardAvoidingView}
+                   behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+                 >
+                   {/* Header */}
+                   <View style={styles.header}>
+                     <TouchableOpacity style={styles.modernBackButton} onPress={handleBack}>
+                       <MaterialIcons name="arrow-back-ios" size={28} color={Colors.secondary} />
+                     </TouchableOpacity>
+                     <Text style={styles.headerTitle}>Help & Support</Text>
+                     <View style={styles.headerSpacer} />
+                   </View>
 
       {/* ================= CONTENT ================= */}
       <View style={styles.content}>
@@ -66,7 +70,7 @@ export default function HelpSupportScreen({ navigation }) {
           {/* Right Illustration Icon */}
           <Ionicons
             name="document-text-outline"
-            size={45}
+            size={50}
             color="#CBD5E1"
           />
         </TouchableOpacity>
@@ -101,11 +105,12 @@ export default function HelpSupportScreen({ navigation }) {
           {/* Right Illustration Icon */}
           <Ionicons
             name="mail-open-outline"
-            size={45}
+            size={50}
             color="#CBD5E1"
           />
         </TouchableOpacity>
       </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -115,23 +120,35 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
   },
 
-  /* HEADER */
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 16,
-    borderBottomWidth: 0.5,
-    borderBottomColor: "#E5E7EB",
-  },
-
-  headerTitle: {
-    ...Typography.h2,
-    fontSize: 24,
-    fontWeight: "700",
-    color: Colors.primary,
-    flex: 1,
-    textAlign: "center",
-  },
+ keyboardAvoidingView: {
+     flex: 1,
+   },
+   header: {
+     flexDirection: 'row',
+     alignItems: 'center',
+     paddingHorizontal: 16,
+     paddingVertical: 12,
+     borderBottomWidth: 0.5,
+     borderBottomColor: '#F3F4F6',
+   },
+   modernBackButton: {
+     width: 44,
+     height: 44,
+     borderRadius: 22,
+     justifyContent: 'center',
+     alignItems: 'center',
+   },
+   headerTitle: {
+     ...Typography.h2,
+     fontSize: 28,
+     fontWeight: '700',
+     color: Colors.primary,
+     flex: 1,
+     textAlign: 'center',
+   },
+   headerSpacer: {
+     width: 44,
+   },
 
   /* CONTENT */
   content: {
@@ -149,21 +166,29 @@ const styles = StyleSheet.create({
     color: Colors.dark,
     marginTop: 6,
     marginBottom: 20,
-    fontWeight: "500",
   },
 
   /* CARD */
   card: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: 16,
-    borderRadius: 16,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#F3F4F6",
-    marginBottom: 14,
-  },
+  flexDirection: "row",
+  justifyContent: "space-between",
+  alignItems: "center",
+  padding: 16,
+  borderRadius: 16,
+  backgroundColor: "#FFFFFF",
+  borderWidth: 1,
+  borderColor: "#F3F4F6",
+  marginBottom: 14,
+
+  // 🔥 SHADOW (iOS)
+  shadowColor: "#000",
+  shadowOffset: { width: 0, height: 4 },
+  shadowOpacity: 0.08,
+  shadowRadius: 10,
+
+  // 🔥 SHADOW (Android)
+  elevation: 4,
+},
 
   cardLeft: {
     flexDirection: "row",

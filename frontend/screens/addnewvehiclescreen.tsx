@@ -124,7 +124,7 @@
 //   // Existing image
 //   if (editingVehicle.photo_url) {
 //     setVehiclePhoto(
-//       `http://192.168.1.2:8000/${editingVehicle.photo_url}`
+//       `http://192.168.1.13:8000/${editingVehicle.photo_url}`
 //     );
 //   }
 // }, [editingVehicle]);
@@ -880,7 +880,7 @@
 // });
 
 // export default AddVehicleScreen;
-import React, { useState, useEffect } from "react";
+import React, { useState,useEffect} from "react";
 import {
   View,
   Text,
@@ -892,14 +892,15 @@ import {
   TextInput,
   Image,
   Alert,
+  KeyboardAvoidingView,
+  Platform
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { Colors, Typography } from "../constants/Colors";
-import DatabaseService from "../services/DatabaseService";
+import DatabaseService from "../services/addvehicle_ds";
 import { useAuth } from "../context/AuthContext";
-
 /* ================= DATA ================= */
 const VEHICLE_TYPES = ["Car", "Bike"];
 const BODY_TYPES = ["Hatchback", "Sedan", "SUV", "Coupe", "Convertible"];
@@ -913,14 +914,14 @@ const VEHICLE_MASTER: Record<string, string[]> = {
 };
 
 type ModalType = "vehicle" | "body" | "fuel" | "make" | "model" | null;
-const BASE_URL = process.env.EXPO_PUBLIC_API_URL;
-
+import { API_BASE_URL } from "../config/config_ip";
 export default function AddNewVehicleScreen({ navigation, route }) {
   const { user } = useAuth();
+
   const phoneNumber = user?.phone_number;
 
-  const editingVehicle = route?.params?.vehicle || null;
-  const isEdit = !!editingVehicle;
+const editingVehicle = route?.params?.vehicle || null;
+const isEdit = !!editingVehicle;
 
   /* ================= STATE ================= */
   const [vehicleType, setVehicleType] = useState("");
@@ -951,84 +952,88 @@ export default function AddNewVehicleScreen({ navigation, route }) {
       setVehiclePhoto(res.assets[0].uri);
     }
   };
+useEffect(() => {
+  if (!editingVehicle) return;
 
-  /* ================= PREFILL IF EDIT ================= */
-  useEffect(() => {
-    if (!editingVehicle) return;
+  setVehicleType(editingVehicle.vehicle_type || "");
+  setBodyType(editingVehicle.body_type || "");
+  setFuelType(editingVehicle.fuel_type || "");
+  setMake(editingVehicle.make || "");
+  setModel(editingVehicle.model || "");
 
-    setVehicleType(editingVehicle.vehicle_type || "");
-    setBodyType(editingVehicle.body_type || "");
-    setFuelType(editingVehicle.fuel_type || "");
-    setMake(editingVehicle.make || "");
-    setModel(editingVehicle.model || "");
+  setYear(String(editingVehicle.year || ""));
+  setRegistration(editingVehicle.registration_number || "");
+  setColor(editingVehicle.color || "");
+  setMaxSeats(String(editingVehicle.max_seats || "4"));
+  setNotes(editingVehicle.notes || "");
 
-    setYear(String(editingVehicle.year || ""));
-    setRegistration(editingVehicle.registration_number || "");
-    setColor(editingVehicle.color || "");
-    setMaxSeats(String(editingVehicle.max_seats || "4"));
-    setNotes(editingVehicle.notes || "");
-
-    if (editingVehicle.photo_url) {
-      setVehiclePhoto(
-        editingVehicle.photo_url.startsWith("http")
-          ? editingVehicle.photo_url
-          : `${BASE_URL}${editingVehicle.photo_url}`
-      );
-    }
-  }, [editingVehicle]);
+  if (editingVehicle.photo_url) {
+    setVehiclePhoto(
+      editingVehicle.photo_url.startsWith("http")
+        ? editingVehicle.photo_url
+        : `${API_BASE_URL}${editingVehicle.photo_url}`
+    );
+  }
+}, [editingVehicle]);
 
   /* ================= SAVE ================= */
-  const handleSave = async () => {
-    if (!phoneNumber) {
-      Alert.alert("Session Error", "User session not found. Please login again.");
-      return;
+ const handleSave = async () => {
+  if (!phoneNumber) {
+    Alert.alert("Session Error", "User session not found. Please login again.");
+    return;
+  }
+
+  if (!vehicleType || !bodyType || !fuelType || !make || !model) {
+    Alert.alert("Error", "Please fill all required fields");
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append("phone_number", phoneNumber);
+  formData.append("vehicle_type", vehicleType);
+  formData.append("body_type", bodyType);
+  formData.append("fuel_type", fuelType);
+  formData.append("make", make);
+  formData.append("model", model);
+  formData.append("year", year);
+  formData.append("registration_number", registration);
+  formData.append("color", color);
+  formData.append("max_seats", maxSeats);
+  formData.append("notes", notes); // ✅ NOTES ARE OK
+
+  if (vehiclePhoto && !vehiclePhoto.startsWith("http")) {
+    formData.append("photo", {
+      uri: vehiclePhoto,
+      name: "vehicle.jpg",
+      type: "image/jpeg",
+    } as any);
+  }
+
+  try {
+    if (isEdit) {
+      // ✅ UPDATE (NOT INSERT)
+      await DatabaseService.updateVehicle(editingVehicle.id, formData);
+      Alert.alert("Success", "Vehicle updated successfully");
+    } else {
+      // ✅ ADD
+      await DatabaseService.addVehicle(formData);
+      Alert.alert("Success", "Vehicle added successfully");
     }
 
-    if (!vehicleType || !bodyType || !fuelType || !make || !model) {
-      Alert.alert("Error", "Please fill all required fields");
-      return;
-    }
-
-    const formData = new FormData();
-    formData.append("phone_number", phoneNumber);
-    formData.append("vehicle_type", vehicleType);
-    formData.append("body_type", bodyType);
-    formData.append("fuel_type", fuelType);
-    formData.append("make", make);
-    formData.append("model", model);
-    formData.append("year", year);
-    formData.append("registration_number", registration);
-    formData.append("color", color);
-    formData.append("max_seats", maxSeats);
-    formData.append("notes", notes);
-
-    if (vehiclePhoto && !vehiclePhoto.startsWith("http")) {
-      formData.append("photo", {
-        uri: vehiclePhoto,
-        name: "vehicle.jpg",
-        type: "image/jpeg",
-      } as any);
-    }
-
-    try {
-      if (isEdit) {
-        await DatabaseService.updateVehicle(editingVehicle.id, formData);
-        Alert.alert("Success", "Vehicle updated successfully");
-      } else {
-        await DatabaseService.addVehicle(formData);
-        Alert.alert("Success", "Vehicle added successfully");
-      }
-
-      navigation.goBack();
-    } catch (e: any) {
-      Alert.alert(
-        "Error",
-        e?.response?.data?.detail || "Failed to save vehicle"
-      );
-    }
+    navigation.goBack();
+  } catch (e: any) {
+    Alert.alert(
+      "Error",
+      e?.response?.data?.detail || "Failed to save vehicle"
+    );
+  }
+};
+ const handleBack = () => {
+    navigation.goBack();
   };
 
-  /* ================= MODAL RENDER ================= */
+
+  /* ================= MODAL ================= */
   const renderModal = (
     title: string,
     data: string[],
@@ -1101,19 +1106,25 @@ export default function AddNewVehicleScreen({ navigation, route }) {
   /* ================= UI ================= */
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
-
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <MaterialIcons name="arrow-back-ios" size={28} color={Colors.orange1} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>
+          <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
+          
+          <KeyboardAvoidingView
+            style={styles.keyboardAvoidingView}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          >
+            {/* Header */}
+            <View style={styles.header}>
+              <TouchableOpacity style={styles.modernBackButton} onPress={handleBack}>
+                <MaterialIcons name="arrow-back-ios" size={28} color={Colors.orange1} />
+              </TouchableOpacity>
+<Text style={styles.headerTitle}>
           {isEdit ? "Edit Vehicle" : "Add Vehicle"}
-        </Text>
-        <View style={{ width: 28 }} />
-      </View>
+        </Text>              <View style={styles.headerSpacer} />
+            </View>
+    
 
       <ScrollView contentContainerStyle={styles.scroll}>
+        {/* PHOTO */}
         <TouchableOpacity style={styles.photoCard} onPress={pickImage}>
           {vehiclePhoto ? (
             <Image source={{ uri: vehiclePhoto }} style={styles.vehicleImage} />
@@ -1125,16 +1136,19 @@ export default function AddNewVehicleScreen({ navigation, route }) {
           )}
         </TouchableOpacity>
 
+        {/* SELECTORS */}
         <Selector label="Vehicle Type *" value={vehicleType} onPress={() => setActiveModal("vehicle")} />
         <Selector label="Body Type *" value={bodyType} onPress={() => setActiveModal("body")} />
         <Selector label="Fuel Type *" value={fuelType} onPress={() => setActiveModal("fuel")} />
         <Selector label="Make *" value={make} onPress={() => setActiveModal("make")} />
         <Selector label="Model *" value={model} onPress={() => setActiveModal("model")} />
 
+        {/* INPUTS */}
         <Input label="Year" value={year} onChange={setYear} />
         <Input label="Registration Number" value={registration} onChange={setRegistration} />
         <Input label="Color" value={color} onChange={setColor} />
 
+        {/* NOTES */}
         <View style={styles.inputBox}>
           <Text style={styles.label}>Notes</Text>
           <TextInput
@@ -1146,11 +1160,15 @@ export default function AddNewVehicleScreen({ navigation, route }) {
           />
         </View>
 
+        {/* SAVE */}
         <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
           <Text style={styles.saveText}>Save Vehicle</Text>
         </TouchableOpacity>
       </ScrollView>
+            </KeyboardAvoidingView>
+      
 
+      {/* MODALS */}
       {activeModal === "vehicle" &&
         renderModal("Vehicle Type", VEHICLE_TYPES, vehicleType, setVehicleType)}
       {activeModal === "body" &&
@@ -1187,20 +1205,35 @@ const Input = ({ label, value, onChange }) => (
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.white },
 
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 16,
+   keyboardAvoidingView: {
+    flex: 1,
+  },
+   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     borderBottomWidth: 0.5,
-    borderBottomColor: "#E5E7EB",
+    borderBottomColor: '#F3F4F6',
+  },
+  modernBackButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   headerTitle: {
     ...Typography.h2,
-    flex: 1,
-    textAlign: "center",
+    fontSize: 28,
+    fontWeight: '700',
     color: Colors.primary,
+    flex: 1,
+    textAlign: 'center',
   },
-
+  headerSpacer: {
+    width: 44,
+  },
   scroll: { padding: 20, paddingBottom: 40 },
 
   photoCard: {

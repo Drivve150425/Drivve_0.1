@@ -7,10 +7,12 @@ import {
   TextInput,
   ScrollView,
   StatusBar,
+     KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
-import DatabaseService from "../services/DatabaseService";
+import DatabaseService from "../services/faq_ds";
 import { Colors, Typography } from "../constants/Colors";
 
 /* ================= TEXT HIGHLIGHT HELPER ================= */
@@ -76,25 +78,25 @@ export default function FAQScreen({ navigation }) {
       setExpandedId(null); // close all when search cleared
     }
   }, [search]);
-
+ const handleBack = () => {
+    navigation.goBack();
+  };
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
-
-      {/* ================= HEADER ================= */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <MaterialIcons
-            name="arrow-back-ios"
-            size={26}
-            color={Colors.orange1}
-          />
-        </TouchableOpacity>
-
-        <Text style={styles.headerTitle}>FAQ</Text>
-        <View style={{ width: 40 }} />
-      </View>
-
+                                                            <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
+                                                            
+                                                            <KeyboardAvoidingView
+                                                              style={styles.keyboardAvoidingView}
+                                                              behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+                                                            >
+                                                              {/* Header */}
+                                                              <View style={styles.header}>
+                                                                <TouchableOpacity style={styles.modernBackButton} onPress={handleBack}>
+                                                                  <MaterialIcons name="arrow-back-ios" size={28} color={Colors.secondary} />
+                                                                </TouchableOpacity>
+                                                                <Text style={styles.headerTitle}>FAQ</Text>
+                                                                <View style={styles.headerSpacer} />
+                                                              </View>
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
@@ -179,6 +181,7 @@ export default function FAQScreen({ navigation }) {
           </TouchableOpacity>
         ))}
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -190,23 +193,35 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
   },
 
-  /* HEADER */
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 16,
-    borderBottomWidth: 0.5,
-    borderBottomColor: "#E5E7EB",
-  },
-
-  headerTitle: {
-    ...Typography.h2,
-    fontSize: 24,
-    fontWeight: "700",
-    color: Colors.primary,
-    flex: 1,
-    textAlign: "center",
-  },
+  keyboardAvoidingView: {
+     flex: 1,
+   },
+   header: {
+     flexDirection: 'row',
+     alignItems: 'center',
+     paddingHorizontal: 16,
+     paddingVertical: 12,
+     borderBottomWidth: 0.5,
+     borderBottomColor: '#F3F4F6',
+   },
+   modernBackButton: {
+     width: 44,
+     height: 44,
+     borderRadius: 22,
+     justifyContent: 'center',
+     alignItems: 'center',
+   },
+   headerTitle: {
+     ...Typography.h2,
+     fontSize: 28,
+     fontWeight: '700',
+     color: Colors.primary,
+     flex: 1,
+     textAlign: 'center',
+   },
+   headerSpacer: {
+     width: 44,
+   },
 
   content: {
     padding: 16,
@@ -219,18 +234,21 @@ const styles = StyleSheet.create({
     alignItems: "center",
     borderWidth: 1,
     borderColor: "#E5E7EB",
-    borderRadius: 14,
+    borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
     marginBottom: 14,
+      paddingVertical: 10, // 🔥 reduced height
+
     backgroundColor: "#FFFFFF", // ⬜ WHITE BG
   },
 
   searchInput: {
     marginLeft: 8,
     flex: 1,
-    fontSize: 14,
+    fontSize: 13,
     color: Colors.dark,
+     paddingVertical: 0
   },
 
   /* TABS */
@@ -238,15 +256,24 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
 
-  tab: {
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    marginRight: 8,
-    backgroundColor: "#FFFFFF",
-  },
+ tab: {
+  paddingVertical: 8,
+  paddingHorizontal: 14,
+  borderRadius: 16,
+  borderWidth: 1,
+  borderColor: "#E5E7EB",
+  marginRight: 8,
+  backgroundColor: "#FFFFFF",
+
+  // 🔥 SHADOW (iOS)
+  shadowColor: "#000",
+  shadowOffset: { width: 0, height: 3 },
+  shadowOpacity: 0.15,
+  shadowRadius: 6,
+
+  // 🔥 ANDROID SHADOW
+  elevation: 3,
+},
 
   activeTab: {
     backgroundColor: Colors.primary,
@@ -264,14 +291,23 @@ const styles = StyleSheet.create({
   },
 
   /* FAQ CARD */
-  faqCard: {
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 12,
-    backgroundColor: "#FFFFFF",
-  },
+ faqCard: {
+  borderWidth: 1,
+  borderColor: "#E5E7EB",
+  borderRadius: 14,
+  padding: 14,
+  marginBottom: 12,
+  backgroundColor: "#FFFFFF",
+
+  // 🔥 ANDROID
+  elevation: 4,
+
+  // 🔥 iOS
+  shadowColor: "#000",
+  shadowOffset: { width: 0, height: 4 },
+  shadowOpacity: 0.08,
+  shadowRadius: 8,
+},
 
   faqHeader: {
     flexDirection: "row",

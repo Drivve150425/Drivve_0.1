@@ -6,18 +6,20 @@ import {
   ScrollView,
   TouchableOpacity,
   StatusBar,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 
-import DatabaseService from "../services/DatabaseService";
-import { Colors } from "../constants/Colors";
+import DatabaseService from "../services/rewards_ds";
+import { Colors,Typography } from "../constants/Colors";
 import { useAuth } from "../context/AuthContext";
 
 export default function RewardsScreen({ route, navigation }) {
-  const { user } = useAuth();
-  const phoneNumber = user?.phone_number;
+   const { user } = useAuth();
+   const phoneNumber = user?.phone_number;
 
   const [data, setData] = useState(null);
 
@@ -50,27 +52,25 @@ export default function RewardsScreen({ route, navigation }) {
   const totalRewards = data.rewards
     .filter(r => data.completed_rides >= r.rides_required)
     .reduce((sum, r) => sum + r.reward_points, 0);
-
+ const handleBack = () => {
+    navigation.goBack();
+  };
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
-
-      {/* ================= HEADER ================= */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.modernBackButton}
-          onPress={() => navigation.goBack()}
-        >
-          <MaterialIcons
-            name="arrow-back-ios"
-            size={26}
-            color={Colors.orange1}
-          />
-        </TouchableOpacity>
-
-        <Text style={styles.headerTitle}>Rewards</Text>
-        <View style={{ width: 44 }} />
-      </View>
+             <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
+             
+             <KeyboardAvoidingView
+               style={styles.keyboardAvoidingView}
+               behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+             >
+               {/* Header */}
+               <View style={styles.header}>
+                 <TouchableOpacity style={styles.modernBackButton} onPress={handleBack}>
+                   <MaterialIcons name="arrow-back-ios" size={28} color={Colors.secondary} />
+                 </TouchableOpacity>
+                 <Text style={styles.headerTitle}>Rewards</Text>
+                 <View style={styles.headerSpacer} />
+               </View>
 
       {/* ================= TOTAL REWARDS ================= */}
       <LinearGradient
@@ -147,6 +147,8 @@ export default function RewardsScreen({ route, navigation }) {
           );
         })}
       </ScrollView>
+                  </KeyboardAvoidingView>
+      
     </SafeAreaView>
   );
 }
@@ -158,32 +160,35 @@ const styles = StyleSheet.create({
     backgroundColor: "#F9FAFB",
   },
 
-  /* HEADER */
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 0.5,
-    borderBottomColor: "#E5E7EB",
-    backgroundColor: "#fff",
-  },
-
-  modernBackButton: {
-    width: 44,
-    height: 44,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  headerTitle: {
-    flex: 1,
-    textAlign: "center",
-    fontSize: 24,
-    fontWeight: "800",
-    color: Colors.primary,
-  },
-
+ keyboardAvoidingView: {
+     flex: 1,
+   },
+   header: {
+     flexDirection: 'row',
+     alignItems: 'center',
+     paddingHorizontal: 16,
+     paddingVertical: 12,
+     borderBottomWidth: 0.5,
+     borderBottomColor: '#F3F4F6',
+   },
+   modernBackButton: {
+     width: 44,
+     height: 44,
+     borderRadius: 22,
+     justifyContent: 'center',
+     alignItems: 'center',
+   },
+   headerTitle: {
+     ...Typography.h2,
+     fontSize: 28,
+     fontWeight: '700',
+     color: Colors.primary,
+     flex: 1,
+     textAlign: 'center',
+   },
+   headerSpacer: {
+     width: 44,
+   },
   /* TOTAL CARD */
   totalCard: {
     margin: 20,

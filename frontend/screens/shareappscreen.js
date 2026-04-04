@@ -7,21 +7,23 @@ import {
   ScrollView,
   StatusBar,
   Share,
+   KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
-import DatabaseService from "../services/DatabaseService";
+import DatabaseService from "../services/shareapp_ds";
 import { useAuth } from "../context/AuthContext";
 
 /* ================= COLORS ================= */
 import { Colors, Typography } from '../constants/Colors';
 
 export default function ShareAppScreen({ navigation, route }) {
-  const { user } = useAuth();
-  const phoneNumber = user?.phone_number;
-  
   const referralCode = "CARPOOL123";
   const appLink = "https://drivve.app/download";
+
+  const { user } = useAuth();
+  const phoneNumber = user?.phone_number;
 
   const [shareCount, setShareCount] = useState(0);
 
@@ -74,28 +76,27 @@ Download: ${appLink}`,
   const handleCopy = async () => {
     await Share.share({ message: referralCode });
   };
+ const handleBack = () => {
+    navigation.goBack();
+  };
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
-
-      {/* ================= HEADER ================= */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.modernBackButton}
-          onPress={() => navigation.goBack()}
-        >
-          <MaterialIcons
-            name="arrow-back-ios"
-            size={28}
-            color={Colors.orange1}   // 🔥 ORANGE BACK BUTTON
-          />
-        </TouchableOpacity>
-
-        <Text style={styles.headerTitle}>Refer & Earn</Text>
-        <View style={styles.headerSpacer} />
-      </View>
-
+            <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
+            
+            <KeyboardAvoidingView
+              style={styles.keyboardAvoidingView}
+              behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+            >
+              {/* Header */}
+              <View style={styles.header}>
+                <TouchableOpacity style={styles.modernBackButton} onPress={handleBack}>
+                  <MaterialIcons name="arrow-back-ios" size={28} color={Colors.secondary} />
+                </TouchableOpacity>
+                <Text style={styles.headerTitle}>Refer & Earn</Text>
+                <View style={styles.headerSpacer} />
+              </View>
+   
       {/* ================= CONTENT ================= */}
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -169,6 +170,8 @@ Download: ${appLink}`,
           </View>
         </View>
       </ScrollView>
+                  </KeyboardAvoidingView>
+      
     </SafeAreaView>
   );
 }
@@ -179,24 +182,24 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.white,
   },
-
+keyboardAvoidingView: {
+    flex: 1,
+  },
   header: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 0.5,
-    borderBottomColor: "#F3F4F6",
+    borderBottomColor: '#F3F4F6',
   },
-
   modernBackButton: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    justifyContent: "center",
-    alignItems: "center",
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-
   headerTitle: {
     ...Typography.h2,
     fontSize: 28,
@@ -205,11 +208,9 @@ const styles = StyleSheet.create({
     flex: 1,
     textAlign: 'center',
   },
-
   headerSpacer: {
     width: 44,
   },
-
   scrollContent: {
     paddingHorizontal: 20,
     paddingBottom: 40,
@@ -217,16 +218,24 @@ const styles = StyleSheet.create({
   },
 
   mainCard: {
-    backgroundColor: Colors.white,
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: "#F3F4F6",
-  },
+  backgroundColor: Colors.white,
+  borderRadius: 16,
+  padding: 16,
+  borderWidth: 1,
+  borderColor: "#F3F4F6",
 
+  // 🔥 Shadow (iOS)
+  shadowColor: "#000",
+  shadowOffset: { width: 0, height: 4 },
+  shadowOpacity: 0.08,
+  shadowRadius: 10,
+
+  // 🔥 Android
+  elevation: 4,
+},
   sectionTitle: {
      ...Typography.h1,
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: "700",
     color: Colors.primary,
   },
@@ -235,13 +244,12 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: Colors.dark,
     marginTop: 6,
-    marginBottom: 16,
-    fontWeight: "500",
+    marginBottom: 6,
   },
 
   label: {
      ...Typography.h2,
-    fontSize: 15,
+    fontSize: 18,
     color: Colors.primary,
     fontWeight: "600",
     marginBottom: 8,
@@ -252,11 +260,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     borderWidth: 1.5,
-    borderColor: Colors.borderGray,
+    borderColor: Colors.primary,
     borderRadius: 14,
     padding: 14,
     marginBottom: 16,
-    backgroundColor: "#F9FAFB",
   },
 
   codeText: {
@@ -286,7 +293,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 24,
+    marginBottom: 0,
   },
 
   shareLinkText: {
@@ -310,11 +317,11 @@ const styles = StyleSheet.create({
   progressBox: {
     width: "48%",
     borderWidth: 1.5,
-    borderColor: Colors.borderGray,
+    borderColor: Colors.primary,
     borderRadius: 16,
     padding: 18,
     alignItems: "center",
-    backgroundColor: "#F9FAFB",
+    marginTop:5
   },
 
   progressValue: {

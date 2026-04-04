@@ -7,13 +7,15 @@ import {
   FlatList,
   Alert,
   StatusBar,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Clipboard from "expo-clipboard";
 
-import DatabaseService from "../services/DatabaseService";
+import DatabaseService from "../services/dcoins_ds";
 import { Colors, Typography } from "../constants/Colors";
 import { useAuth } from "../context/AuthContext";
 
@@ -30,7 +32,7 @@ export default function DCoinWalletScreen({ route, navigation }) {
       loadData();
     }
   }, [phoneNumber]);
-
+  
   /* ================= LOAD DATA ================= */
   const loadData = async () => {
     if (!phoneNumber) return;
@@ -110,27 +112,25 @@ export default function DCoinWalletScreen({ route, navigation }) {
       hour12: true,
     });
   };
-
+ const handleBack = () => {
+    navigation.goBack();
+  };
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
-
-      {/* ================= HEADER ================= */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.modernBackButton}
-          onPress={() => navigation.goBack()}
-        >
-          <MaterialIcons
-            name="arrow-back-ios"
-            size={26}
-            color={Colors.orange1}
-          />
-        </TouchableOpacity>
-
-        <Text style={styles.headerTitle}>D-Coins Wallet</Text>
-        <View style={{ width: 44 }} />
-      </View>
+   <SafeAreaView style={styles.container}>
+         <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
+         
+         <KeyboardAvoidingView
+           style={styles.keyboardAvoidingView}
+           behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+         >
+           {/* Header */}
+           <View style={styles.header}>
+             <TouchableOpacity style={styles.modernBackButton} onPress={handleBack}>
+               <MaterialIcons name="arrow-back-ios" size={28} color={Colors.secondary} />
+             </TouchableOpacity>
+             <Text style={styles.headerTitle}>D-Coins Wallet</Text>
+             <View style={styles.headerSpacer} />
+           </View>
 
       {/* ================= WALLET CARD ================= */}
       <LinearGradient
@@ -233,6 +233,8 @@ export default function DCoinWalletScreen({ route, navigation }) {
 }}
 
       />
+            </KeyboardAvoidingView>
+      
     </SafeAreaView>
   );
 }
@@ -240,32 +242,35 @@ export default function DCoinWalletScreen({ route, navigation }) {
 /* ================= STYLES ================= */
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.white },
-
+keyboardAvoidingView: {
+    flex: 1,
+  },
   header: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 0.5,
-    borderBottomColor: "#E5E7EB",
+    borderBottomColor: '#F3F4F6',
   },
-
   modernBackButton: {
     width: 44,
     height: 44,
-    justifyContent: "center",
-    alignItems: "center",
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-
   headerTitle: {
     ...Typography.h2,
-    fontSize: 24,
-    fontWeight: "800",
+    fontSize: 28,
+    fontWeight: '700',
     color: Colors.primary,
     flex: 1,
-    textAlign: "center",
+    textAlign: 'center',
   },
-
+  headerSpacer: {
+    width: 44,
+  },
   walletCard: {
     margin: 20,
     borderRadius: 24,

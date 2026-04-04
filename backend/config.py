@@ -4,6 +4,7 @@ DRIVVE API Configuration
 import os
 from dotenv import load_dotenv
 load_dotenv()
+BASE_URL = os.getenv("BASE_URLS")
 
 class Settings:
     # API Settings
@@ -27,8 +28,8 @@ class Settings:
     ALLOWED_ORIGINS = [
         "*",  # Allow all for development
         "http://localhost:19000",
-        "http://192.168.1.2:19000",
-        "exp://192.168.1.2:19000"
+        f"{BASE_URL}:19000",
+        "exp://192.168.1.13:19000"
     ]
 
 settings = Settings()

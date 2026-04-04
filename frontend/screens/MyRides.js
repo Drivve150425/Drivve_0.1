@@ -20,7 +20,7 @@ import { useAuth } from "../context/AuthContext";
 import { Colors, Typography } from "../constants/Colors";
 import { FontFamily } from "../constants/Fonts";
 
-const BASE_URL = process.env.EXPO_PUBLIC_API_URL || "http://192.168.1.2:8000";
+import { API_BASE_URL } from "../config/config_ip";
 
 export default function MyRides({ route, navigation }) {
   const { user } = useAuth();
@@ -81,7 +81,7 @@ export default function MyRides({ route, navigation }) {
     }
 
     try {
-      const res = await axios.get(`${BASE_URL}/my-rides/${phoneNumber}`);
+      const res = await axios.get(`${API_BASE_URL}/my-rides/${phoneNumber}`);
       setPostedRides(Array.isArray(res.data.posted_rides) ? res.data.posted_rides : []);
       setRequestedRides(Array.isArray(res.data.requested_rides) ? res.data.requested_rides : []);
     } catch (error) {
@@ -122,7 +122,7 @@ export default function MyRides({ route, navigation }) {
           text: "Yes",
           onPress: async () => {
             try {
-              await axios.put(`${BASE_URL}/booking/${bookingId}/${action}`);
+              await axios.put(`${API_BASE_URL}/booking/${bookingId}/${action}`);
               Alert.alert("Success", `Booking ${action}ed successfully.`);
               fetchMyRides();
             } catch (err) {
@@ -145,7 +145,7 @@ export default function MyRides({ route, navigation }) {
           style: "destructive",
           onPress: async () => {
             try {
-              await axios.put(`${BASE_URL}/ride/${rideId}/cancel`);
+              await axios.put(`${API_BASE_URL}/ride/${rideId}/cancel`);
               Alert.alert("Success", "Ride cancelled successfully.");
               fetchMyRides();
             } catch (err) {
@@ -168,7 +168,7 @@ export default function MyRides({ route, navigation }) {
           style: "destructive",
           onPress: async () => {
             try {
-              await axios.put(`${BASE_URL}/booking/${bookingId}/cancel`);
+              await axios.put(`${API_BASE_URL}/booking/${bookingId}/cancel`);
               Alert.alert("Success", "Booking cancelled successfully.");
               fetchMyRides();
             } catch (err) {

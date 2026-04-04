@@ -14,8 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/Colors';
 import { useAuth } from '../context/AuthContext';
 
-const BASE_URL = process.env.EXPO_PUBLIC_API_URL || "http://192.168.1.2:8000";
-
+import { API_BASE_URL } from "../config/config_ip";
 export default function RideNextScreen({ navigation, route }) {
   const { user, loading: authLoading } = useAuth();
 
@@ -37,7 +36,7 @@ export default function RideNextScreen({ navigation, route }) {
       setLoading(true);
       setErrorMessage('');
 
-      const response = await fetch(`${BASE_URL}/search-rides`, {
+      const response = await fetch(`${API_BASE_URL}/search-rides`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -96,7 +95,7 @@ export default function RideNextScreen({ navigation, route }) {
     }
 
     try {
-      const response = await fetch(`${BASE_URL}/ride-bookings`, {
+      const response = await fetch(`${API_BASE_URL}/ride-bookings`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

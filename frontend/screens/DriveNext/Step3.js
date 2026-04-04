@@ -10,7 +10,9 @@ import {
   Modal,
 } from 'react-native';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
-import DatabaseService from '../../services/DatabaseService';
+import DatabaseService from '../../services/myvehicle_ds';
+import matchpreferenceDatabaseService from '../../services/matchingpreference_ds';
+
 import { Colors } from '../../constants/Colors';
 import { useFocusEffect } from '@react-navigation/native';
 
@@ -107,8 +109,8 @@ export default function Step3({ phoneNumber, onNext, navigation, setVehicleId, v
 
   const loadPrefs = async () => {
     try {
-      const defs = await DatabaseService.getMatchingPreferenceMaster();
-      const userVals = await DatabaseService.getUserMatchingPreferences(phoneNumber);
+      const defs = await matchpreferenceDatabaseService.getMatchingPreferenceMaster();
+      const userVals = await matchpreferenceDatabaseService.getUserMatchingPreferences(phoneNumber);
 
       setMaster(defs || []);
       setValues(userVals || {});

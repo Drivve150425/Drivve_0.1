@@ -8,17 +8,20 @@ import {
   StatusBar,
   Switch,
   Alert,
+    KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { MaterialIcons } from '@expo/vector-icons';
+import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { Colors, Typography } from '../constants/Colors';
-import DatabaseService from '../services/DatabaseService';
+import DatabaseService from '../services/securityprivacy_ds';
+import devicesDatabaseService from '../services/loginactivity_ds';
 import { useAuth } from '../context/AuthContext';
 
 export default function SecurityPrivacyScreen({ navigation, route }) {
   const { user } = useAuth();
   const phoneNumber = user?.phone_number;
-  
+
   const [contactVisibility, setContactVisibility] = useState(true);
   const [loginDevices, setLoginDevices] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -51,7 +54,7 @@ export default function SecurityPrivacyScreen({ navigation, route }) {
 
   const loadDevices = async () => {
     try {
-      const res = await DatabaseService.getDevices(phoneNumber);
+      const res = await devicesDatabaseService.getDevices(phoneNumber);
       if (res?.success) {
         setLoginDevices(res.devices.length);
       }
@@ -113,27 +116,25 @@ export default function SecurityPrivacyScreen({ navigation, route }) {
       </SafeAreaView>
     );
   }
-
+ const handleBack = () => {
+    navigation.goBack();
+  };
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
-
-      {/* ===== HEADER ===== */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.modernBackButton}
-          onPress={() => navigation.goBack()}
-        >
-          <MaterialIcons
-            name="arrow-back-ios"
-            size={28}
-            color={Colors.orange1}
-          />
-        </TouchableOpacity>
-
-        <Text style={styles.headerTitle}>Security & Privacy</Text>
-        <View style={styles.headerSpacer} />
-      </View>
+                             <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
+                             
+                             <KeyboardAvoidingView
+                               style={styles.keyboardAvoidingView}
+                               behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+                             >
+                               {/* Header */}
+                               <View style={styles.header}>
+                                 <TouchableOpacity style={styles.modernBackButton} onPress={handleBack}>
+                                   <MaterialIcons name="arrow-back-ios" size={28} color={Colors.secondary} />
+                                 </TouchableOpacity>
+                                 <Text style={styles.headerTitle}>Security & Privacy</Text>
+                                 <View style={styles.headerSpacer} />
+                               </View>
 
       {/* ===== CONTENT ===== */}
       <ScrollView
@@ -186,7 +187,7 @@ export default function SecurityPrivacyScreen({ navigation, route }) {
                 <MaterialIcons
                   name="chevron-right"
                   size={26}
-                  color={Colors.dark}
+                  color={Colors.orange1}
                   style={{ opacity: 0.4 }}
                 />
               )}
@@ -194,6 +195,7 @@ export default function SecurityPrivacyScreen({ navigation, route }) {
           ))}
         </View>
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -203,33 +205,36 @@ export default function SecurityPrivacyScreen({ navigation, route }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.white },
 
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 0.5,
-    borderBottomColor: '#F3F4F6',
-  },
+  keyboardAvoidingView: {
+     flex: 1,
+   },
+   header: {
+     flexDirection: 'row',
+     alignItems: 'center',
+     paddingHorizontal: 16,
+     paddingVertical: 12,
+     borderBottomWidth: 0.5,
+     borderBottomColor: '#F3F4F6',
+   },
+   modernBackButton: {
+     width: 44,
+     height: 44,
+     borderRadius: 22,
+     justifyContent: 'center',
+     alignItems: 'center',
+   },
+   headerTitle: {
+     ...Typography.h2,
+     fontSize: 28,
+     fontWeight: '700',
+     color: Colors.primary,
+     flex: 1,
+     textAlign: 'center',
+   },
+   headerSpacer: {
+     width: 44,
+   },
 
-  modernBackButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-
-  headerTitle: {
-    ...Typography.h2,
-    fontSize: 28,
-    fontWeight: '700',
-    color: Colors.primary,
-    flex: 1,
-    textAlign: 'center',
-  },
-
-  headerSpacer: { width: 44 },
 
   scrollContent: {
     paddingHorizontal: 20,

@@ -27,14 +27,14 @@ import CustomAlert from '../components/CustomAlert';
 import DatePickerModal from '../components/DatePickerModal';
 import EmailOTPModal from '../components/EmailOTPModal';
 import ProfilePictureModal from '../components/ProfilePictureModal';
-import DatabaseService from '../services/DatabaseService';
-import { useAuth } from '../context/AuthContext';
-
+import DatabaseService from '../services/createprofile_ds';
+import * as ImageManipulator from 'expo-image-manipulator';
 const { width, height } = Dimensions.get('window');
+import { useAuth } from '../context/AuthContext';
 
 export default function CreateProfileScreen({ navigation, route }) {
   const params = route?.params || {};
-const { login } = useAuth();
+ const { login } = useAuth();
   const { phoneNumber, fullPhoneNumber, countryCode, isNewUser } = params;
 
   // Form states
@@ -331,6 +331,22 @@ const { login } = useAuth();
       const lastInitial = (lastName || 'U').charAt(0).toUpperCase();
       const phoneDigits = fullPhoneNumber ? fullPhoneNumber.slice(-4) : '0000';
       const generatedUserId = `D-${firstInitial}${lastInitial}${phoneDigits}`;
+      let base64Image = null;
+
+      if (profileImage?.uri) {
+
+        const resizedImage = await ImageManipulator.manipulateAsync(
+          profileImage.uri,
+          [{ resize: { width: 500 } }], // 🔥 critical
+          {
+            compress: 0.6,
+            format: ImageManipulator.SaveFormat.JPEG,
+            base64: true,
+          }
+        );
+
+        base64Image = resizedImage.base64;
+      }
 
       const profileData = {
         user_id: generatedUserId,
@@ -345,7 +361,8 @@ const { login } = useAuth();
         state: selectedState,
         city: selectedCity,
         referral_code: referralCode.trim() || null,
-        profile_image: profileImage?.uri || null,
+        profile_image: base64Image,
+
         // Store avatar id (or name) instead of JSON.stringify(component)
         avatar: selectedAvatar?.id || null,
         is_active: true,
@@ -381,12 +398,23 @@ const { login } = useAuth();
       }
 
     } catch (error) {
-      setAlertMessage('Failed to create profile. Please try again');
-      setShowEmailErrorAlert(true);
+
+  console.log("PROFILE CREATE ERROR:", error);
+
+  setAlertMessage(
+    error?.message || 
+    JSON.stringify(error) || 
+    "Unknown error"
+  );
+
+  setShowEmailErrorAlert(true);
+
+
     } finally {
       setIsLoading(false);
     }
   };
+
 
   const renderProfileImage = () => {
     if (profileImage) {
@@ -790,7 +818,7 @@ const { login } = useAuth();
         message="Please fill all required fields correctly"
         icon="error-outline"
         iconColor="#EF4444"
-        buttons={[
+         buttons={[
           { text: 'OK', onPress: () => setShowValidationAlert(false) }
         ]}
         onBackdropPress={() => setShowValidationAlert(false)}

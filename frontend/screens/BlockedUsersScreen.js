@@ -8,15 +8,18 @@ import {
   StatusBar,
   FlatList,
   Alert,
+     KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { Colors, Typography } from '../constants/Colors';
-import DatabaseService from '../services/DatabaseService';
+import DatabaseService from '../services/blockeduser_ds';
 import { useAuth } from '../context/AuthContext';
 
 export default function BlockedUsersScreen({ navigation, route }) {
   const { user } = useAuth();
+
   const phone_number = user?.phone_number;
 
   const [blockedUsers, setBlockedUsers] = useState([]);
@@ -86,46 +89,48 @@ export default function BlockedUsersScreen({ navigation, route }) {
       </TouchableOpacity>
     </View>
   );
-
+const handleBack = () => {
+    navigation.goBack();
+  };
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
-
-      {/* HEADER */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.modernBackButton}
-          onPress={() => navigation.goBack()}
-        >
-          <MaterialIcons
-            name="arrow-back-ios"
-            size={28}
-            color={Colors.orange1}
-          />
-        </TouchableOpacity>
-
-        <Text style={styles.headerTitle}>Blocked Users</Text>
-        <View style={styles.headerSpacer} />
-      </View>
-
+      <SafeAreaView style={styles.container}>
+                                                 <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
+                                                 
+                                                 <KeyboardAvoidingView
+                                                   style={styles.keyboardAvoidingView}
+                                                   behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+                                                 >
+                                                   {/* Header */}
+                                                   <View style={styles.header}>
+                                                     <TouchableOpacity style={styles.modernBackButton} onPress={handleBack}>
+                                                       <MaterialIcons name="arrow-back-ios" size={28} color={Colors.secondary} />
+                                                     </TouchableOpacity>
+                                                     <Text style={styles.headerTitle}>Blocked Users</Text>
+                                                     <View style={styles.headerSpacer} />
+                                                   </View>
       {/* CONTENT */}
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.mainCard}>
           <Text style={styles.sectionTitle}>Blocked Users</Text>
+           <View style={styles.infoBox}>
+            <MaterialIcons name="info" size={20} color={Colors.primary} />
+            <Text style={styles.infoText}>
+              To block someone, go to their profile and tap “Block User.”
+            </Text>
+          </View>
           <Text style={styles.sectionSubtitle}>
-            Blocked users can’t contact you or view your profile
+            Users you block won’t be able to contact you or view your profile.
           </Text>
 
           {blockedUsers.length === 0 ? (
             <View style={styles.emptyState}>
-              <Ionicons
-                name="person-remove-outline"
+              <MaterialIcons
+                name="person-remove"
                 size={64}
-                color="#E5E7EB"
+                color={Colors.primary}
               />
-              <Text style={styles.emptyTitle}>No blocked users</Text>
               <Text style={styles.emptyText}>
-                You haven’t blocked anyone yet
+                You haven’t blocked anyone yet.
               </Text>
             </View>
           ) : (
@@ -139,14 +144,10 @@ export default function BlockedUsersScreen({ navigation, route }) {
           )}
 
           {/* INFO */}
-          <View style={styles.infoBox}>
-            <MaterialIcons name="info" size={20} color={Colors.primary} />
-            <Text style={styles.infoText}>
-              To block a user, visit their profile and select “Block User”.
-            </Text>
-          </View>
+         
         </View>
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -158,34 +159,36 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.white,
   },
+keyboardAvoidingView: {
+     flex: 1,
+   },
+   header: {
+     flexDirection: 'row',
+     alignItems: 'center',
+     paddingHorizontal: 16,
+     paddingVertical: 12,
+     borderBottomWidth: 0.5,
+     borderBottomColor: '#F3F4F6',
+   },
+   modernBackButton: {
+     width: 44,
+     height: 44,
+     borderRadius: 22,
+     justifyContent: 'center',
+     alignItems: 'center',
+   },
+   headerTitle: {
+     ...Typography.h2,
+     fontSize: 28,
+     fontWeight: '700',
+     color: Colors.primary,
+     flex: 1,
+     textAlign: 'center',
+   },
+   headerSpacer: {
+     width: 44,
+   },
 
-  /* HEADER */
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 0.5,
-    borderBottomColor: '#F3F4F6',
-  },
-  modernBackButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  headerTitle: {
-    ...Typography.h2,
-    fontSize: 28,
-    fontWeight: '700',
-    color: Colors.primary,
-    flex: 1,
-    textAlign: 'center',
-  },
-  headerSpacer: {
-    width: 44,
-  },
 
   scrollContent: {
     paddingHorizontal: 20,
@@ -207,12 +210,12 @@ const styles = StyleSheet.create({
   },
 
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '700',
     color: Colors.primary,
   },
   sectionSubtitle: {
-    fontSize: 15,
+    fontSize: 17,
     color: Colors.dark,
     opacity: 0.7,
     marginTop: 6,
@@ -276,7 +279,7 @@ const styles = StyleSheet.create({
   /* EMPTY */
   emptyState: {
     alignItems: 'center',
-    paddingVertical: 60,
+    paddingVertical: 10,
   },
   emptyTitle: {
     fontSize: 18,
@@ -286,7 +289,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   emptyText: {
-    fontSize: 15,
+    fontSize: 17,
     color: Colors.dark,
     opacity: 0.6,
     textAlign: 'center',
@@ -301,11 +304,11 @@ const styles = StyleSheet.create({
     padding: 16,
     borderWidth: 1,
     borderColor: '#BBDEFB',
-    marginTop: 20,
+    marginTop: 8
   },
   infoText: {
     flex: 1,
-    fontSize: 14,
+    fontSize: 16,
     color: Colors.primary,
     lineHeight: 20,
   },

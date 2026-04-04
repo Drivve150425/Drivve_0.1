@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, Text, Enum, Date, JSON, Float
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, Text, Enum, Date, JSON,Float, UniqueConstraint
 from sqlalchemy.sql import func
 from database import Base
 import enum
@@ -44,7 +44,8 @@ class User(Base):
     city = Column(String(100), nullable=True)
     
     # Profile image and avatar
-    profile_picture = Column(String(500), nullable=True)  # URL or path
+
+    profile_picture = Column(Text, nullable=True)
     avatar = Column(JSON, nullable=True)  # Avatar data as JSON
     
     # Additional info
@@ -66,6 +67,8 @@ class User(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     # About / Bio
     bio = Column(String(500), nullable=True)
+    avg_rating = Column(Float, default=5.0)
+    total_ratings = Column(Integer, default=0)
 
 
 class OTPVerification(Base):
@@ -88,7 +91,6 @@ class EmailOTP(Base):
     expires_at = Column(DateTime(timezone=True), nullable=False)
     verified = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-
 class Ride(Base):
     __tablename__ = "rides"
 
@@ -460,6 +462,7 @@ class DocumentVerification(Base):
     issue_date = Column(Date, nullable=True)
     expiry_date = Column(Date, nullable=True)
     is_expired = Column(Boolean, default=False)
+    is_deleted=Column(Boolean, default=False)
     
     # Timestamps
     submitted_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -563,22 +566,52 @@ class UserFeedback(Base):
     reason = Column(Text, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     
-    
 class RideFeedback(Base):
     __tablename__ = "ride_feedback"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
 
-    ride_booking_id = Column(Integer, index=True, nullable=False)
-    phone_number = Column(String(20), index=True, nullable=False)
+    ride_booking_id = Column(
+        Integer,
+        ForeignKey("ride_bookings.id"),
+        nullable=False,
+        index=True
+    )
 
-    rating = Column(Integer, nullable=False)   # 1–5
-    reason = Column(String(100), nullable=True)
-    comment = Column(Text, nullable=True)
+    # who gave feedback
+    feedback_by_user_id = Column(
+        Integer,
+        ForeignKey("users.id"),
+        nullable=False,
+        index=True
+    )
+
+    # who received feedback
+    feedback_for_user_id = Column(
+        Integer,
+        ForeignKey("users.id"),
+        nullable=False,
+        index=True
+    )
+
+    rating = Column(Integer, nullable=False)
+    reason = Column(String(120))
+    comment = Column(Text)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    
-    
+
+    # ⭐ relationships
+    feedback_by = relationship("User", foreign_keys=[feedback_by_user_id])
+    feedback_for = relationship("User", foreign_keys=[feedback_for_user_id])
+
+    __table_args__ = (
+        UniqueConstraint(
+            'ride_booking_id',
+            'feedback_by_user_id',
+            name='unique_feedback_per_user_per_ride'
+        ),
+    )
+
 class ActivityLog(Base):
     __tablename__ = "activity_logs"
 

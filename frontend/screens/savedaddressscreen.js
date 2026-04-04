@@ -17,11 +17,21 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import MapView, { Marker } from 'react-native-maps';
+import { Colors, Typography } from '../constants/Colors';
+
+let MapView = null;
+let Marker = null;
+
+if (Platform.OS !== 'web') {
+  const Maps = require('react-native-maps');
+  MapView = Maps.default;
+  Marker = Maps.Marker;
+}
+
+// import MapView, { Marker } from 'react-native-maps';
 import * as Haptics from 'expo-haptics';
 
-import { Colors } from '../constants/Colors';
-import DatabaseService from '../services/DatabaseService';
+import DatabaseService from '../services/savedaddress_ds';
 import { useAuth } from "../context/AuthContext";
 
 const { width, height } = Dimensions.get('window');
@@ -45,7 +55,7 @@ const normalizeAddress = (a) => ({
 });
 
 export default function SavedAddressesScreen({ navigation, route }) {
-  const { user } = useAuth();
+ const { user } = useAuth();
   const phoneNumber = user?.phone_number;
 
   
@@ -186,27 +196,38 @@ export default function SavedAddressesScreen({ navigation, route }) {
     setModalType('success');
     setModalVisible(true);
   };
+const updateAddressFromMap = async (region) => {
+  try {
 
-  const updateAddressFromMap = async (region) => {
-    try {
-      const [geo] = await Location.reverseGeocodeAsync({
-        latitude: region.latitude,
-        longitude: region.longitude,
-      });
+    // ✅ CHECK PERMISSION FIRST
+    const { status } = await Location.getForegroundPermissionsAsync();
 
-      const full = `
+    if (status !== 'granted') {
+      console.log("Location permission not granted");
+      return;
+    }
+
+    const [geo] = await Location.reverseGeocodeAsync({
+      latitude: region.latitude,
+      longitude: region.longitude,
+    });
+
+    if (!geo) return;
+
+    const full = `
 ${geo.name || ''} ${geo.street || ''},
 ${geo.subregion || geo.district || ''},
 ${geo.city || ''} ${geo.region || ''} ${geo.postalCode || ''},
 ${geo.country || ''}
 `.replace(/\s+/g, ' ').trim();
 
-      setSelectedAddress(full);
-      setSearchText(full);
-    } catch (e) {
-      console.log('Reverse geocode error:', e);
-    }
-  };
+    setSelectedAddress(full);
+    setSearchText(full);
+
+  } catch (e) {
+    console.log('Reverse geocode error:', e);
+  }
+};
 
   const handleLocateMe = async () => {
     let { status } = await Location.requestForegroundPermissionsAsync();
@@ -507,40 +528,37 @@ ${geo.country || ''}
   };
 
   const modalContent = getModalContent();
+  const handleBack = () => navigation.goBack();
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
-      
-      {/* Header - Using modern UI design */}
-      <View style={styles.header}>
-        <TouchableOpacity 
-          style={styles.backButton}
-onPress={() =>
-  navigation.reset({
-    index: 0,
-    routes: [{ name: "ProfileDetails", params: { phoneNumber } }],
-  })
-}
-        >
-          <MaterialIcons name="arrow-back-ios" size={28} color="#ED7117" />
-        </TouchableOpacity>
-        
-        <Text style={styles.headerTitle}>
-          {step === 1 ? "Saved Addresses" : "Save Address"}
-        </Text>
-        
-        {step === 1 && (
-          <TouchableOpacity 
-            style={styles.addButton}
-            onPress={handleAddAddress}
-          >
-            <MaterialIcons name="add" size={35} color="#ED7117" />
-          </TouchableOpacity>
-        )}
-        
-        {step !== 1 && <View style={{ width: 44 }} />}
-      </View>
+       <KeyboardAvoidingView
+                    style={styles.keyboardAvoidingView}
+                    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                  >
+    <View style={styles.header}>
+  
+  {/* Left Back Button */}
+            <TouchableOpacity onPress={handleBack}>
+    <MaterialIcons name="arrow-back-ios" size={28} color="#ED7117" />
+  </TouchableOpacity>
+
+  {/* Title */}
+  <Text style={styles.headerTitle}>
+    {step === 1 ? "Saved Addresses" : "Save Address"}
+  </Text>
+
+  {/* Right Side (Fixed Width for Alignment) */}
+  <View style={styles.rightContainer}>
+    {step === 1 && (
+      <TouchableOpacity onPress={handleAddAddress}>
+        <MaterialIcons name="add" size={32} color="#ED7117" />
+      </TouchableOpacity>
+    )}
+  </View>
+
+</View>
 
       {/* Step 1: List Addresses */}
       {step === 1 && (
@@ -569,61 +587,105 @@ onPress={() =>
         </Animated.ScrollView>
       )}
 
-      {/* Step 2: Map View */}
-      {step === 2 && (
-        <View style={{ flex: 1 }}>
-          <MapView
-            style={{ flex: 1 }}
-            region={mapRegion}
-            onRegionChangeComplete={(reg) => {
-              setMapRegion(reg);
-              updateAddressFromMap(reg);
-            }}
-          >
-            <Marker coordinate={mapRegion} />
-          </MapView>
+  {/* Step 2: Map View */}
+{step === 2 && (
+  <View style={{ flex: 1 }}>
 
-          <View style={styles.mapSheet}>
-            <Text style={styles.sheetTitle}>Set your pick-up location</Text>
+    {/* ✅ MOBILE MAP */}
+    {Platform.OS !== 'web' && MapView ? (
+      <MapView
+        style={{ flex: 1 }}
+        region={mapRegion}
+        onRegionChangeComplete={(reg) => {
+          setMapRegion(reg);
+          updateAddressFromMap(reg);
+        }}
+      >
+        <Marker coordinate={mapRegion} />
+      </MapView>
+    ) : (
+      /* ✅ WEB FALLBACK */
+      <View
+        style={{
+          flex: 1,
+          justifyContent: "center",
+          alignItems: "center",
+          backgroundColor: "#F3F4F6",
+        }}
+      >
+        <MaterialIcons name="map" size={70} color="#9CA3AF" />
+        
+        <Text
+          style={{
+            fontSize: 20,
+            fontWeight: "700",
+            marginTop: 10,
+            color: "#374151",
+          }}
+        >
+          Map not available on Web
+        </Text>
 
-            <View style={styles.searchRow}>
-              <TextInput
-                style={styles.searchBox}
-                placeholder="Search location"
-                placeholderTextColor={Colors.gray}
-                value={searchText}
-                onChangeText={setSearchText}
-              />
+        <Text
+          style={{
+            fontSize: 14,
+            marginTop: 6,
+            color: "#6B7280",
+          }}
+        >
+          Please use the mobile app to select location 📱
+        </Text>
+      </View>
+    )}
 
-              <TouchableOpacity
-                style={styles.searchButton}
-                onPress={() => setSelectedAddress(searchText)}
-              >
-                <Text style={styles.searchButtonText}>Search</Text>
-              </TouchableOpacity>
-            </View>
+    {/* Bottom Sheet */}
+    <View style={styles.mapSheet}>
+      <Text style={styles.sheetTitle}>Set your pick-up location</Text>
 
-            <TouchableOpacity style={styles.locateRow} onPress={handleLocateMe}>
-              <MaterialIcons name="my-location" size={20} color="#ED7117" />
-              <Text style={styles.locateText}>Locate Me</Text>
-            </TouchableOpacity>
+      <View style={styles.searchRow}>
+        <TextInput
+          style={styles.searchBox}
+          placeholder="Search location"
+          placeholderTextColor={Colors.gray}
+          value={searchText}
+          onChangeText={setSearchText}
+        />
 
-            {selectedAddress ? (
-              <Text style={styles.selectedAddressText}>{selectedAddress}</Text>
-            ) : null}
-          </View>
+        <TouchableOpacity
+          style={styles.searchButton}
+          onPress={() => setSelectedAddress(searchText)}
+        >
+          <Text style={styles.searchButtonText}>Search</Text>
+        </TouchableOpacity>
+      </View>
 
-          <View style={styles.bottomBar}>
-            <TouchableOpacity 
-              style={styles.bottomButton} 
-              onPress={handleConfirm}
-              activeOpacity={0.9}
-            >
-              <Text style={styles.bottomButtonText}>Confirm Location</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
+      <TouchableOpacity style={styles.locateRow} onPress={handleLocateMe}>
+        <MaterialIcons name="my-location" size={20} color="#ED7117" />
+        <Text style={styles.locateText}>Locate Me</Text>
+      </TouchableOpacity>
+
+      {selectedAddress ? (
+        <Text style={styles.selectedAddressText}>
+          {selectedAddress}
+        </Text>
+      ) : null}
+    </View>
+
+    {/* Bottom Button */}
+    <View style={styles.bottomBar}>
+      <TouchableOpacity
+        style={styles.bottomButton}
+        onPress={handleConfirm}
+        activeOpacity={0.9}
+      >
+        <Text style={styles.bottomButtonText}>
+          Confirm Location
+        </Text>
+      </TouchableOpacity>
+    </View>
+  </View>
+)}
+
 
       {/* Step 3: Address Details Form */}
       {step === 3 && (
@@ -745,6 +807,8 @@ onPress={() =>
         type={modalContent.type}
         onConfirm={modalContent.onConfirm}
       />
+      </KeyboardAvoidingView>
+
     </SafeAreaView>
   );
 }
@@ -754,16 +818,19 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.white,
   },
-  header: {
+
+   keyboardAvoidingView: {
+    flex: 1,
+  },
+   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    borderBottomWidth: 1,
+    borderBottomWidth: 0.5,
     borderBottomColor: '#F3F4F6',
   },
-  backButton: {
+  modernBackButton: {
     width: 44,
     height: 44,
     borderRadius: 22,
@@ -771,10 +838,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 20,
+    ...Typography.h2,
+    fontSize: 28,
     fontWeight: '700',
     color: Colors.primary,
-    textTransform: 'none',
+    flex: 1,
+    textAlign: 'center',
+  },
+  headerSpacer: {
+    width: 44,
   },
   addButton: {
     width: 44,

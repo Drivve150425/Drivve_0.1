@@ -22,11 +22,11 @@ import { Colors, Typography } from '../constants/Colors';
 import { Roboto_300Light } from '@expo-google-fonts/roboto';
 import { useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-
 const { width, height } = Dimensions.get('window');
-const DRAWER_HEIGHT = height * 0.25;
-const BASE_URL = process.env.EXPO_PUBLIC_API_URL;
+const DRAWER_HEIGHT = verticalScale(160);
+import { API_BASE_URL } from "../config/config_ip";
 
+import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
 export default function HomeScreen({ navigation }) {
   const { user } = useAuth();
 
@@ -60,7 +60,7 @@ export default function HomeScreen({ navigation }) {
         console.log('⚠️ No phone number available for notifications');
         return;
       }
-      const url = `${BASE_URL}/api/v1/notifications?phone_number=${encodeURIComponent(
+      const url = `${API_BASE_URL}/api/v1/notifications?phone_number=${encodeURIComponent(
         phoneNumber
       )}&page=1&limit=50`;
 
@@ -136,7 +136,7 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
-  const toggleDrawer = () => {
+ const toggleDrawer = () => {
     if (isDrawerOpen) {
       closeDrawer();
     } else {
@@ -147,44 +147,50 @@ export default function HomeScreen({ navigation }) {
   const openDrawer = () => {
     setIsDrawerOpen(true);
     Animated.parallel([
-      Animated.timing(drawerTranslateY, {
+      Animated.spring(drawerTranslateY, {
         toValue: 0,
-        duration: 300,
         useNativeDriver: true,
+        tension: 65,
+        friction: 11,
       }),
       Animated.timing(drawerOpacity, {
         toValue: 1,
-        duration: 300,
+        duration: 250,
         useNativeDriver: true,
       }),
-      Animated.timing(contentTranslateY, {
-        toValue: DRAWER_HEIGHT-35,
-        duration: 300,
+      Animated.spring(contentTranslateY, {
+        toValue: DRAWER_HEIGHT - verticalScale(35),
         useNativeDriver: true,
+        tension: 65,
+        friction: 11,
       })
     ]).start();
   };
 
+
   const closeDrawer = () => {
     setIsDrawerOpen(false);
     Animated.parallel([
-      Animated.timing(drawerTranslateY, {
+      Animated.spring(drawerTranslateY, {
         toValue: -DRAWER_HEIGHT,
-        duration: 300,
         useNativeDriver: true,
+        tension: 65,
+        friction: 11,
       }),
       Animated.timing(drawerOpacity, {
         toValue: 0,
-        duration: 300,
+        duration: 200,
         useNativeDriver: true,
       }),
-      Animated.timing(contentTranslateY, {
+      Animated.spring(contentTranslateY, {
         toValue: 0,
-        duration: 300,
         useNativeDriver: true,
+        tension: 65,
+        friction: 11,
       })
     ]).start();
   };
+
 
   const showDateTimePicker = () => {
     setShowDatePicker(true);
@@ -327,20 +333,29 @@ const openNotifications = () => {
               <Text style={styles.greeting1}>{secondLine}</Text>
             </TouchableOpacity>
             <View style={styles.headerRight}>
-            <TouchableOpacity style={styles.notificationButton} onPress={openNotifications}>
-              <Ionicons name="notifications" size={28} color={Colors.white} />
-              {unreadCount > 0 && (
-                <View style={styles.headerBadge}>
-                  <Text style={styles.headerBadgeText}>
-                    {unreadCount > 9 ? '9+' : unreadCount}
-                  </Text>
-                </View>
-              )}
-            </TouchableOpacity>
+            <TouchableOpacity
+  style={styles.profileButton}
+  onPress={openNotifications}
+>
+  <Ionicons
+    name="notifications"
+    size={40}
+    color={Colors.white}
+  />
+
+  {unreadCount > 0 && (
+    <View style={styles.headerBadge}>
+      <Text style={styles.headerBadgeText}>
+        {unreadCount > 9 ? '9+' : unreadCount}
+      </Text>
+    </View>
+  )}
+</TouchableOpacity>
           </View>
           </View>
 
           <Animated.View 
+           pointerEvents={isDrawerOpen ? 'auto' : 'none'}
             style={[
               styles.drawerContainer,
               { 
@@ -349,6 +364,11 @@ const openNotifications = () => {
               }
             ]}
           >
+            <TouchableOpacity 
+            activeOpacity={1} 
+            style={styles.drawerContent}
+            onPress={closeDrawer}
+          ></TouchableOpacity>
             <View style={styles.earningSection}>
               <Text style={styles.earningTitle}>Total Earning</Text>
               <Text style={styles.earningAmount}>₹10</Text>
@@ -501,13 +521,12 @@ const openNotifications = () => {
       </PanGestureHandler>
 
       {/* Reusable Bottom Navigation Component */}
-      <BottomNavigation 
+   <BottomNavigation 
   activeTab={activeBottomTab}
   onNavigate={handleBottomNavigation}
   unreadCount={unreadCount}
+  profileImage={user?.profile_picture}
 />
-
-
       {/* Date/Time Pickers */}
       {showDatePicker && (
         <DateTimePicker
@@ -599,8 +618,10 @@ const styles = StyleSheet.create({
     //fontWeight: '600',
     color: Colors.white,
   },
-profileButton: {
+  profileButton: {
     padding: 5,
+    marginLeft: 10,
+    marginTop: 5,
   },
   headerRight: {
     flexDirection: 'row',
@@ -721,6 +742,12 @@ profileButton: {
     },
   whenSection: {
     marginBottom: 2,
+  },
+   drawerContent: {
+    flex: 1,
+    // backgroundColor: 'rgba(255,255,255,0.1)',
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
   },
   sectionTitle: {
     fontSize: 18,

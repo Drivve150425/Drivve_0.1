@@ -4,11 +4,11 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import ScreenHeader from "../screens/ScreenHeader";
 import { Colors } from "../constants/Colors";
 import { useAuth } from "../context/AuthContext";
-import DatabaseService from "../services/DatabaseService";
 
 export default function DeactivateAccountScreen({ navigation }) {
-  const { user, logout } = useAuth();
+   const { user, logout } = useAuth();
   const phoneNumber = user?.phone_number;
+
   const handleDeactivate = () => {
     if (!phoneNumber) return;
 
@@ -49,7 +49,7 @@ export default function DeactivateAccountScreen({ navigation }) {
       ]
     );
   };
-
+  
   return (
     <SafeAreaView style={styles.container}>
       <ScreenHeader title="Deactivate Account" navigation={navigation} />

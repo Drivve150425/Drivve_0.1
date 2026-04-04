@@ -34,7 +34,7 @@ export default function LocationSearchScreen({ navigation, route }) {
 
     try {
       const response = await axios.post(
-        'http://192.168.1.2:8000/search-location',
+        'http://192.168.1.13:8000/search-location',
         { query: text }
       );
 

@@ -7,11 +7,13 @@ import {
   StyleSheet,
   TouchableOpacity,
   TextInput,
-  StatusBar
+  StatusBar,
+    KeyboardAvoidingView,
+    Platform
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialIcons, Ionicons } from "@expo/vector-icons";
-import DatabaseService from "../services/DatabaseService";
+import DatabaseService from "../services/matchingpreference_ds";
 import { Colors, Typography } from "../constants/Colors";
 import { useAuth } from "../context/AuthContext";
 
@@ -54,7 +56,7 @@ const ICON_MAP = {
 ========================================================= */
 
 export default function MatchingPreferenceScreen({ route, navigation }) {
-  const { user } = useAuth();
+ const { user } = useAuth();
   const phoneNumber = user?.phone_number;
   
   // Get callback from route params (passed from Step3)
@@ -84,7 +86,6 @@ export default function MatchingPreferenceScreen({ route, navigation }) {
     setValues(prev => ({ ...prev, [key]: value }));
     DatabaseService.saveMatchingPreference(phoneNumber, key, value);
   };
-
   // Handle save and navigate back
   const handleSave = () => {
     // Call the callback if provided (from Step3)
@@ -94,7 +95,6 @@ export default function MatchingPreferenceScreen({ route, navigation }) {
     // Navigate back to Step3
     navigation.goBack();
   };
-
   /* =========================================================
      RENDERERS
   ========================================================= */
@@ -185,22 +185,31 @@ export default function MatchingPreferenceScreen({ route, navigation }) {
     );
   };
 
+  const handleBack = () => {
+    navigation.goBack();
+  };
   /* =========================================================
      EMPTY STATE
   ========================================================= */
 
   if (!master.length) {
     return (
-      <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="dark-content" />
-
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()}>
-            <MaterialIcons name="arrow-back-ios" size={26} color={Colors.orange1} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Matching Preferences</Text>
-          <View style={{ width: 44 }} />
-        </View>
+     <SafeAreaView style={styles.container}>
+          <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
+          
+          <KeyboardAvoidingView
+            style={styles.keyboardAvoidingView}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+          >
+            {/* Header */}
+            <View style={styles.header}>
+              <TouchableOpacity style={styles.modernBackButton} onPress={handleBack }>
+                <MaterialIcons name="arrow-back-ios" size={28} color={Colors.secondary} />
+              </TouchableOpacity>
+              <Text style={styles.headerTitle}>Matching Preferences</Text>
+              <View style={styles.headerSpacer} />
+            </View>
+    
 
         <View style={styles.emptyWrap}>
           <Ionicons name="options-outline" size={64} color={Colors.borderGray} />
@@ -209,7 +218,10 @@ export default function MatchingPreferenceScreen({ route, navigation }) {
             Preferences will appear here once configured.
           </Text>
         </View>
+              </KeyboardAvoidingView>
+        
       </SafeAreaView>
+      
     );
   }
 
@@ -256,8 +268,7 @@ export default function MatchingPreferenceScreen({ route, navigation }) {
           </View>
         ))}
       </ScrollView>
-
-      {/* Save Button */}
+         {/* Save Button */}
       <View style={styles.footer}>
         <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
           <Text style={styles.saveButtonText}>Save Preferences</Text>
@@ -276,23 +287,34 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.white
   },
-
+ keyboardAvoidingView: {
+    flex: 1,
+  },
   header: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 0.5,
-    borderBottomColor: "#F3F4F6"
+    borderBottomColor: '#F3F4F6',
   },
-
+  modernBackButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   headerTitle: {
     ...Typography.h2,
-    fontSize: 26,
-    fontWeight: "700",
+    fontSize: 28,
+    fontWeight: '700',
     color: Colors.primary,
     flex: 1,
-    textAlign: "center"
+    textAlign: 'center',
+  },
+  headerSpacer: {
+    width: 44,
   },
 
   scrollContent: {

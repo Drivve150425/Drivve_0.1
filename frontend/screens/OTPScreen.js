@@ -25,11 +25,10 @@ import CustomAlert from '../components/CustomAlert';
 import OTPInputs from '../components/OTPInputs';
 import SuccessAnimation from '../components/SuccessAnimation';
 import FirebaseAuthService from '../services/FirebaseAuthService';
-import DatabaseService from '../services/DatabaseService';
+import DatabaseService from '../services/otp_ds';
 import * as Haptics from 'expo-haptics';
+import { API_BASE_URL } from "../config/config_ip";
 import { useAuth } from '../context/AuthContext';
-
-const BASE_URL = "http://192.168.1.2:8000"//process.env.EXPO_PUBLIC_API_URL;
 
 
 LogBox.ignoreLogs([
@@ -52,9 +51,7 @@ export default function OTPScreen({ navigation, route }) {
     confirmationResult,
     verificationId
   } = route.params || {};
-
   const { login } = useAuth();
- 
   // State management - Changed initial timer from 60 to 30 seconds
   const [otpValue, setOtpValue] = useState('');
   const [timeLeft, setTimeLeft] = useState(30); // ✅ Changed from 60 to 30
@@ -229,40 +226,41 @@ export default function OTPScreen({ navigation, route }) {
       console.log('🔥 Firebase Verification Result:', result.success ? 'SUCCESS' : 'FAILED');
      
       if (result.success) {
-        console.log('✅ User authenticated:', result.user.uid);
-        console.log('📱 Phone number:', result.phoneNumber);
+  console.log('✅ User authenticated:', result.user.uid);
+  console.log('📱 Phone number:', result.phoneNumber);
 
-        // 🔐 REGISTER DEVICE WITH BACKEND
-        const deviceName = `${Device.brand || "Unknown"} ${Device.modelName || "Device"}`;
-        const deviceType =
-          Device.deviceType === Device.DeviceType.TABLET ? "tablet" : "mobile";
+  // 🔐 REGISTER DEVICE WITH BACKEND
+  const deviceName = `${Device.brand || "Unknown"} ${Device.modelName || "Device"}`;
+  const deviceType =
+    Device.deviceType === Device.DeviceType.TABLET ? "tablet" : "mobile";
 
-        console.log("📱 Registering device:", deviceName, deviceType);
+  console.log("📱 Registering device:", deviceName, deviceType);
 
-        await fetch(`${BASE_URL}/api/verify-otp`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            phone_number: fullNumber,
-            otp_code: otpValue,
-            device_name: deviceName,
-            device_type: deviceType,
-          }),
-        });
+  await fetch(`${API_BASE_URL}/api/verify-otp`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      phone_number: fullNumber,
+      otp_code: otpValue,
+      device_name: deviceName,
+      device_type: deviceType,
+    }),
+  });
 
-        if (Platform.OS !== 'web') {
-          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        }
+  if (Platform.OS !== 'web') {
+    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  }
 
+  setIsVerifying(false);
+  setShowSuccessAnimation(true);
+}
+ else {
+        setOtpError(result.message);
+        setOtpValue('');
         setIsVerifying(false);
-        setShowSuccessAnimation(true);
-      } else {
-          setOtpError(result.message);
-          setOtpValue('');
-          setIsVerifying(false);
-          triggerShakeAnimation();
-          Alert.alert('Verification Failed', result.message);
-        }
+        triggerShakeAnimation();
+        Alert.alert('Verification Failed', result.message);
+      }
     } catch (error) {
       console.error('🚨 OTP Verification Error:', error);
       setOtpError('Verification failed. Please try again.');
@@ -285,7 +283,7 @@ export default function OTPScreen({ navigation, route }) {
     try {
       if (!fullNumber) {
         console.error('❌ No phone number available');
-        return handleNavigationError();     
+        return handleNavigationError();    
       }
 
 
@@ -293,7 +291,7 @@ export default function OTPScreen({ navigation, route }) {
       const userCheck = await DatabaseService.checkUserExists(fullNumber);
       console.log('📊 User check result:', userCheck);
      
-      if (userCheck.exists && userCheck?.userData) {
+    if (userCheck.exists && userCheck?.userData) {
         console.log('✅ User found, setting session...');
        
 // 🔥 SET GLOBAL SESSION HERE
