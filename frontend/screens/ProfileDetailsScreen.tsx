@@ -26,7 +26,7 @@ import { Alert } from "react-native";
 const { width, height } = Dimensions.get('window');
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from "../context/AuthContext";
-
+import { Linking } from "react-native";
 type RootStackParamList = {
   MyVehicleScreen: { phoneNumber: string };
   SavedAddressScreen: { phoneNumber: string };
@@ -184,6 +184,10 @@ useFocusEffect(
   };
 
  const handleMenuItemPress = (screen: keyof RootStackParamList) => {
+    if (screen === "AboutUsScreen") {
+    Linking.openURL("https://drivve.netlify.app/about");
+    return;
+  }
   const screensWithPhone: ScreensWithPhone[] = [
     "MyVehicleScreen",
     "SavedAddressScreen",

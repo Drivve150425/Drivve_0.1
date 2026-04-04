@@ -12,7 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { Colors, Typography } from '../constants/Colors';
-
+import { Linking } from 'react-native';
 export default function LegalScreen({ navigation }) {
   const legalItems = [
     {
@@ -77,8 +77,13 @@ const handleBack = () => {
                   styles.legalItem,
                   index === legalItems.length - 1 && styles.lastItem,
                 ]}
-                onPress={() => navigation.navigate(item.screen)}
-                activeOpacity={0.7}
+onPress={() => {
+  if (item.id === 'terms') {
+    Linking.openURL('https://drivve.in');
+  } else if (item.id === 'privacy') {
+    Linking.openURL('https://drivve.in');
+  }
+}}                activeOpacity={0.7}
               >
                 <View style={styles.iconWrapper}>
                   <Ionicons
