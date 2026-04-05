@@ -124,7 +124,7 @@
 //   // Existing image
 //   if (editingVehicle.photo_url) {
 //     setVehiclePhoto(
-//       `http://192.168.1.13:8000/${editingVehicle.photo_url}`
+//       `http://192.168.1.2:8000/${editingVehicle.photo_url}`
 //     );
 //   }
 // }, [editingVehicle]);

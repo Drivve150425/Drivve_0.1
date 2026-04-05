@@ -3,6 +3,48 @@ print("CREATE",API_BASE_URL)
 import { Platform } from 'react-native';
 
  class DatabaseService {
+
+    async testConnection() {
+    try {
+      const healthUrl = `${API_BASE_URL}/health`;
+      console.log('🔍 Testing connection to:', healthUrl);
+      
+      // iOS-specific timeout and request configuration
+      const timeoutMs = Platform.OS === 'ios' ? 15000 : 8000;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      
+      const response = await fetch(healthUrl, {
+        method: 'GET',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Cache-Control': 'no-cache'
+        },
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      const result = await response.json();
+      console.log('✅ Health check result:', result);
+      
+      return {
+        success: true,
+        data: result
+      };
+    } catch (error) {
+      console.error('❌ Connection test failed:', error);
+      return {
+        success: false,
+        error: error.message || 'Connection failed'
+      };
+    }
+  }
   // Enhanced user check with iOS optimizations
   async checkUserExists(phoneNumber) {
     try {

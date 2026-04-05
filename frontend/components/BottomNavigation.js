@@ -373,28 +373,36 @@ const styles = StyleSheet.create({
 
   wrapper: {
     position: 'absolute',
-    bottom: verticalScale(10),
+    bottom: verticalScale(0),
     width: '100%',
     alignItems: 'center',
     zIndex: 50,
+    backgroundColor: Colors.white,
+    borderRadius: moderateScale(40),
+    paddingBottom: verticalScale(10),
+    paddingTop: verticalScale(2),
   },
 
  navBar: {
-  height: verticalScale(56),
+    height: verticalScale(56),
+    backgroundColor: '#ffffffc5' , //Colors.white,
+    borderRadius: moderateScale(40),
+    borderColor: Colors.light,
+    flexDirection: 'row',
+    width: '92%',
+    maxWidth: 620, // prevents tablet stretching
+    alignSelf: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 0, // remove extra padding
 
-  backgroundColor: Colors.white,
-  borderRadius: moderateScale(40),
-
-  flexDirection: 'row',
-
-  // ✅ CHANGE THIS
-width: '92%',
-maxWidth: 620, // prevents tablet stretching
-alignSelf: 'center',
-
-  alignItems: 'center',
-  paddingHorizontal: 0, // remove extra padding
-},
+    shadowColor: Colors.gray,//'#5B6FD8',
+    shadowOpacity: .80,
+    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 0 },
+    opacity: 0.93,
+    position: 'relative',
+    overflow: 'visible',
+  },
 
   indicator: {
     position: 'absolute',
@@ -445,11 +453,11 @@ alignSelf: 'center',
     fontWeight: 'bold',
   },
   profileDp: {
-  width: scale(26),
-  height: scale(26),
-  borderRadius: scale(13),
+    width: scale(26),
+    height: scale(26),
+    borderRadius: scale(13),
 
-  borderWidth: 2,
-},
+    borderWidth: 2,
+  },
 
 });

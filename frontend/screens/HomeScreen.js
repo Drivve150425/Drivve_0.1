@@ -522,11 +522,11 @@ const openNotifications = () => {
 
       {/* Reusable Bottom Navigation Component */}
    <BottomNavigation 
-  activeTab={activeBottomTab}
-  onNavigate={handleBottomNavigation}
-  unreadCount={unreadCount}
-  profileImage={user?.profile_picture}
-/>
+    activeTab={activeBottomTab}
+    onNavigate={handleBottomNavigation}
+    unreadCount={unreadCount}
+    profileImage={user?.profile_picture}
+  />
       {/* Date/Time Pickers */}
       {showDatePicker && (
         <DateTimePicker

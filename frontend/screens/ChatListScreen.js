@@ -607,6 +607,8 @@ import { Colors, Typography } from '../constants/Colors';
 import { useFocusEffect } from '@react-navigation/native';
 import BottomNavigation from '../components/BottomNavigation';
 import CommonHeader from '../components/CommonHeader';
+import { API_URL } from "../config/config_ip";
+import { useAuth } from '../context/AuthContext';
 
 const { width, height } = Dimensions.get('window');
 
@@ -614,10 +616,6 @@ const { width, height } = Dimensions.get('window');
 const scale = (size) => (width / 375) * size;
 const verticalScale = (size) => (height / 812) * size;
 const moderateScale = (size, factor = 0.5) => size + (scale(size) - size) * factor;
-
-import { API_URL } from "../config/config_ip";
-import { useAuth } from '../context/AuthContext';
-
 
 const ChatListScreen = ({ navigation }) => {
   const { token } = useAuth();
@@ -627,26 +625,26 @@ const ChatListScreen = ({ navigation }) => {
   const [refreshing, setRefreshing] = useState(false);
   const [activeBottomTab, setActiveBottomTab] = useState('chat');
   const [isReloading, setIsReloading] = useState(false); // ✅ NEW STATE FOR RELOADING
-
+  const { user } = useAuth();
+  
   // Handle bottom navigation
   const handleBottomNavigation = (tabName) => {
     setActiveBottomTab(tabName);
 
     switch (tabName) {
       case 'home':
-        navigation.navigate('Home');
+        navigation.navigate('Home', { phoneNumber: user?.phone_number});
         break;
       case 'myride':
-        Alert.alert('Coming Soon', 'MyRides screen will be available soon!');
-        break;
-      case 'plus':
-        navigation.navigate('Drive');
+        navigation.navigate('MyRides', {phoneNumber: user?.phone_number});
         break;
       case 'chat':
-        navigation.navigate('ChatList');
+        navigation.navigate('ChatList', {phoneNumber: user?.phone_number});
         break;
-      case 'alert':
-        Alert.alert('Coming Soon', 'Notifications screen will be available soon!');
+      case 'profile':
+        navigation.navigate('ProfileDetails', {phoneNumber: user?.phone_number});
+        break;
+      default:
         break;
     }
   };

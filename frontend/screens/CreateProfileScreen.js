@@ -328,7 +328,7 @@ export default function CreateProfileScreen({ navigation, route }) {
 
     try {
       const firstInitial = firstName.charAt(0).toUpperCase();
-      const lastInitial = (lastName || 'U').charAt(0).toUpperCase();
+      const lastInitial = (lastName || 'X').charAt(0).toUpperCase();
       const phoneDigits = fullPhoneNumber ? fullPhoneNumber.slice(-4) : '0000';
       const generatedUserId = `D-${firstInitial}${lastInitial}${phoneDigits}`;
       let base64Image = null;

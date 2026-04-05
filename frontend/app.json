@@ -7,7 +7,7 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "splash": {
-      "image": "./assets/splash.svg",
+      "image": "./assets/splash.png",
       "resizeMode": "contain",
       "backgroundColor": "#184080"
     },
@@ -23,31 +23,22 @@
         "usesNonExemptEncryption": false
       },
       "infoPlist": {
-        "UIViewControllerBasedStatusBarAppearance": true,
-        "NSAppTransportSecurity": {
-          "NSExceptionDomains": {
-            "192.168.1.13": {
-              "NSExceptionAllowsInsecureHTTPLoads": true,
-              "NSExceptionMinimumTLSVersion": "1.0"
-            },
-            "localhost": {
-              "NSExceptionAllowsInsecureHTTPLoads": true
-            }
-          }
-        }
+        "UIViewControllerBasedStatusBarAppearance": true
       }
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/icon.png",
+        "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#184080"
       },
       "package": "com.drivve.app",
       "versionCode": 1,
-      "usesCleartextTraffic": true
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
-      "favicon": "./assets/icon.png",
+      "favicon": "./assets/favicon.png",
       "bundler": "metro"
     },
     "plugins": [
@@ -62,6 +53,12 @@
     ],
     "experiments": {
       "typedRoutes": false
+    },
+    "extra": {
+      "apiUrl": "https://drivve-0-1.onrender.com",
+      "eas": {
+        "projectId": "65cf8431-128a-4317-9c88-aa9c1791a36f"
+      }
     }
   }
 }

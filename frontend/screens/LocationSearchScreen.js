@@ -17,6 +17,7 @@ import MapView from 'react-native-maps';
 import axios from 'axios';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { Colors } from '../constants/Colors';
+import { API_BASE_URL } from "../config/config_ip";
 
 export default function LocationSearchScreen({ navigation, route }) {
   const { type } = route.params; // "from" or "to"
@@ -34,7 +35,7 @@ export default function LocationSearchScreen({ navigation, route }) {
 
     try {
       const response = await axios.post(
-        'http://192.168.1.13:8000/search-location',
+        `${API_BASE_URL}/search-location`,
         { query: text }
       );
 

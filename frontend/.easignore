@@ -1,0 +1,11 @@
+@"
+node_modules/
+.expo/
+*.log
+.env*.local
+.DS_Store
+coverage/
+__tests__/
+assets/*.svg
+.nyc_output/
+"@ | Out-File -FilePath .easignore -Encoding utf8
