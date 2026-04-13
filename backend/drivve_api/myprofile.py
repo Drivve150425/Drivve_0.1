@@ -150,3 +150,32 @@ async def update_user_profile(data: UpdateProfileRequest, db: Session = Depends(
     return {"success": True, "message": "Profile updated successfully"}
 
 
+class UpdateAvatarRequest(BaseModel):
+    phone_number: str
+    avatar_name: str   # avatarD1.svg
+
+
+@router.put("/api/v1/users/update-avatar")
+async def update_avatar(data: UpdateAvatarRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.phone_number == data.phone_number).first()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    try:
+        # ✅ Build Supabase URL (NO upload needed)
+        avatar_url = f"{SUPABASE_URL}/storage/v1/object/public/drivve/{data.avatar_name}"
+
+        user.profile_picture = avatar_url
+        user.updated_at = datetime.now(timezone.utc)
+
+        db.commit()
+
+        return {
+            "success": True,
+            "profile_picture": avatar_url
+        }
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, str(e))

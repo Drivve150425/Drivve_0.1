@@ -28,6 +28,8 @@ import DatePickerModal from '../components/DatePickerModal';
 import EmailOTPModal from '../components/EmailOTPModal';
 import ProfilePictureModal from '../components/ProfilePictureModal';
 import DatabaseService from '../services/createprofile_ds';
+import myDatabaseService from '../services/myprofile_ds';
+
 import * as ImageManipulator from 'expo-image-manipulator';
 const { width, height } = Dimensions.get('window');
 import { useAuth } from '../context/AuthContext';
@@ -774,9 +776,15 @@ export default function CreateProfileScreen({ navigation, route }) {
       <AvatarPicker
         visible={showAvatarPicker}
         onClose={() => setShowAvatarPicker(false)}
-        onSelect={(avatar) => {
+       onSelect={async (avatar) => {
           setSelectedAvatar(avatar);
           setProfileImage(null);
+
+          // ✅ CALL BACKEND HERE
+          await myDatabaseService.selectAvatar(
+            fullPhoneNumber || (countryCode + phoneNumber),
+            avatar.id   // or avatar.name depending on your data
+          );
         }}
         selectedAvatar={selectedAvatar}
       />
