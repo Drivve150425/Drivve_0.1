@@ -224,7 +224,7 @@ import {
   StatusBar
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import MapView from 'react-native-maps'; // ✅ FIXED IMPORT
+import { WebView } from 'react-native-webview';
 import axios from 'axios';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { Colors } from '../constants/Colors';
@@ -286,18 +286,17 @@ export default function LocationSearchScreen({ navigation, route }) {
               <Ionicons name="arrow-back" size={24} color={Colors.primary} />
             </TouchableOpacity>
 
-            {/* ✅ MAP (ONLY ON MOBILE) */}
-            {Platform.OS !== 'web' && (
-              <MapView
-                style={{ flex: 1 }}
-                initialRegion={{
-                  latitude: 28.6139,
-                  longitude: 77.2090,
-                  latitudeDelta: 0.1,
-                  longitudeDelta: 0.1
-                }}
-              />
-            )}
+{/* ✅ OPENSTREETMAP via WebView - Works with LocationIQ API */}
+            <WebView 
+              style={{ flex: 1 }}
+              source={{ uri: 'https://www.openstreetmap.org/export/embed.html?bbox=77.1%2C28.5%2C77.3%2C28.7&amp;layer=mapnik&amp;marker=28.6139%2C77.2090' }}
+              scalesPageToFit={true}
+              showsHorizontalScrollIndicator={false}
+              showsVerticalScrollIndicator={false}
+              javaScriptEnabled={true}
+              domStorageEnabled={true}
+              startInLoadingState={true}
+            />
 
             {/* BOTTOM SHEET */}
             <View style={styles.bottomSheet}>

@@ -420,7 +420,7 @@ const openNotifications = () => {
                       })
                     }
                   >
-                    <Ionicons name="location-sharp" size={20} color={Colors.gray} style={styles.inputIcon} />
+                    <Ionicons name="location-sharp" size={20} color={Colors.success} style={styles.inputIcon} />
                     <Text style={styles.locationInput}>
                       {fromLocation || 'From'}
                     </Text>
@@ -438,7 +438,7 @@ const openNotifications = () => {
                       })
                     }
                   >
-                    <Ionicons name="location-sharp" size={20} color={Colors.gray} style={styles.inputIcon} />
+                    <Ionicons name="location-sharp" size={20} color={Colors.secondary} style={styles.inputIcon} />
                     <Text style={styles.locationInput}>
                       {toLocation || 'To'}
                     </Text>

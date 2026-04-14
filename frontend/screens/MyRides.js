@@ -102,8 +102,29 @@ export default function MyRides({ route, navigation }) {
     Alert.alert("Upcoming feature", `${featureName} will be available soon.`);
   };
 
-  const handleEditRide = () => {
-    showUpcomingFeature("Edit ride");
+  const handleEditRide = (ride) => {
+    if (!ride || !phoneNumber) {
+      Alert.alert("Error", "Cannot edit ride. Please refresh and try again.");
+      return;
+    }
+
+    const rideData = {
+      from: ride.origin || '',
+      to: ride.destination || '',
+      dateTime: ride.departure_time ? new Date(ride.departure_time) : new Date(),
+      seatsAvailable: ride.available_seats || 1,
+      pricePerSeat: (ride.price_per_seat || 0).toString(),
+      vehicleId: ride.vehicle_id || ride.vehicleId || null,
+      originCoords: ride.origin_coords,
+      destinationCoords: ride.destination_coords,
+    };
+
+    navigation.navigate('DriveNext', {
+      rideData,
+      isEdit: true,
+      rideId: ride.id,
+      phoneNumber,
+    });
   };
 
   const handleStartRide = () => {

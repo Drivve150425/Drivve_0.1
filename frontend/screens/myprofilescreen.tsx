@@ -45,6 +45,7 @@ const { width, height } = Dimensions.get("window");
 export default function MyProfileScreen({ navigation, route })  {
   const scrollViewRef = useRef<ScrollView>(null);
   const { user } = useAuth();
+
   const phoneFromRoute = user?.phone_number;
   // Animation refs
   const fadeAnim = useRef(new Animated.Value(0)).current;

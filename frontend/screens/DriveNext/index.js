@@ -25,14 +25,25 @@ export default function DriveNextScreen({ navigation, route }) {
   
   const userId = user?.id || route?.params?.userId || null;
   const userData = user || route?.params?.userData || null;
-  const { rideData } = route?.params || {};
-  const { from: initFrom, to: initTo, dateTime: initDateTime } = rideData || {};
+  
+  // Edit mode support
+  const { rideData, isEdit, rideId } = route?.params || {};
+  const { 
+    from: initFrom, 
+    to: initTo, 
+    dateTime: initDateTime, 
+    seatsAvailable: initSeatsAvailable,
+    pricePerSeat: initPricePerSeat,
+    vehicleId: initVehicleId,
+    originCoords: initOriginCoords,
+    destinationCoords: initDestinationCoords 
+  } = rideData || {};
 
   const [step, setStep] = useState(1);
   const [from, setFrom] = useState(initFrom || '');
   const [to, setTo] = useState(initTo || '');
-  const [dateTime, setDateTime] = useState(initDateTime || new Date());
-  const [vehicleId, setVehicleId] = useState(null);
+  const [dateTime, setDateTime] = useState(initDateTime ? new Date(initDateTime) : new Date());
+  const [vehicleId, setVehicleId] = useState(initVehicleId || null);
   const [maxSeats, setMaxSeats] = useState(4);
 
   const [routeOptions, setRouteOptions] = useState([]);
@@ -42,11 +53,11 @@ export default function DriveNextScreen({ navigation, route }) {
 
   const [prefs, setPrefs] = useState({ womenOnly: false, instantBooking: true, luggage: true, smoking: false, pets: false });
 
-  const [seatsAvailable, setSeatsAvailable] = useState(1);
-  const [pricePerSeat, setPricePerSeat] = useState('');
+  const [seatsAvailable, setSeatsAvailable] = useState(initSeatsAvailable || 1);
+  const [pricePerSeat, setPricePerSeat] = useState(initPricePerSeat ? initPricePerSeat.toString() : '');
 
-  const [fromCoords, setFromCoords] = useState(null);
-  const [toCoords, setToCoords] = useState(null);
+  const [fromCoords, setFromCoords] = useState(initOriginCoords || null);
+  const [toCoords, setToCoords] = useState(initDestinationCoords || null);
 
   const [routeData, setRouteData] = useState(null);
   const [loadingRoute, setLoadingRoute] = useState(false);
@@ -144,10 +155,12 @@ export default function DriveNextScreen({ navigation, route }) {
   const goNext = () => setStep(s => Math.min(4, s + 1));
   const goBack = () => { if (step > 1) setStep(s => s - 1); else navigation.goBack(); };
 
-  const handlePostRide = async({ seatsAvailable, pricePerSeat }) => {
+  const handleSubmitRide = async({ seatsAvailable, pricePerSeat }) => {
     try{ 
       console.log("userData:", userData);
       console.log("phoneNumber param:", phoneNumber);
+      console.log("isEdit:", isEdit, "rideId:", rideId);
+      
       const payload = {
         phone_number: phoneNumber,  // VERY IMPORTANT
         origin: from,
@@ -158,8 +171,8 @@ export default function DriveNextScreen({ navigation, route }) {
         price_per_seat: Number(pricePerSeat),
         vehicleId: vehicleId,
 
-        origin_coords: fromCoords,
-        destination_coords: toCoords,
+        origin_coords: fromCoords ? [fromCoords.longitude, fromCoords.latitude] : null,
+        destination_coords: toCoords ? [toCoords.longitude, toCoords.latitude] : null,
         route_coordinates: selectedRoute.geometry.map((p) => [p.longitude, p.latitude]),
 
         distance_km: selectedRoute.distance,
@@ -167,33 +180,54 @@ export default function DriveNextScreen({ navigation, route }) {
         total_estimated_price: selectedRoute.price,
         preferences: prefs,
       };
-    console.log('Post Ride payload:', payload);
-    const response = await axios.post(
-      `${API_BASE_URL}/post-ride`,
-      payload
-    );
-    console.log('Ride Created:', response.data);
-    navigation.replace('RideSuccessScreen', {
-      userData,
-      userId,
-      phoneNumber,
-      vehicleId,
-      rideDetails: {
-        from,
-        to,
-        dateTime,
-        seatsAvailable,
-        pricePerSeat,
-        distance: selectedRoute?.distance,
-        duration: selectedRoute?.duration,
+      
+      console.log(`${isEdit ? 'Update' : 'Post'} Ride payload:`, payload);
+      
+      let response;
+      if (isEdit && rideId) {
+        response = await axios.put(
+          `${API_BASE_URL}/update-ride/${rideId}`,
+          payload
+        );
+        console.log('Ride Updated:', response.data);
+        Alert.alert('Success', 'Ride details updated successfully!', [
+          {
+            text: 'OK',
+            onPress: () => {
+              navigation.reset({
+                index: 0,
+                routes: [{ name: 'Home' }]
+              });
+            }
+          }
+        ]);
+      } else {
+        response = await axios.post(
+          `${API_BASE_URL}/post-ride`,
+          payload
+        );
+        console.log('Ride Created:', response.data);
+        navigation.replace('RideSuccessScreen', {
+          userData,
+          userId,
+          phoneNumber,
+          vehicleId,
+          rideDetails: {
+            from,
+            to,
+            dateTime,
+            seatsAvailable,
+            pricePerSeat,
+            distance: selectedRoute?.distance,
+            duration: selectedRoute?.duration,
+          }
+        });
       }
-    });
     } catch (e) {
-      // console.log('Error posting ride:', e.response?.data);
       console.log("STATUS:", e.response?.status);
       console.log("DATA:", JSON.stringify(e.response?.data, null, 2));
       console.log("MESSAGE:", e.message);
-      Alert.alert('Error', 'Failed to post ride. Please try again.');
+      Alert.alert('Error', `Failed to ${isEdit ? 'update' : 'post'} ride. Please try again.`);
     }
   };
 
@@ -203,7 +237,7 @@ export default function DriveNextScreen({ navigation, route }) {
         <TouchableOpacity style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} onPress={goBack}>
           <MaterialIcons name="arrow-back-ios" size={24} color={Colors.secondary} />
         </TouchableOpacity>
-        <Text style={{ fontSize: 24, fontWeight: '700', color: Colors.primary }}>Offer a Ride</Text>
+        <Text style={{ fontSize: 24, fontWeight: '700', color: Colors.primary }}>{isEdit ? 'Edit Ride' : 'Offer a Ride'}</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -214,10 +248,10 @@ export default function DriveNextScreen({ navigation, route }) {
       </View>
 
 <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 20, }}>
-        {step === 1 && <Step1 from={from} to={to} setFrom={setFrom} setTo={setTo} setFromCoords={setFromCoords} setToCoords={setToCoords} dateTime={dateTime} setDateTime={setDateTime} onNext={goNext} navigation={navigation} route={route} phoneNumber={phoneNumber} />}
+{step === 1 && <Step1 from={from} to={to} setFrom={setFrom} setTo={setTo} setFromCoords={setFromCoords} setToCoords={setToCoords} dateTime={dateTime} setDateTime={setDateTime} onNext={goNext} navigation={navigation} route={route} phoneNumber={phoneNumber} fromCoords={fromCoords} toCoords={toCoords} />}
         {step === 2 && <Step2 routeOptions={routeOptions} selectedRouteIndex={selectedRouteIndex} setSelectedRouteIndex={setSelectedRouteIndex} onNext={goNext} />}
         {step === 3 && <Step3 phoneNumber={phoneNumber} navigation={navigation} vehicleId={vehicleId} setVehicleId={setVehicleId} onNext={({ preferences, vehicleId: selectedVehicleId, maxSeats: vehicleMaxSeats }) => { setPrefs(preferences || {}); setVehicleId(selectedVehicleId); setMaxSeats(vehicleMaxSeats || 4); goNext(); }} />}
-        {step === 4 && <Step4 seatsAvailable={seatsAvailable} setSeatsAvailable={setSeatsAvailable} pricePerSeat={pricePerSeat} setPricePerSeat={setPricePerSeat} selectedRoute={selectedRoute} vehicleId={vehicleId} maxSeats={maxSeats} onPost={handlePostRide} />}
+        {step === 4 && <Step4 seatsAvailable={seatsAvailable} setSeatsAvailable={setSeatsAvailable} pricePerSeat={pricePerSeat} setPricePerSeat={setPricePerSeat} selectedRoute={selectedRoute} vehicleId={vehicleId} maxSeats={maxSeats} onPost={handleSubmitRide} isEdit={isEdit} />}
       </ScrollView>
     </View>
   );

@@ -491,6 +491,11 @@ class CreateRideBookingRequest(BaseModel):
     seats_requested: int = 1
 
 
+class UpdateRideRequest(CreateRideRequest):
+    """Same as CreateRideRequest for ride updates"""
+    pass
+
+
 def normalize_phone(phone: str) -> str:
     if not phone:
         return phone
@@ -619,10 +624,21 @@ def post_ride(data: CreateRideRequest, db: Session = Depends(get_db)):
 def get_my_rides(phone_number: str, db: Session = Depends(get_db)):
     normalized_phone = normalize_phone(phone_number)
 
+    # Posted rides with explicit coords
     posted_rides = db.query(Ride)\
         .filter(Ride.phone_number == normalized_phone)\
         .order_by(Ride.departure_time.desc())\
         .all()
+    
+    # Transform to include coords arrays
+    posted_rides_formatted = []
+    for ride in posted_rides:
+        posted_rides_formatted.append({
+            **ride.__dict__,
+            "origin_coords": [ride.origin_lon, ride.origin_lat] if ride.origin_lon and ride.origin_lat else None,
+            "destination_coords": [ride.destination_lon, ride.destination_lat] if ride.destination_lon and ride.destination_lat else None,
+            "departure_time_js": ride.departure_time.isoformat() if ride.departure_time else None,
+        })
 
     requested_bookings = db.query(RideBooking)\
         .filter(RideBooking.passenger_phone == normalized_phone)\
@@ -630,7 +646,7 @@ def get_my_rides(phone_number: str, db: Session = Depends(get_db)):
         .all()
 
     return {
-        "posted_rides": posted_rides,
+        "posted_rides": posted_rides_formatted,
         "requested_rides": requested_bookings
     }
 
@@ -915,6 +931,93 @@ def search_rides(data: SearchRidesRequest, db: Session = Depends(get_db)):
     )
 
     return {"rides": rides}
+
+
+@router.put("/update-ride/{ride_id}")
+def update_ride(ride_id: int, data: UpdateRideRequest, db: Session = Depends(get_db)):
+    normalized_phone = normalize_phone(data.phone_number)
+
+    # Fetch existing ride
+    ride = db.query(Ride).filter(
+        Ride.id == ride_id,
+        Ride.phone_number == normalized_phone
+    ).first()
+    if not ride:
+        raise HTTPException(status_code=404, detail="Ride not found or you don't have permission to edit it")
+
+    # Prevent edits if bookings accepted or ride started
+    if ride.status not in ["active"]:
+        raise HTTPException(status_code=400, detail="Cannot edit this ride (may have active bookings or completed)")
+
+    # Update scalar fields
+    departure_time_utc = data.departure_time
+    if departure_time_utc.tzinfo is None:
+        departure_time_utc = departure_time_utc.replace(tzinfo=IST).astimezone(timezone.utc)
+    else:
+        departure_time_utc = departure_time_utc.astimezone(timezone.utc)
+
+    ride.phone_number = normalized_phone
+    ride.origin = data.origin
+    ride.destination = data.destination
+    ride.departure_time = departure_time_utc
+    ride.available_seats = data.available_seats
+    ride.price_per_seat = data.price_per_seat
+    ride.distance_km = data.distance_km
+    ride.duration_text = data.duration_text
+    ride.total_estimated_price = data.total_estimated_price
+    ride.preferences = data.preferences
+    ride.origin_lon = data.origin_coords[0]
+    ride.origin_lat = data.origin_coords[1]
+    ride.destination_lon = data.destination_coords[0]
+    ride.destination_lat = data.destination_coords[1]
+    ride.route_coordinates = data.route_coordinates
+
+    db.commit()
+    db.refresh(ride)
+
+    # Update geometry
+    line_wkt = "LINESTRING(" + ",".join(
+        [f"{lng} {lat}" for lng, lat in data.route_coordinates]
+    ) + ")"
+
+    db.execute(
+        text("""
+            UPDATE rides
+            SET route_line = ST_GeomFromText(:line_wkt, 4326)::geography
+            WHERE id = :ride_id
+        """),
+        {
+            "ride_id": ride.id,
+            "line_wkt": line_wkt
+        }
+    )
+    db.commit()
+
+    # Optional: Update notification for edited ride
+    try:
+        origin_short = data.origin.split(",")[0].strip() if data.origin else "start"
+        dest_short = data.destination.split(",")[0].strip() if data.destination else "destination"
+
+        notification = UserNotification(
+            phone_number=normalized_phone,
+            title="Ride Updated! 🔄",
+            message=f"Your ride from {origin_short} to {dest_short} has been updated.",
+            type=NotificationType.RIDE,
+            action_type="ride",
+            action_value=str(ride.id),
+            is_read=False,
+            is_deleted=False
+        )
+        db.add(notification)
+        db.commit()
+    except Exception as e:
+        print(f"❌ Error creating update notification: {str(e)}")
+
+    return {
+        "message": "Ride updated successfully",
+        "ride_id": ride.id,
+        "ride": ride
+    }
 
 
 @router.post("/ride-bookings")

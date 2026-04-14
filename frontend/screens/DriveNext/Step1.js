@@ -19,11 +19,21 @@ import DateTimePicker from '@react-native-community/datetimepicker'
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../../context/AuthContext';
 
-export default function Step1({ from, to, setFrom, setTo, setFromCoords, setToCoords, dateTime, setDateTime, onNext, navigation, route, phoneNumber: phoneNumberProp }) {
+export default function Step1({ from, to, setFrom, setTo, setFromCoords, setToCoords, dateTime, setDateTime, onNext, navigation, route, phoneNumber: phoneNumberProp, fromCoords, toCoords }) {
 
   const [fromLocation, setFromLocation] = useState(from);
   const [toLocation, setToLocation] = useState(to);
   const [selectedDate, setSelectedDate] = useState(dateTime);
+
+  useEffect(() => {
+    // Auto-set coords if provided (edit mode)
+    if (fromCoords && Array.isArray(fromCoords) && fromCoords.length === 2) {
+      setFromCoords({ latitude: fromCoords[1], longitude: fromCoords[0] });
+    }
+    if (toCoords && Array.isArray(toCoords) && toCoords.length === 2) {
+      setToCoords({ latitude: toCoords[1], longitude: toCoords[0] });
+    }
+  }, [fromCoords, toCoords]);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
   const { firstName, lastName, userId, userData, isNewUser } = route?.params || {};
@@ -136,7 +146,7 @@ export default function Step1({ from, to, setFrom, setTo, setFromCoords, setToCo
         })
       }
       >
-        <Ionicons name="location-sharp" size={20} color={Colors.gray} style={styles.inputIcon} />
+        <Ionicons name="location-sharp" size={20} color={Colors.success} style={styles.inputIcon} />
         <Text style={styles.locationInput}>
           {from || 'From'}
         </Text>
@@ -152,7 +162,7 @@ export default function Step1({ from, to, setFrom, setTo, setFromCoords, setToCo
         })
       }
       >
-        <Ionicons name="location-sharp" size={20} color={Colors.gray} style={styles.inputIcon} />
+        <Ionicons name="location-sharp" size={20} color={Colors.secondary} style={styles.inputIcon} />
         <Text style={styles.locationInput}>
           {to || 'To'}
         </Text>

@@ -8,6 +8,7 @@ import { useAppFonts } from './constants/Fonts';
 import { Colors } from './constants/Colors';
 import FirebaseAuthService from './services/FirebaseAuthService';
 import { AuthProvider } from './context/AuthContext';
+import * as Updates from 'expo-updates';
 
 export default function App() {
   const [fontsLoaded] = useAppFonts();
@@ -27,6 +28,19 @@ export default function App() {
     'Task orphaned for request',
     'Setting a timer for a long period of time'
   ]);
+
+  //auto update
+  useEffect(() => {
+    async function updateApp() {
+      const update = await Updates.checkForUpdateAsync();
+      if (update.isAvailable) {
+        await Updates.fetchUpdateAsync();
+        await Updates.reloadAsync();
+      }
+    }
+
+    updateApp();
+  }, []);
 
   // Enhanced global error handler for iOS
   useEffect(() => {

@@ -35,7 +35,9 @@
       "versionCode": 1,
       "permissions": [
         "android.permission.RECORD_AUDIO",
-        "android.permission.RECORD_AUDIO"
+        "android.permission.RECORD_AUDIO",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION"
       ]
     },
     "web": {
@@ -50,7 +52,14 @@
           "photosPermission": "The app accesses your photos to let you share them with your friends."
         }
       ],
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+[
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow DRIVVE to use your location even when the app is closed.",
+          "locationWhenInUsePermission": "Allow DRIVVE to use your location."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": false

@@ -17,8 +17,11 @@ export default function Step4({
   selectedRoute,
   vehicleId,
   maxSeats = 4,
-  onPost
+  onPost,
+  isEdit = false
 }) {
+
+  const buttonText = isEdit ? 'Update Ride' : 'Post Ride';
 
   /* =====================================
      ESTIMATED PRICE CALCULATION
@@ -138,7 +141,7 @@ export default function Step4({
         disabled={!isPriceValid}
         onPress={handlePost}
       >
-        <Text style={styles.postBtnText}>Post Ride</Text>
+        <Text style={styles.postBtnText}>{buttonText}</Text>
       </TouchableOpacity>
 
     </View>
