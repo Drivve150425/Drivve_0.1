@@ -26,14 +26,12 @@ export default function DCoinWalletScreen({ route, navigation }) {
   const [history, setHistory] = useState([]);
   const [balanceCoins, setBalanceCoins] = useState(0);
   const [balanceRupees, setBalanceRupees] = useState(0);
+  const [showAll, setShowAll] = useState(false);
 
   useEffect(() => {
-    if (phoneNumber) {
-      loadData();
-    }
+    if (phoneNumber) loadData();
   }, [phoneNumber]);
-  
-  /* ================= LOAD DATA ================= */
+
   const loadData = async () => {
     if (!phoneNumber) return;
 
@@ -41,30 +39,20 @@ export default function DCoinWalletScreen({ route, navigation }) {
     const safeHistory = hist || [];
     setHistory(safeHistory);
 
-    // 🔥 COINS ARE SOURCE OF TRUTH
     let coins = 0;
-
     safeHistory.forEach(item => {
       const c = Math.abs(item.coins || 0);
-
-      if (item.type === "CREDIT") {
-        coins += c;
-      } else {
-        coins -= c;
-      }
+      if (item.type === "CREDIT") coins += c;
+      else coins -= c;
     });
 
-    // ❌ Never allow negative
     coins = Math.max(0, coins);
-
-    // ✅ Wallet shows ONLY whole rupees
     const rupees = Math.floor(coins / 25);
 
     setBalanceCoins(coins);
     setBalanceRupees(rupees);
   };
 
-  /* ================= REDEEM ================= */
   const handleRedeem = () => {
     if (balanceCoins < 25) return;
 
@@ -100,7 +88,6 @@ export default function DCoinWalletScreen({ route, navigation }) {
     );
   };
 
-  /* ================= DATE FORMAT ================= */
   const formatDateTime = dateStr => {
     const d = new Date(dateStr);
     return d.toLocaleString("en-IN", {
@@ -112,140 +99,166 @@ export default function DCoinWalletScreen({ route, navigation }) {
       hour12: true,
     });
   };
- const handleBack = () => {
-    navigation.goBack();
-  };
-  return (
-   <SafeAreaView style={styles.container}>
-         <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
-         
-         <KeyboardAvoidingView
-           style={styles.keyboardAvoidingView}
-           behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
-         >
-           {/* Header */}
-           <View style={styles.header}>
-             <TouchableOpacity style={styles.modernBackButton} onPress={handleBack}>
-               <MaterialIcons name="arrow-back-ios" size={28} color={Colors.secondary} />
-             </TouchableOpacity>
-             <Text style={styles.headerTitle}>D-Coins Wallet</Text>
-             <View style={styles.headerSpacer} />
-           </View>
 
-      {/* ================= WALLET CARD ================= */}
-      <LinearGradient
-        colors={["#4FACFE", "#00C6FB"]}
-        style={styles.walletCard}
-      >
-        <Text style={styles.balanceLabel}>Available Balance</Text>
-
-        <Text style={styles.coinText}>{balanceCoins}</Text>
-        <Text style={styles.coinSub}>D-Coins</Text>
-
-        <View style={styles.dividerLine} />
-
-        <Text style={styles.rupeeText}>₹ {balanceRupees}</Text>
-      </LinearGradient>
-
-      {/* ================= STATS ================= */}
-      <View style={styles.statsRow}>
-        <View style={styles.statCard}>
-          <Ionicons name="logo-bitcoin" size={20} color="#F59E0B" />
-          <Text style={styles.statValue}>{balanceCoins}</Text>
-          <Text style={styles.statLabel}>D-Coins</Text>
-        </View>
-
-        <View style={styles.statCard}>
-          <Ionicons name="cash" size={20} color="#22C55E" />
-          <Text style={styles.statValue}>₹{balanceRupees}</Text>
-          <Text style={styles.statLabel}>Value</Text>
-        </View>
-      </View>
-
-      {/* ================= REDEEM ================= */}
-      <View style={styles.redeemContainer}>
-        <TouchableOpacity
-          style={[
-            styles.redeemBtn,
-            balanceCoins < 25 && { opacity: 0.4 },
-          ]}
-          disabled={balanceCoins < 25}
-          onPress={handleRedeem}
-          activeOpacity={0.85}
-        >
-          <Ionicons name="flash-outline" size={22} color="#fff" />
-          <Text style={styles.redeemText}>
-            Redeem ₹{balanceRupees} Now
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* ================= HISTORY ================= */}
-      <Text style={styles.historyTitle}>Wallet History</Text>
-
-      <FlatList
-        data={history}
-        keyExtractor={item => item.id.toString()}
-        contentContainerStyle={{ paddingBottom: 40 }}
-        ListEmptyComponent={
-          <Text style={styles.emptyText}>No transactions yet</Text>
-        }
-      renderItem={({ item }) => {
-  const isCredit = item.type === "CREDIT";
-
-  const rupees = Number(item.rupees).toFixed(2); // ✅ FIX
-  const coins = Number(item.coins);
+  const handleBack = () => navigation.goBack();
 
   return (
-    <View style={styles.timelineCard}>
-      <View
-        style={[
-          styles.timelineDot,
-          { backgroundColor: isCredit ? "#22C55E" : "#EF4444" },
-        ]}
-      />
-
-      <View style={styles.timelineContent}>
-        <Text style={styles.historyAmount}>
-          {isCredit ? "+" : "-"}₹{rupees}
-        </Text>
-
-        <Text style={styles.historySub}>
-          {coins} D-Coins
-        </Text>
-
-        <Text style={styles.historyCode}>
-          {item.reason}
-        </Text>
-
-        <Text style={styles.historyDate}>
-          {formatDateTime(item.created_at)}
-        </Text>
-      </View>
-
-      <Ionicons
-        name={isCredit ? "arrow-down-circle" : "arrow-up-circle"}
-        size={22}
-        color={isCredit ? "#22C55E" : "#EF4444"}
-      />
-    </View>
-  );
-}}
-
-      />
-            </KeyboardAvoidingView>
+    <SafeAreaView style={styles.container}>
+      <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
       
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoidingView}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.modernBackButton} onPress={handleBack}>
+            <MaterialIcons name="arrow-back-ios" size={28} color={Colors.orange1} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>D-coins</Text>
+          <View style={styles.headerSpacer} />
+        </View>
+
+        <FlatList
+          data={[]}
+          keyExtractor={(item, index) => index.toString()}
+          contentContainerStyle={{ paddingBottom: 40 }}
+          ListHeaderComponent={
+            <>
+              {/* BALANCE CARD */}
+        <LinearGradient
+  colors={[Colors.primary, Colors.primary]}
+  style={styles.balanceCard}
+>
+<View style={styles.balanceTopRow}>
+<Ionicons name="albums-outline" size={16} color="#E5E7EB" />
+  <Text style={styles.balanceTop}>Total Balance</Text>
+</View>
+                <Text style={styles.balanceNumber}>{balanceCoins}</Text>
+                <Text style={styles.balanceSub}>D coins</Text>
+
+                <View style={styles.weekBox}>
+                  <Ionicons name="trending-up" size={16} color={Colors.white}/>
+                  <Text style={styles.weekText}>+125 this week</Text>
+                </View>
+              </LinearGradient>
+
+              {/* REWARDS */}
+            <TouchableOpacity
+  style={styles.rewardCard}
+  activeOpacity={0.8}
+  onPress={() => navigation.navigate("RewardsScreen")}
+>
+  <View style={styles.rewardIconBox}>
+    <Ionicons name="gift-outline" size={22} color={Colors.orange1} />
+  </View>
+
+  <View style={{ flex: 1 }}>
+    <Text style={styles.rewardTitle}>Rewards</Text>
+    <Text style={styles.rewardSub}>
+      Redeem your coins for rewards
+    </Text>
+  </View>
+
+  <Ionicons name="chevron-forward" size={20} color={Colors.primary} />
+</TouchableOpacity>
+
+              {/* HOW TO EARN */}
+              <View style={styles.earnCard}>
+                <Text style={styles.earnTitle}>💡 How to Earn D Coins?</Text>
+
+                <Text style={styles.earnText}>
+                  • Complete rides and earn 10-50 D-coins per ride
+                </Text>
+                <Text style={styles.earnText}>
+                  • Cross levels and earn bonus coins
+                </Text>
+                <Text style={styles.earnText}>
+                  • Refer friends and get 100 D-coins per referral
+                </Text>
+              </View>
+
+              {/* HISTORY HEADER */}
+              <View style={styles.historyHeader}>
+                <Text style={styles.historyTitle}>Transaction History</Text>
+
+                <TouchableOpacity onPress={() => setShowAll(!showAll)}>
+                  <Text style={styles.viewAll}>
+                    {showAll ? "Show Less" : "View All"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* SINGLE CARD LIST */}
+              <View style={styles.historyContainer}>
+                {(showAll ? history : history.slice(0, 4)).map(
+                  (item, index) => {
+                    const isCredit = item.type === "CREDIT";
+
+                    return (
+                      <View key={item.id}>
+                        <View style={styles.historyRow}>
+                          <View style={styles.iconCircle}>
+                            <Ionicons
+                              name={
+                                item.reason?.toLowerCase().includes("ride")
+                                  ? "location-outline"
+                                  : item.reason
+                                      ?.toLowerCase()
+                                      .includes("bonus")
+                                  ? "star-outline"
+                                  : "people-outline"
+                              }
+                              size={22}
+                              color={Colors.orange1}
+                            />
+                          </View>
+
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.historyMain}>
+                              {item.reason || "Transaction"}
+                            </Text>
+
+                            <Text style={styles.historySub}>
+                              {formatDateTime(item.created_at)}
+                            </Text>
+                          </View>
+
+                          <Text
+                            style={[
+                              styles.amount,
+                              {
+                                color: isCredit ? "#16A34A" : "#EF4444",
+                              },
+                            ]}
+                          >
+                            {isCredit ? "+" : "-"}
+                            {item.coins}
+                          </Text>
+                        </View>
+
+                        {index !==
+                          (showAll ? history : history.slice(0, 3)).length -
+                            1 && <View style={styles.divider} />}
+                      </View>
+                    );
+                  }
+                )}
+              </View>
+            </>
+          }
+        />
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
-/* ================= STYLES ================= */
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.white },
-keyboardAvoidingView: {
+  container: { flex: 1, backgroundColor: "#F3F4F6" },
+  keyboardAvoidingView: {
     flex: 1,
   },
-  header: {
+   header: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
@@ -271,102 +284,170 @@ keyboardAvoidingView: {
   headerSpacer: {
     width: 44,
   },
-  walletCard: {
-    margin: 20,
-    borderRadius: 24,
-    padding: 26,
-    elevation: 10,
+
+  balanceCard: {
+    margin: 16,
+    borderRadius: 20,
+    padding: 20,
+      alignItems: "center",   // ✅ center horizontally
+
+  },
+balanceTop: {
+  color: Colors.white,
+  fontSize: 16,
+  textAlign: "center",   // ✅ center text
+},
+
+balanceNumber: {
+  fontSize: 44,
+  fontWeight: "800",
+  color: Colors.white,
+  textAlign: "center",
+  marginTop: 5,
+},
+coinIcon: {
+  width: 16,
+  height: 16,
+  tintColor: "#E5E7EB", // matches white tone
+  marginRight: 6,
+},
+
+balanceTopRow: {
+  flexDirection: "row",
+  alignItems: "center",
+  justifyContent: "center",
+},
+balanceSub: {
+  color: Colors.white,
+  textAlign: "center",
+  fontSize:16
+},
+
+ weekBox: {
+  marginTop: 12,
+  flexDirection: "row",
+  alignItems: "center",
+  justifyContent: "center",   // ✅ center content
+  backgroundColor: "rgba(255,255,255,0.2)",
+  paddingHorizontal: 12,
+  paddingVertical: 6,
+  borderRadius: 20,
+  alignSelf: "center",        // ✅ center the box itself
+},
+  weekText: {
+    color: Colors.white,
+    marginLeft: 6,
+    fontSize: 12,
   },
 
-  balanceLabel: { color: "#E0F2FE", fontSize: 14, fontWeight: "600" },
-  coinText: { color: "#fff", fontSize: 44, fontWeight: "800", marginTop: 6 },
-  coinSub: { color: "#E0F2FE", fontSize: 14, fontWeight: "600" },
-  dividerLine: {
-    height: 1,
-    backgroundColor: "rgba(255,255,255,0.3)",
-    marginVertical: 14,
-  },
-  rupeeText: { color: "#fff", fontSize: 24, fontWeight: "700" },
-
-  statsRow: { flexDirection: "row", marginHorizontal: 14, marginBottom: 10 },
-
-  statCard: {
-    flex: 1,
-    backgroundColor: "#fff",
-    marginHorizontal: 6,
-    borderRadius: 16,
-    padding: 14,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#EEF2F7",
-    elevation: 2,
-  },
-
-  statValue: {
-    fontSize: 18,
-    fontWeight: "800",
-    marginTop: 6,
-    color: Colors.primary,
-  },
-
-  statLabel: { fontSize: 12, color: "#6B7280", marginTop: 2 },
-
-  redeemContainer: { marginHorizontal: 20, marginTop: 12, marginBottom: 6 },
-
-  redeemBtn: {
+  rewardCard: {
     flexDirection: "row",
-    backgroundColor: Colors.orange1,
-    paddingVertical: 16,
-    borderRadius: 18,
-    justifyContent: "center",
     alignItems: "center",
-    elevation: 6,
+    marginHorizontal: 16,
+    backgroundColor: Colors.white,
+    padding: 14,
+    borderRadius: 16,
+    elevation: 3,
+  },
+rewardIconBox: {
+  width: 44,
+  height: 44,
+  borderRadius: 22,          // perfect circle
+  backgroundColor: "#FFF7ED", // light orange background
+  justifyContent: "center",
+  alignItems: "center",
+  marginRight: 12,
+},
+
+  rewardTitle: {
+    fontWeight: "700",
+    fontSize: 18,
   },
 
-  redeemText: {
-    color: "#fff",
+  rewardSub: {
     fontSize: 16,
-    fontWeight: "800",
-    marginLeft: 10,
+    color: Colors.gray,
+  },
+
+  earnCard: {
+    margin: 16,
+    padding: 16,
+    borderRadius: 16,
+    backgroundColor: "#E0E7FF",
+  },
+
+  earnTitle: {
+    marginBottom: 6,
+    fontSize:18,
+    fontWeight:"700"
+
+  },
+
+  earnText: {
+    fontSize: 16,
+    marginTop: 4,
+  },
+
+  historyHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginHorizontal: 16,
+    marginTop: 10,
   },
 
   historyTitle: {
-    marginHorizontal: 20,
-    marginTop: 12,
     fontSize: 18,
     fontWeight: "700",
-    color: Colors.primary,
+    color:Colors.primary
   },
 
-  timelineCard: {
+  viewAll: {
+    color: Colors.orange1,
+    fontWeight: "600",
+  },
+
+  historyContainer: {
+    backgroundColor: Colors.white,
+    margin: 16,
+    borderRadius: 18,
+    paddingVertical: 6,
+    elevation: 3,
+  },
+
+  historyRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#fff",
-    marginHorizontal: 20,
-    marginTop: 14,
-    padding: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#EEF2F7",
+    padding: 14,
   },
 
-  timelineDot: { width: 10, height: 10, borderRadius: 5, marginRight: 14 },
-  timelineContent: { flex: 1 },
+  iconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: Colors.white,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 12,
+  },
 
-  historyAmount: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: Colors.primary,
+  historyMain: {
+    fontWeight: "600",
+    fontSize:16
   },
 
   historySub: {
-    fontSize: 12,
-    color: "#6B7280",
-    marginTop: 2,
+    fontSize: 14,
+    color: Colors.gray,
   },
 
-  historyCode: { fontSize: 12, color: "#374151", marginTop: 4 },
-  historyDate: { fontSize: 11, color: "#9CA3AF", marginTop: 4 },
+  amount: {
+    fontWeight: "700",
+    fontSize: 16,
+  },
 
-  emptyText: { textAlign: "center", marginTop: 40, color: "#9CA3AF" },
+  divider: {
+    height: 1,
+    backgroundColor: Colors.white,
+    marginLeft: 70,
+  },
 });

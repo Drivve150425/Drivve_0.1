@@ -367,7 +367,7 @@ async def create_user_profile(profile_data: dict, db: Session = Depends(get_db))
 "profile_picture": user.profile_picture or (
     f"{SUPABASE_URL}/storage/v1/object/public/drivve/{user.avatar}"
     if user.avatar else None
-)
+) 
         }
 
     except HTTPException:

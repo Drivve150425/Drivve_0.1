@@ -43,9 +43,9 @@ type RootStackParamList = {
   Settings: { phoneNumber: string };
   HelpSupportScreen: undefined;
   myprofilescreen: { phoneNumber: string };
-  AdminDocumentApprovalScreen: undefined;
+  // AdminDocumentApprovalScreen: undefined;
   FeedbackScreen: { phoneNumber: string };
-  RideFeedbackScreen: { phoneNumber: string };
+  // RideFeedbackScreen: { phoneNumber: string };
 };
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 type Props = NativeStackScreenProps<RootStackParamList, "myprofilescreen">;
@@ -61,14 +61,14 @@ type ScreensWithPhone =
   | "PromotionScreen"
   | "Settings"
   | "FeedbackScreen"
-  | "RideFeedbackScreen";
+  // | "RideFeedbackScreen";
 
 type ScreensWithoutPhone =
   | "PaymentScreen"
   | "ReferEarn"
   | "AboutUsScreen"
   | "HelpSupportScreen"
-  | "AdminDocumentApprovalScreen";
+  // | "AdminDocumentApprovalScreen";
 export default function ProfileScreen({ navigation, route }: Props) {
     const scrollViewRef = useRef(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
@@ -149,7 +149,7 @@ useFocusEffect(
     { title: "My Vehicle", icon: "car-outline", screen: "MyVehicleScreen" },
     { title: "Saved Address", icon: "location-outline", screen: "SavedAddressScreen" },
     { title: "My Documents", icon: "document-text-outline", screen: "DocumentVerificationScreen" },
-    { title:"Admin Documents", icon:"folder-open-outline", screen:"AdminDocumentApprovalScreen"},
+    // { title:"Admin Documents", icon:"folder-open-outline", screen:"AdminDocumentApprovalScreen"},
     { title: "Matching Preferences", icon: "settings-outline", screen: "MatchingPreferenceScreen" },
     { title: "Emergency Contact", icon: "alert-circle-outline", screen: "EmergencyContactsscreen" },
   ];
@@ -161,7 +161,7 @@ useFocusEffect(
   }[] = [
     { title: "D-coins", icon: "diamond-outline", screen: "DCoinScreen" },
     { title: "Rewards", icon: "gift-outline", screen: "RewardsScreen" },
-    {title:"Ride Feedback", icon:"chatbox-ellipses-outline", screen:"RideFeedbackScreen"},
+    // {title:"Ride Feedback", icon:"chatbox-ellipses-outline", screen:"RideFeedbackScreen"},
   ];
 
   const otherItems: {
@@ -200,7 +200,7 @@ useFocusEffect(
     "PromotionScreen",
     "Settings",
     "FeedbackScreen",
-    "RideFeedbackScreen",
+    // "RideFeedbackScreen",
   ];
 
   if (screensWithPhone.includes(screen as ScreensWithPhone)) {
