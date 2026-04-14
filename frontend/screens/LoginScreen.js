@@ -278,7 +278,7 @@ export default function LoginScreen({ navigation }) {
                   />
                 </View>
                 
-                {/* Validation Message */}
+                {/* Validation Message }
                 {hasAttemptedSubmit && error ? (
                   <Animated.View 
                     style={[
@@ -299,7 +299,7 @@ export default function LoginScreen({ navigation }) {
                     <MaterialIcons name="check-circle" size={16} color="#10B981" />
                     <Text style={styles.successText}>Valid mobile number</Text>
                   </Animated.View>
-                ) : null}
+                ) : null*/}
               </View>
 
               {/* Next Button with Gradient */}
@@ -352,16 +352,34 @@ export default function LoginScreen({ navigation }) {
                 </LinearGradient>
               </TouchableOpacity>
             </View>
+                    {/* Skip Button (rendered outside SafeAreaView to guarantee overlay) */}
+                    <View
+                      pointerEvents="box-none"
+                      style={[
+                        styles.skipButtonContainer,
+                        {
+                          //top: insets.top + 620,
+                          //left: insets.left + 20,
+                          //minWidth: width - insets.left - insets.right,
+                        },
+                      ]}
+                    >
+                      <TouchableOpacity
+                        style={styles.skipButton}
+                        onPress={skipToHome}
+                        accessible={true}
+                        accessibilityLabel="Skip to home screen"
+                        accessibilityRole="button"
+                        activeOpacity={0.8}
+                      >
+                        <Text style={styles.skipButtonText}> Continue as Guest </Text>
+                      </TouchableOpacity>
+                    </View>
           </Animated.View>
           </ScrollView>
           </KeyboardAvoidingView>
           
-          {/* temp. button map testing
-            <Button
-              title="🚗 TEST ROUTE SCREEN"
-              onPress={() => navigation.navigate('RouteScreen')}  // Or 'Route' if named differently
-              color="#007AFF"
-            />*/}
+        
         
         {/* Terms Section */}
             <View style={styles.termsContainer}>
@@ -393,27 +411,7 @@ export default function LoginScreen({ navigation }) {
         )}
       </SafeAreaView>
 
-      {/* Skip Button (rendered outside SafeAreaView to guarantee overlay) */}
-      <View
-        pointerEvents="box-none"
-        style={[
-          styles.skipButtonContainer,
-          {
-            top: insets.top + 10,
-          },
-        ]}
-      >
-        <TouchableOpacity
-          style={styles.skipButton}
-          onPress={skipToHome}
-          accessible={true}
-          accessibilityLabel="Skip to home screen"
-          accessibilityRole="button"
-          activeOpacity={0.8}
-        >
-          <Text style={styles.skipButtonText}>SKIP</Text>
-        </TouchableOpacity>
-      </View>
+      
     </View>
   );
 }
@@ -424,32 +422,23 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
   },
   skipButtonContainer: {
-    position: 'absolute',
-    right: 20,
-    zIndex: 10000,
+    position: 'static',
+    //bottom: 10,
+    //zIndex: 10000,
     elevation: 20,
     top: 10, // fallback when safe-area insets are not available
   },
   skipButton: {
-    backgroundColor: Colors.primary,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 20,
-    borderWidth: 1,
-    borderColor: '#fff', // debug: visible border on dark bg
+    
     alignItems: 'center',
     justifyContent: 'center',
   },
   skipButtonText: {
-    color: Colors.secondary,
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 1,
+    ...Typography.body2,
+    color: Colors.primary,
+    fontSize: 15,
+    fontWeight: '800',
+    textDecorationLine: 'underline',
   },
   keyboardContainer: {
     flex: 1,
@@ -606,12 +595,14 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
     paddingTop: 16,
     textAlignVertical: 'center',
+    textAlign: 'center',
   },
   arrow: {
     marginLeft: 1,
     alignItems: 'center',
+    textAlignVertical: 'center',
     paddingBottom: 10,
-    paddingTop: 12,
+    paddingTop: 10,
   },
   loadingIcon: {
     marginRight: 8,

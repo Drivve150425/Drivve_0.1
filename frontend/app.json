@@ -34,6 +34,7 @@
       "package": "com.drivve.app",
       "versionCode": 1,
       "permissions": [
+        "android.permission.RECORD_AUDIO",
         "android.permission.RECORD_AUDIO"
       ]
     },
@@ -59,6 +60,14 @@
       "eas": {
         "projectId": "65cf8431-128a-4317-9c88-aa9c1791a36f"
       }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/65cf8431-128a-4317-9c88-aa9c1791a36f",
+      "fallbackToCacheTimeout": 0,
+      "checkAutomatically": "ON_LOAD"
     }
   }
 }

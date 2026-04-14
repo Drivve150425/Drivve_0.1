@@ -47,7 +47,7 @@ import PrivacyPolicyScreen from '../screens/PrivacyPolicyScreen';
 import FeedbackScreen from '../screens/Feedbackscreen';
 import RideFeedbackScreen from '../screens/RideFeedbackScreen';
 import usetnotificationScreen from '../screens/usernotificationscreen';
-import RouteScreen from '../screens/RouteScreen';
+// import RouteScreen from '../screens/RouteScreen';
 import LocationSearchScreen from '../screens/LocationSearchScreen';
 import MyRides from '../screens/MyRides';
 import RideSuccessScreen from '../screens/RideSuccessScreen';
@@ -356,7 +356,7 @@ export default function AppNavigator({ user }) {
           options={{ headerShown: false }}
         />
         
-        <Stack.Screen 
+        {/* <Stack.Screen 
           name="RouteScreen" 
           component={RouteScreen}
           options={{ 
@@ -365,7 +365,7 @@ export default function AppNavigator({ user }) {
             headerTintColor: 'white',
             headerStyle: { backgroundColor: '#007AFF' }
           }}
-        />
+        /> */}
 
         <Stack.Screen
           name="LocationSearch"

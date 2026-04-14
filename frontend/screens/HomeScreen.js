@@ -334,9 +334,9 @@ const openNotifications = () => {
             </TouchableOpacity>
             <View style={styles.headerRight}>
             <TouchableOpacity
-  style={styles.profileButton}
-  onPress={openNotifications}
->
+              style={styles.profileButton}
+              onPress={openNotifications}
+            >
   <Ionicons
     name="notifications"
     size={40}
