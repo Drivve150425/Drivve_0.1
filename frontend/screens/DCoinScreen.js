@@ -9,6 +9,8 @@ import {
   StatusBar,
   KeyboardAvoidingView,
   Platform,
+  Dimensions,
+  ScrollView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
@@ -18,6 +20,8 @@ import * as Clipboard from "expo-clipboard";
 import DatabaseService from "../services/dcoins_ds";
 import { Colors, Typography } from "../constants/Colors";
 import { useAuth } from "../context/AuthContext";
+
+const { width, height } = Dimensions.get("window");
 
 export default function DCoinWalletScreen({ route, navigation }) {
   const { user } = useAuth();
@@ -102,6 +106,60 @@ export default function DCoinWalletScreen({ route, navigation }) {
 
   const handleBack = () => navigation.goBack();
 
+  // Check if there are any transactions
+  const hasTransactions = history && history.length > 0;
+  
+  // Get transactions to display (first 4 or all based on showAll)
+  const displayedTransactions = hasTransactions 
+    ? (showAll ? history : history.slice(0, 4))
+    : [];
+
+  // Render transaction list
+  const renderTransactionItem = ({ item, index }) => {
+    const isCredit = item.type === "CREDIT";
+    
+    return (
+      <View>
+        <View style={styles.historyRow}>
+          <View style={styles.iconCircle}>
+            <Ionicons
+              name={
+                item.reason?.toLowerCase().includes("ride")
+                  ? "location-outline"
+                  : item.reason?.toLowerCase().includes("bonus")
+                  ? "star-outline"
+                  : "people-outline"
+              }
+              size={22}
+              color={Colors.orange1}
+            />
+          </View>
+
+          <View style={{ flex: 1 }}>
+            <Text style={styles.historyMain}>
+              {item.reason || "Transaction"}
+            </Text>
+            <Text style={styles.historySub}>
+              {formatDateTime(item.created_at)}
+            </Text>
+          </View>
+
+          <Text
+            style={[
+              styles.amount,
+              {
+                color: isCredit ? "#16A34A" : "#EF4444",
+              },
+            ]}
+          >
+            {isCredit ? "+" : "-"}{item.coins}
+          </Text>
+        </View>
+        {index !== displayedTransactions.length - 1 && <View style={styles.divider} />}
+      </View>
+    );
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
@@ -119,152 +177,122 @@ export default function DCoinWalletScreen({ route, navigation }) {
           <View style={styles.headerSpacer} />
         </View>
 
-        <FlatList
-          data={[]}
-          keyExtractor={(item, index) => index.toString()}
-          contentContainerStyle={{ paddingBottom: 40 }}
-          ListHeaderComponent={
+        <ScrollView 
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+        >
+          {/* BALANCE CARD */}
+          <LinearGradient
+            colors={[Colors.primary, Colors.primary]}
+            style={styles.balanceCard}
+          >
+            <View style={styles.balanceTopRow}>
+              <Ionicons name="albums-outline" size={16} color="#E5E7EB" />
+              <Text style={styles.balanceTop}>Total Balance</Text>
+            </View>
+            <Text style={styles.balanceNumber}>{balanceCoins}</Text>
+            <Text style={styles.balanceSub}>D coins</Text>
+
+            <View style={styles.weekBox}>
+              <Ionicons name="trending-up" size={16} color={Colors.white}/>
+              <Text style={styles.weekText}>+125 this week</Text>
+            </View>
+          </LinearGradient>
+
+          {/* REWARDS */}
+          <TouchableOpacity
+            style={styles.rewardCard}
+            activeOpacity={0.8}
+            onPress={() => navigation.navigate("RewardsScreen")}
+          >
+            <View style={styles.rewardIconBox}>
+              <Ionicons name="gift-outline" size={22} color={Colors.orange1} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rewardTitle}>Rewards</Text>
+              <Text style={styles.rewardSub}>
+                Redeem your coins for rewards
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={Colors.primary} />
+          </TouchableOpacity>
+
+          {/* HOW TO EARN */}
+          <View style={styles.earnCard}>
+            <Text style={styles.earnTitle}>💡 How to Earn D Coins?</Text>
+            <Text style={styles.earnText}>
+              • Complete rides and earn 10-50 D-coins per ride
+            </Text>
+            <Text style={styles.earnText}>
+              • Cross levels and earn bonus coins
+            </Text>
+            <Text style={styles.earnText}>
+              • Refer friends and get 100 D-coins per referral
+            </Text>
+          </View>
+
+          {/* CONDITIONAL TRANSACTION HISTORY SECTION */}
+          {hasTransactions ? (
             <>
-              {/* BALANCE CARD */}
-        <LinearGradient
-  colors={[Colors.primary, Colors.primary]}
-  style={styles.balanceCard}
->
-<View style={styles.balanceTopRow}>
-<Ionicons name="albums-outline" size={16} color="#E5E7EB" />
-  <Text style={styles.balanceTop}>Total Balance</Text>
-</View>
-                <Text style={styles.balanceNumber}>{balanceCoins}</Text>
-                <Text style={styles.balanceSub}>D coins</Text>
-
-                <View style={styles.weekBox}>
-                  <Ionicons name="trending-up" size={16} color={Colors.white}/>
-                  <Text style={styles.weekText}>+125 this week</Text>
-                </View>
-              </LinearGradient>
-
-              {/* REWARDS */}
-            <TouchableOpacity
-  style={styles.rewardCard}
-  activeOpacity={0.8}
-  onPress={() => navigation.navigate("RewardsScreen")}
->
-  <View style={styles.rewardIconBox}>
-    <Ionicons name="gift-outline" size={22} color={Colors.orange1} />
-  </View>
-
-  <View style={{ flex: 1 }}>
-    <Text style={styles.rewardTitle}>Rewards</Text>
-    <Text style={styles.rewardSub}>
-      Redeem your coins for rewards
-    </Text>
-  </View>
-
-  <Ionicons name="chevron-forward" size={20} color={Colors.primary} />
-</TouchableOpacity>
-
-              {/* HOW TO EARN */}
-              <View style={styles.earnCard}>
-                <Text style={styles.earnTitle}>💡 How to Earn D Coins?</Text>
-
-                <Text style={styles.earnText}>
-                  • Complete rides and earn 10-50 D-coins per ride
-                </Text>
-                <Text style={styles.earnText}>
-                  • Cross levels and earn bonus coins
-                </Text>
-                <Text style={styles.earnText}>
-                  • Refer friends and get 100 D-coins per referral
-                </Text>
-              </View>
-
               {/* HISTORY HEADER */}
               <View style={styles.historyHeader}>
                 <Text style={styles.historyTitle}>Transaction History</Text>
-
-                <TouchableOpacity onPress={() => setShowAll(!showAll)}>
-                  <Text style={styles.viewAll}>
-                    {showAll ? "Show Less" : "View All"}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* SINGLE CARD LIST */}
-              <View style={styles.historyContainer}>
-                {(showAll ? history : history.slice(0, 4)).map(
-                  (item, index) => {
-                    const isCredit = item.type === "CREDIT";
-
-                    return (
-                      <View key={item.id}>
-                        <View style={styles.historyRow}>
-                          <View style={styles.iconCircle}>
-                            <Ionicons
-                              name={
-                                item.reason?.toLowerCase().includes("ride")
-                                  ? "location-outline"
-                                  : item.reason
-                                      ?.toLowerCase()
-                                      .includes("bonus")
-                                  ? "star-outline"
-                                  : "people-outline"
-                              }
-                              size={22}
-                              color={Colors.orange1}
-                            />
-                          </View>
-
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.historyMain}>
-                              {item.reason || "Transaction"}
-                            </Text>
-
-                            <Text style={styles.historySub}>
-                              {formatDateTime(item.created_at)}
-                            </Text>
-                          </View>
-
-                          <Text
-                            style={[
-                              styles.amount,
-                              {
-                                color: isCredit ? "#16A34A" : "#EF4444",
-                              },
-                            ]}
-                          >
-                            {isCredit ? "+" : "-"}
-                            {item.coins}
-                          </Text>
-                        </View>
-
-                        {index !==
-                          (showAll ? history : history.slice(0, 3)).length -
-                            1 && <View style={styles.divider} />}
-                      </View>
-                    );
-                  }
+                {history.length > 4 && (
+                  <TouchableOpacity onPress={() => setShowAll(!showAll)}>
+                    <Text style={styles.viewAll}>
+                      {showAll ? "Show Less" : "View All"}
+                    </Text>
+                  </TouchableOpacity>
                 )}
               </View>
+
+              {/* TRANSACTIONS LIST */}
+              <View style={styles.historyContainer}>
+                <FlatList
+                  data={displayedTransactions}
+                  renderItem={renderTransactionItem}
+                  keyExtractor={(item, index) => item.id || index.toString()}
+                  scrollEnabled={false}
+                />
+              </View>
             </>
-          }
-        />
+          ) : (
+            // NO TRANSACTIONS STATE
+            <View style={styles.noTransactionsContainer}>
+              <View style={styles.noTransactionsIconContainer}>
+                <Ionicons name="document-text-outline" size={64} color={Colors.orange1} />
+              </View>
+              <Text style={styles.noTransactionsTitle}>No Transactions Yet</Text>
+              <Text style={styles.noTransactionsSubtitle}>
+                Complete rides, refer friends, or earn bonuses to see your transaction history here
+              </Text>
+            </View>
+          )}
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F3F4F6" },
+  container: { 
+    flex: 1, 
+    backgroundColor: Colors.white,
+  },
   keyboardAvoidingView: {
     flex: 1,
   },
-   header: {
+  scrollContent: {
+    paddingBottom: 40,
+  },
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: width * 0.04,
+    paddingVertical: height * 0.000,
     borderBottomWidth: 0.5,
     borderBottomColor: '#F3F4F6',
+    backgroundColor: Colors.white,
   },
   modernBackButton: {
     width: 44,
@@ -274,8 +302,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   headerTitle: {
-    ...Typography.h2,
-    fontSize: 28,
+    fontSize: width > 400 ? 28 : 24,
     fontWeight: '700',
     color: Colors.primary,
     flex: 1,
@@ -284,142 +311,133 @@ const styles = StyleSheet.create({
   headerSpacer: {
     width: 44,
   },
-
   balanceCard: {
-    margin: 16,
+    margin: width * 0.04,
     borderRadius: 20,
-    padding: 20,
-      alignItems: "center",   // ✅ center horizontally
-
+    padding: width * 0.05,
+    alignItems: "center",
+    elevation: 5,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
-balanceTop: {
-  color: Colors.white,
-  fontSize: 16,
-  textAlign: "center",   // ✅ center text
-},
-
-balanceNumber: {
-  fontSize: 44,
-  fontWeight: "800",
-  color: Colors.white,
-  textAlign: "center",
-  marginTop: 5,
-},
-coinIcon: {
-  width: 16,
-  height: 16,
-  tintColor: "#E5E7EB", // matches white tone
-  marginRight: 6,
-},
-
-balanceTopRow: {
-  flexDirection: "row",
-  alignItems: "center",
-  justifyContent: "center",
-},
-balanceSub: {
-  color: Colors.white,
-  textAlign: "center",
-  fontSize:16
-},
-
- weekBox: {
-  marginTop: 12,
-  flexDirection: "row",
-  alignItems: "center",
-  justifyContent: "center",   // ✅ center content
-  backgroundColor: "rgba(255,255,255,0.2)",
-  paddingHorizontal: 12,
-  paddingVertical: 6,
-  borderRadius: 20,
-  alignSelf: "center",        // ✅ center the box itself
-},
+  balanceTop: {
+    color: Colors.white,
+    fontSize: width > 400 ? 16 : 14,
+    textAlign: "center",
+  },
+  balanceNumber: {
+    fontSize: width > 400 ? 44 : 36,
+    fontWeight: "800",
+    color: Colors.white,
+    textAlign: "center",
+    marginTop: 5,
+  },
+  balanceTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  balanceSub: {
+    color: Colors.white,
+    textAlign: "center",
+    fontSize: width > 400 ? 16 : 14,
+  },
+  weekBox: {
+    marginTop: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.2)",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    alignSelf: "center",
+  },
   weekText: {
     color: Colors.white,
     marginLeft: 6,
     fontSize: 12,
   },
-
   rewardCard: {
     flexDirection: "row",
     alignItems: "center",
-    marginHorizontal: 16,
+    marginHorizontal: width * 0.04,
     backgroundColor: Colors.white,
-    padding: 14,
+    padding: width * 0.035,
     borderRadius: 16,
     elevation: 3,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
   },
-rewardIconBox: {
-  width: 44,
-  height: 44,
-  borderRadius: 22,          // perfect circle
-  backgroundColor: "#FFF7ED", // light orange background
-  justifyContent: "center",
-  alignItems: "center",
-  marginRight: 12,
-},
-
+  rewardIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#FFF7ED",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 12,
+  },
   rewardTitle: {
     fontWeight: "700",
-    fontSize: 18,
+    fontSize: width > 400 ? 18 : 16,
   },
-
   rewardSub: {
-    fontSize: 16,
+    fontSize: width > 400 ? 16 : 14,
     color: Colors.gray,
   },
-
   earnCard: {
-    margin: 16,
-    padding: 16,
+    margin: width * 0.04,
+    padding: width * 0.04,
     borderRadius: 16,
     backgroundColor: "#E0E7FF",
   },
-
   earnTitle: {
     marginBottom: 6,
-    fontSize:18,
-    fontWeight:"700"
-
+    fontSize: width > 400 ? 18 : 16,
+    fontWeight: "700"
   },
-
   earnText: {
-    fontSize: 16,
+    fontSize: width > 400 ? 16 : 14,
     marginTop: 4,
   },
-
   historyHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginHorizontal: 16,
+    marginHorizontal: width * 0.04,
     marginTop: 10,
+    marginBottom: 8,
   },
-
   historyTitle: {
-    fontSize: 18,
+    fontSize: width > 400 ? 18 : 16,
     fontWeight: "700",
-    color:Colors.primary
+    color: Colors.primary
   },
-
   viewAll: {
     color: Colors.orange1,
     fontWeight: "600",
+    fontSize: width > 400 ? 14 : 12,
   },
-
   historyContainer: {
     backgroundColor: Colors.white,
-    margin: 16,
+    marginHorizontal: width * 0.04,
     borderRadius: 18,
     paddingVertical: 6,
     elevation: 3,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
   },
-
   historyRow: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 14,
+    padding: width * 0.035,
   },
-
   iconCircle: {
     width: 44,
     height: 44,
@@ -429,25 +447,53 @@ rewardIconBox: {
     alignItems: "center",
     marginRight: 12,
   },
-
   historyMain: {
     fontWeight: "600",
-    fontSize:16
+    fontSize: width > 400 ? 16 : 14,
   },
-
   historySub: {
-    fontSize: 14,
+    fontSize: width > 400 ? 14 : 12,
     color: Colors.gray,
   },
-
   amount: {
     fontWeight: "700",
-    fontSize: 16,
+    fontSize: width > 400 ? 16 : 14,
   },
-
   divider: {
     height: 1,
-    backgroundColor: Colors.white,
+    backgroundColor: "#F3F4F6",
     marginLeft: 70,
+  },
+  // No Transactions Styles
+  noTransactionsContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    marginHorizontal: width * 0.04,
+    marginTop: height * 0.05,
+    paddingVertical: height * 0.08,
+    backgroundColor: Colors.white,
+    borderRadius: 20,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+  },
+  noTransactionsIconContainer: {
+    marginBottom: 20,
+  },
+  noTransactionsTitle: {
+    fontSize: width > 400 ? 20 : 18,
+    fontWeight: "700",
+    color: Colors.primary,
+    marginBottom: 10,
+    textAlign: "center",
+  },
+  noTransactionsSubtitle: {
+    fontSize: width > 400 ? 14 : 12,
+    color: Colors.gray,
+    textAlign: "center",
+    paddingHorizontal: width * 0.08,
+    lineHeight: 20,
   },
 });
