@@ -110,7 +110,7 @@ export default function FAQScreen({ navigation }) {
           />
           <TextInput
             placeholder="Search for answers..."
-            placeholderTextColor={Colors.dark} // 🖤 BLACK PLACEHOLDER
+                  placeholderTextColor="#9CA3AF"
             value={search}
             onChangeText={setSearch}
             style={styles.searchInput}
@@ -237,7 +237,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    marginBottom: 14,
+    marginBottom: 19,
       paddingVertical: 10, // 🔥 reduced height
 
     backgroundColor: "#FFFFFF", // ⬜ WHITE BG
@@ -246,14 +246,14 @@ const styles = StyleSheet.create({
   searchInput: {
     marginLeft: 8,
     flex: 1,
-    fontSize: 13,
+    fontSize: 14,
     color: Colors.dark,
      paddingVertical: 0
   },
 
   /* TABS */
   tabsRow: {
-    marginBottom: 16,
+    marginBottom: 19,
   },
 
  tab: {

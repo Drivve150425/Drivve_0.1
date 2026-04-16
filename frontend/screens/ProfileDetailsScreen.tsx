@@ -35,7 +35,7 @@ type RootStackParamList = {
   EmergencyContactsscreen: { phoneNumber: string };
   PaymentScreen: undefined;
   DCoinScreen: { phoneNumber: string };
-  RewardsScreen: { phoneNumber: string };
+  // RewardsScreen: { phoneNumber: string };
   ReferEarn: undefined;
   ShareAppScreen: { phoneNumber: string };
   AboutUsScreen: undefined;
@@ -56,7 +56,7 @@ type ScreensWithPhone =
   | "MatchingPreferenceScreen"
   | "EmergencyContactsscreen"
   | "DCoinScreen"
-  | "RewardsScreen"
+  // | "RewardsScreen"
   | "ShareAppScreen"
   | "PromotionScreen"
   | "Settings"
@@ -160,7 +160,7 @@ useFocusEffect(
     screen: keyof RootStackParamList;
   }[] = [
     { title: "D-coins", icon: "diamond-outline", screen: "DCoinScreen" },
-    { title: "Rewards", icon: "gift-outline", screen: "RewardsScreen" },
+    // { title: "Rewards", icon: "gift-outline", screen: "RewardsScreen" },
     // {title:"Ride Feedback", icon:"chatbox-ellipses-outline", screen:"RideFeedbackScreen"},
   ];
 
@@ -195,7 +195,7 @@ useFocusEffect(
     "MatchingPreferenceScreen",
     "EmergencyContactsscreen",
     "DCoinScreen",
-    "RewardsScreen",
+    // "RewardsScreen",
     "ShareAppScreen",
     "PromotionScreen",
     "Settings",

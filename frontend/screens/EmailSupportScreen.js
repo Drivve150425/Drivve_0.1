@@ -6,18 +6,24 @@ import {
   TouchableOpacity,
   Linking,
   StatusBar,
-    KeyboardAvoidingView,
+  KeyboardAvoidingView,
   Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Ionicons, MaterialIcons } from "@expo/vector-icons";
+import {
+  Ionicons,
+  MaterialIcons,
+  FontAwesome6, // ✅ Added for X (Twitter)
+} from "@expo/vector-icons";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Colors, Typography } from "../constants/Colors";
 
 const SUPPORT_EMAIL = "social.drivve@gmail.com";
 
 export default function EmailSupportScreen({ navigation }) {
   /* ================= HANDLERS ================= */
-const openEmail = async () => {
+
+  const openEmail = async () => {
     const subject = encodeURIComponent("DRIVVE Support");
     const body = encodeURIComponent("Hi DRIVVE Team,\n\n");
 
@@ -41,113 +47,151 @@ const openEmail = async () => {
       alert("Unable to open link.");
     }
   };
-  // const openEmail = () => {
-  //   const subject = "DRIVVE Support";
-  //   const body = "Hi DRIVVE Team,%0D%0A%0D%0A";
-  //   const mailUrl = `mailto:${SUPPORT_EMAIL}?subject=${subject}&body=${body}`;
 
-  //   Linking.openURL(mailUrl).catch(err =>
-  //     console.error("❌ Email open failed", err)
-  //   );
-  // };
-
-  // const openLink = url => {
-  //   Linking.openURL(url).catch(err =>
-  //     console.error("❌ Link open failed", err)
-  //   );
-  // };
- const handleBack = () => {
+  const handleBack = () => {
     navigation.goBack();
   };
+
   /* ================= UI ================= */
 
   return (
-        <SafeAreaView style={styles.container}>
-                                                                <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
-                                                                
-                                                                <KeyboardAvoidingView
-                                                                  style={styles.keyboardAvoidingView}
-                                                                  behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
-                                                                >
-                                                                  {/* Header */}
-                                                                  <View style={styles.header}>
-                                                                    <TouchableOpacity style={styles.modernBackButton} onPress={handleBack}>
-                                                                      <MaterialIcons name="arrow-back-ios" size={28} color={Colors.secondary} />
-                                                                    </TouchableOpacity>
-                                                                    <Text style={styles.headerTitle}>Email Support </Text>
-                                                                    <View style={styles.headerSpacer} />
-                                                                  </View>
+    <SafeAreaView style={styles.container}>
+      <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
 
-      {/* ================= CONTENT ================= */}
-      <View style={styles.content}>
-        <Text style={styles.message}>
-          Hi there! We’re always here and happy to help you anytime.
-        </Text>
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoidingView}
+        behavior={Platform.OS === "ios" ? "padding" : "padding"}
+      >
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.modernBackButton}
+            onPress={handleBack}
+          >
+            <MaterialIcons
+              name="arrow-back-ios"
+              size={28}
+              color={Colors.secondary}
+            />
+          </TouchableOpacity>
 
-        {/* ================= EMAIL CARD ================= */}
-        <TouchableOpacity
-          style={styles.emailCard}
-          activeOpacity={0.8}
-          onPress={openEmail}
-        >
-          <View style={styles.emailIcon}>
-            <Ionicons name="mail-outline" size={26} color={Colors.primary} />
+          <Text style={styles.headerTitle}>Email Support</Text>
+
+          <View style={styles.headerSpacer} />
+        </View>
+
+        {/* ================= CONTENT ================= */}
+        <View style={styles.content}>
+          <Text style={styles.message}>
+            Hi there! We’re always here and happy to help you anytime.
+          </Text>
+
+          {/* ================= EMAIL CARD ================= */}
+          <TouchableOpacity
+            style={styles.emailCard}
+            activeOpacity={0.8}
+            onPress={openEmail}
+          >
+            <View style={styles.emailIcon}>
+              <Ionicons
+                name="mail-outline"
+                size={26}
+                color={Colors.primary}
+              />
+            </View>
+
+            <View style={{ marginLeft: 12 }}>
+              <Text style={styles.emailTitle}>Email</Text>
+              <Text style={styles.emailText}>{SUPPORT_EMAIL}</Text>
+            </View>
+          </TouchableOpacity>
+
+          {/* ================= CONNECT ================= */}
+          <Text style={styles.connectText}>Connect with us</Text>
+
+          <View style={styles.socialWrapper}>
+            <View style={styles.socialRow}>
+              {/* WhatsApp */}
+              <TouchableOpacity
+                onPress={() =>
+                  openLink("https://wa.me/919999999999")
+                }
+                style={styles.socialBtn}
+              >
+                <Ionicons
+                  name="logo-whatsapp"
+                  size={28}
+                  color="#25D366"
+                />
+              </TouchableOpacity>
+
+              {/* Instagram */}
+              <TouchableOpacity
+                onPress={() =>
+                  openLink("https://www.instagram.com/drivve")
+                }
+                style={styles.socialBtn}
+              >
+                <Ionicons
+                  name="logo-instagram"
+                  size={28}
+                  color="#E4405F"
+                />
+              </TouchableOpacity>
+
+              {/* Facebook */}
+              <TouchableOpacity
+                onPress={() =>
+                  openLink("https://www.facebook.com/drivve")
+                }
+                style={styles.socialBtn}
+              >
+                <Ionicons
+                  name="logo-facebook"
+                  size={28}
+                  color="#1877F2"
+                />
+              </TouchableOpacity>
+
+              {/* LinkedIn */}
+              <TouchableOpacity
+                onPress={() =>
+                  openLink(
+                    "https://www.linkedin.com/company/drivve"
+                  )
+                }
+                style={styles.socialBtn}
+              >
+                <Ionicons
+                  name="logo-linkedin"
+                  size={28}
+                  color="#0A66C2"
+                />
+              </TouchableOpacity>
+
+              {/* X (Twitter Updated ✅) */}
+              <TouchableOpacity
+                onPress={() =>
+                  openLink("https://twitter.com/drivve")
+                }
+                style={styles.socialBtn}
+              >
+                <FontAwesome6
+                  name="x-twitter"
+                  size={26}
+                  color="#000"
+                />
+              </TouchableOpacity>
+            </View>
           </View>
-
-          <View style={{ marginLeft: 12 }}>
-            <Text style={styles.emailTitle}>Email</Text>
-            <Text style={styles.emailText}>{SUPPORT_EMAIL}</Text>
-          </View>
-        </TouchableOpacity>
-
-        {/* ================= CONNECT ================= */}
-       {/* ================= CONNECT ================= */}
-<Text style={styles.connectText}>Connect with us</Text>
-
-<View style={styles.socialWrapper}>
-  <View style={styles.socialRow}>
-    <TouchableOpacity
-      onPress={() => openLink("https://wa.me/919999999999")}
-      style={styles.socialBtn}
-    >
-      <Ionicons name="logo-whatsapp" size={28} color="#25D366" />
-    </TouchableOpacity>
-
-    <TouchableOpacity
-      onPress={() => openLink("https://www.instagram.com/drivve")}
-      style={styles.socialBtn}
-    >
-      <Ionicons name="logo-instagram" size={28} color="#E1306C" />
-    </TouchableOpacity>
-
-    <TouchableOpacity
-      onPress={() => openLink("https://www.facebook.com/drivve")}
-      style={styles.socialBtn}
-    >
-      <Ionicons name="logo-facebook" size={28} color="#1877F2" />
-    </TouchableOpacity>
-
-    <TouchableOpacity
-      onPress={() => openLink("https://www.linkedin.com/company/drivve")}
-      style={styles.socialBtn}
-    >
-      <Ionicons name="logo-linkedin" size={28} color="#0A66C2" />
-    </TouchableOpacity>
-
-    <TouchableOpacity
-      onPress={() => openLink("https://twitter.com/drivve")}
-      style={styles.socialBtn}
-    >
-      <Ionicons name="logo-twitter" size={28} color="#1DA1F2" />
-    </TouchableOpacity>
-  </View>
-</View>
-
-      </View>
+        </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
+
+/* ================= STYLES ================= */
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -155,36 +199,39 @@ const styles = StyleSheet.create({
   },
 
   keyboardAvoidingView: {
-     flex: 1,
-   },
-   header: {
-     flexDirection: 'row',
-     alignItems: 'center',
-     paddingHorizontal: 16,
-     paddingVertical: 12,
-     borderBottomWidth: 0.5,
-     borderBottomColor: '#F3F4F6',
-   },
-   modernBackButton: {
-     width: 44,
-     height: 44,
-     borderRadius: 22,
-     justifyContent: 'center',
-     alignItems: 'center',
-   },
-   headerTitle: {
-     ...Typography.h2,
-     fontSize: 28,
-     fontWeight: '700',
-     color: Colors.primary,
-     flex: 1,
-     textAlign: 'center',
-   },
-   headerSpacer: {
-     width: 44,
-   },
+    flex: 1,
+  },
 
-  /* CONTENT */
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 0.5,
+    borderBottomColor: "#F3F4F6",
+  },
+
+  modernBackButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  headerTitle: {
+    ...Typography.h2,
+    fontSize: 28,
+    fontWeight: "700",
+    color: Colors.primary,
+    flex: 1,
+    textAlign: "center",
+  },
+
+  headerSpacer: {
+    width: 44,
+  },
+
   content: {
     padding: 20,
   },
@@ -196,25 +243,22 @@ const styles = StyleSheet.create({
     lineHeight: 30,
   },
 
-  /* EMAIL CARD */
   emailCard: {
-  flexDirection: "row",
-  alignItems: "center",
-  borderWidth: 1,
-  borderColor: "#E5E7EB",
-  borderRadius: 16,
-  padding: 16,
-  backgroundColor: "#FFFFFF",
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderRadius: 16,
+    padding: 16,
+    backgroundColor: "#FFFFFF",
 
-  // 🔥 ANDROID
-  elevation: 4,
+    elevation: 4,
 
-  // 🔥 iOS
-  shadowColor: "#000",
-  shadowOffset: { width: 0, height: 4 },
-  shadowOpacity: 0.08,
-  shadowRadius: 8,
-},
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+  },
 
   emailIcon: {
     width: 56,
@@ -237,31 +281,26 @@ const styles = StyleSheet.create({
     color: Colors.dark,
   },
 
-  
+  connectText: {
+    marginTop: 28,
+    fontSize: 20,
+    fontWeight: "600",
+    color: Colors.primary,
+    textAlign: "center",
+  },
 
- /* CONNECT */
-connectText: {
-  marginTop: 28,
-  fontSize: 20,
-  fontWeight: "600",
-  color: Colors.primary,
-    textAlign: "center",  // ✅ CENTER ROW
+  socialWrapper: {
+    alignItems: "center",
+    marginTop: 16,
+  },
 
-},
+  socialRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+  },
 
-socialWrapper: {
-  alignItems: "center",  // ✅ CENTER ROW
-  marginTop: 16,
-},
-
-socialRow: {
-  flexDirection: "row",
-  justifyContent: "center", // ✅ CENTER ICONS
-},
-
-socialBtn: {
-  marginHorizontal: 14,  // ✅ EVEN SPACING
-  padding: 6,            // touch friendly
-},
-
+  socialBtn: {
+    marginHorizontal: 14,
+    padding: 6,
+  },
 });

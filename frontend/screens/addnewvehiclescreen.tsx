@@ -1,886 +1,4 @@
-// import { Ionicons } from '@expo/vector-icons';
-// import { LinearGradient } from "expo-linear-gradient";
-// import { useRef, useState } from 'react';
-// import DatabaseService from "../services/DatabaseService";
-// import * as ImagePicker from "expo-image-picker";
-// import { useEffect } from "react";
-
-// import {
-//   Alert,
-//   Dimensions,
-//   Modal,
-//   ScrollView,
-//   StatusBar,
-//   StyleSheet,
-//   Text,
-//   TextInput,
-//   TouchableOpacity,
-//   View
-// } from 'react-native';
-
-// const { height: screenHeight } = Dimensions.get('window');
-
-// const AddVehicleScreen = ({ navigation,route }: any) => {
-//    const phoneNumber =
-//   route?.params?.phoneNumber ||
-//   navigation?.getState()?.routes
-//     ?.find(r => r.params?.phoneNumber)
-//     ?.params?.phoneNumber ||
-//   null;
-
-
-//   const [vehicleType, setVehicleType] = useState<'Car' | 'Bike' | null>(null);
-//   const [bodyType, setBodyType] = useState<string>('');
-//   const [vehicleDetails, setVehicleDetails] = useState({
-//     make: '',
-//     model: '',
-//     year: '',
-//     registrationNumber: '',
-//     color: '',
-//     maxSeats: '4',
-//   });
-//   const [additionalNotes, setAdditionalNotes] = useState('');
-//   const [showScrollTop, setShowScrollTop] = useState(false);
-  
-//   // Dropdown states
-//   const [showVehicleTypeDropdown, setShowVehicleTypeDropdown] = useState(false);
-//   const [showBodyTypeDropdown, setShowBodyTypeDropdown] = useState(false);
-
-//   const scrollViewRef = useRef<ScrollView>(null);
-// const renderSearchableList = (data: string[], onSelect: (v: string) => void) => {
-//   return data
-//     .filter(v => v.toLowerCase().includes(searchQuery.toLowerCase()))
-//     .map(item => (
-//       <TouchableOpacity
-//         key={item}
-//         style={styles.modalOption}
-//         onPress={() => {
-//           onSelect(item);
-//           setSearchQuery("");
-//         }}
-//       >
-//         <Text style={styles.modalOptionText}>{item}</Text>
-//         <Ionicons name="checkmark" size={18} color="#184080" />
-//       </TouchableOpacity>
-//     ));
-// };
-
-//   const vehicleTypes = [
-//     { value: 'Car', label: 'Car', icon: 'car-sport' },
-//     { value: 'Bike', label: 'Bike/Scooter', icon: 'bicycle' }
-//   ];
-
-//   const bodyTypes = [
-//     'Hatchback', 'Sedan', 'SUV', 'Truck', 'Coupe', 'Convertible', 
-//     'Minivan', 'Wagon', 'Sports Car', 'Electric Vehicle'
-//   ];
-//   const VEHICLE_MASTER = {
-//   Toyota: ["Camry", "Corolla", "Innova"],
-//   Honda: ["City", "Amaze", "Civic"],
-//   Hyundai: ["i10", "i20", "Creta"],
-//   Tata: ["Nexon", "Punch", "Harrier"],
-// };
-
-// const FUEL_TYPES = ["Petrol", "Diesel", "CNG", "Electric", "Hybrid"];
-// const [fuelType, setFuelType] = useState("");
-// const [make, setMake] = useState("");
-// const [model, setModel] = useState("");
-
-// const [searchQuery, setSearchQuery] = useState("");
-
-// const [showFuelTypeDropdown, setShowFuelTypeDropdown] = useState(false);
-// const [showMakeDropdown, setShowMakeDropdown] = useState(false);
-// const [showModelDropdown, setShowModelDropdown] = useState(false);
-
-// const [vehiclePhoto, setVehiclePhoto] = useState<string | null>(null);
-
-// const editingVehicle = route?.params?.vehicle || null;
-// const isEdit = !!editingVehicle;
-// useEffect(() => {
-//   if (!editingVehicle) return;
-
-//   // Dropdown selections
-//   setVehicleType(editingVehicle.vehicle_type);
-//   setBodyType(editingVehicle.body_type);
-//   setFuelType(editingVehicle.fuel_type);
-
-//   // Make / Model
-//   setMake(editingVehicle.make);
-//   setModel(editingVehicle.model);
-
-//   // Text inputs
-//   setVehicleDetails({
-//     make: editingVehicle.make || "",
-//     model: editingVehicle.model || "",
-//     year: String(editingVehicle.year || ""),
-//     registrationNumber: editingVehicle.registration_number || "",
-//     color: editingVehicle.color || "",
-//     maxSeats: String(editingVehicle.max_seats || "4"),
-//   });
-
-//   // Notes
-//   setAdditionalNotes(editingVehicle.notes || "");
-
-//   // Existing image
-//   if (editingVehicle.photo_url) {
-//     setVehiclePhoto(
-//       `http://192.168.1.2:8000/${editingVehicle.photo_url}`
-//     );
-//   }
-// }, [editingVehicle]);
-
-// const handleSaveVehicle = async () => {
-//   try {
-//     if (!phoneNumber) {
-//       Alert.alert("Error", "Phone number missing");
-//       return;
-//     }
-
-//     if (!vehicleType || !bodyType || !fuelType || !make || !model) {
-//       Alert.alert("Error", "Please fill all required fields");
-//       return;
-//     }
-
-//     const formData = new FormData();
-
-//     formData.append("phone_number", String(phoneNumber));
-//     formData.append("vehicle_type", vehicleType);
-//     formData.append("body_type", bodyType);
-//     formData.append("fuel_type", fuelType);
-//     formData.append("make", make);
-//     formData.append("model", model);
-//     formData.append("year", vehicleDetails.year);
-//     formData.append("registration_number", vehicleDetails.registrationNumber);
-//     formData.append("color", vehicleDetails.color || "");
-//     formData.append("max_seats", vehicleDetails.maxSeats);
-//     formData.append("notes", additionalNotes || "");
-
-//     // ✅ IMAGE (RN-safe)
-//    if (vehiclePhoto && !vehiclePhoto.startsWith("http")) {
-//       formData.append(
-//         "photo",
-//         {
-//           uri: vehiclePhoto,
-//           name: "vehicle.jpg",
-//           type: "image/jpeg",
-//         } as any
-//       );
-//     }
-
-
-//     // ✅ API CALL
-//     if (isEdit) {
-//       await DatabaseService.updateVehicle(editingVehicle.id, formData);
-//       Alert.alert("Success", "Vehicle updated successfully");
-//     } else {
-//       await DatabaseService.addVehicle(formData);
-//       Alert.alert("Success", "Vehicle added successfully");
-//     }
-
-//     navigation.goBack();
-//   } catch (error: any) {
-//     console.error("❌ Add vehicle error:", error);
-//     Alert.alert(
-//       "Error",
-//       error?.message || "Failed to save vehicle"
-//     );
-//   }
-// };
-
-//   const getVehicleTypeLabel = () => {
-//     if (!vehicleType) return 'Select Vehicle Type';
-//     const selected = vehicleTypes.find(type => type.value === vehicleType);
-//     return selected ? selected.label : 'Select Vehicle Type';
-//   };
-
-//   const handleScroll = (event: any) => {
-//     const scrollY = event.nativeEvent.contentOffset.y;
-//     // Show scroll to top button when scrolled down more than 200 pixels
-//     setShowScrollTop(scrollY > 200);
-//   };
-
-//   const scrollToTop = () => {
-//     scrollViewRef.current?.scrollTo({ y: 0, animated: true });
-//   };
-// const pickVehiclePhoto = async () => {
-//   const result = await ImagePicker.launchImageLibraryAsync({
-//     mediaTypes: ImagePicker.MediaTypeOptions.Images,
-//     quality: 0.7,
-//   });
-
-//   if (!result.canceled) {
-//     setVehiclePhoto(result.assets[0].uri);
-//   }
-// };
-
-//   return (
-//     <View style={styles.container}>
-//       <StatusBar backgroundColor="#184080" barStyle="light-content" />
-      
-//       {/* Top Header with Back Button */}
-//       <LinearGradient
-//         colors={["#184080", "#2a5cb0"]}
-//         style={styles.topHeader}
-//       >
-//         <TouchableOpacity
-//           style={styles.backButton}
-//           onPress={() => navigation.goBack()}
-//         >
-//           <Ionicons name="chevron-back" size={26} color="white" />
-//         </TouchableOpacity>
-//       </LinearGradient>
-
-//       <ScrollView 
-//         ref={scrollViewRef}
-//         style={styles.scrollView} 
-//         showsVerticalScrollIndicator={false}
-//         onScroll={handleScroll}
-//         scrollEventThrottle={16}
-//       >
-        
-//         {/* Header Section */}
-//         <View style={styles.header}>
-//           <Text style={styles.mainTitle}>Vehicle Type</Text>
-          
-//           {/* Vehicle Type Dropdown */}
-//           <TouchableOpacity 
-//             style={styles.dropdownButton}
-//             onPress={() => setShowVehicleTypeDropdown(true)}
-//           >
-//             <Text style={[
-//               styles.dropdownButtonText,
-//               !vehicleType && styles.dropdownPlaceholder
-//             ]}>
-//               {getVehicleTypeLabel()}
-//             </Text>
-//             <Ionicons name="chevron-down" size={20} color="#666" />
-//           </TouchableOpacity>
-//         </View>
-
-//         {/* Body Type Section */}
-//         <View style={styles.section}>
-//           <Text style={styles.sectionTitle}>Body Type</Text>
-          
-//           <TouchableOpacity 
-//             style={styles.dropdownButton}
-//             onPress={() => setShowBodyTypeDropdown(true)}
-//           >
-//             <Text style={[
-//               styles.dropdownButtonText,
-//               !bodyType && styles.dropdownPlaceholder
-//             ]}>
-//               {bodyType || 'Select Body Type'}
-//             </Text>
-//             <Ionicons name="chevron-down" size={20} color="#666" />
-//           </TouchableOpacity>
-//         </View>
-//         <View style={styles.section}>
-//   <Text style={styles.sectionTitle}>Fuel Type</Text>
-
-//   <TouchableOpacity
-//     style={styles.dropdownButton}
-//     onPress={() => setShowFuelTypeDropdown(true)}
-//   >
-//     <Text style={[
-//       styles.dropdownButtonText,
-//       !fuelType && styles.dropdownPlaceholder
-//     ]}>
-//       {fuelType || 'Select Fuel Type'}
-//     </Text>
-//     <Ionicons name="chevron-down" size={20} color="#666" />
-//   </TouchableOpacity>
-// </View>
-
-//         {/* Vehicle Photo Section */}
-//         <View style={styles.section}>
-//           <Text style={styles.sectionTitle}>Vehicle Photo</Text>
-//           <View style={styles.uploadContainer}>
-//             <View style={styles.uploadBox}>
-//               <Ionicons name="camera-outline" size={48} color="#666666" />
-//               <Text style={styles.uploadText}>
-//                 Tap to upload vehicle photo
-//               </Text>
-//              <TouchableOpacity style={styles.uploadButton} onPress={pickVehiclePhoto}>
-//   <Text style={styles.uploadButtonText}>
-//     {vehiclePhoto ? "Change Photo" : "Upload Photo"}
-//   </Text>
-// </TouchableOpacity>
-
-// {vehiclePhoto && (
-//   <Text style={{ marginTop: 8, color: "#184080" }}>
-//     Photo selected ✔
-//   </Text>
-// )}
-
-//               <Text style={styles.uploadSubtext}>Max file size: 5MB</Text>
-//             </View>
-//           </View>
-//         </View>
-
-//         {/* Vehicle Details Container */}
-//         <View style={styles.detailsContainer}>
-//           <Text style={styles.detailsContainerTitle}>Vehicle Details</Text>
-          
-//           <View style={styles.formContainer}>
-//             <View style={styles.inputRow}>
-//              <View style={[styles.inputGroup, styles.halfInput]}>
-//   <Text style={styles.inputLabel}>Make *</Text>
-//   <TouchableOpacity
-//     style={styles.dropdownButton}
-//     onPress={() => setShowMakeDropdown(true)}
-//   >
-//     <Text style={styles.dropdownButtonText}>
-//       {make || "Select Make"}
-//     </Text>
-//     <Ionicons name="chevron-down" size={20} color="#666" />
-//   </TouchableOpacity>
-// </View>
-
-//          <View style={[styles.inputGroup, styles.halfInput]}>
-//   <Text style={styles.inputLabel}>Model *</Text>
-//   <TouchableOpacity
-//     style={styles.dropdownButton}
-//     disabled={!make}
-//     onPress={() => setShowModelDropdown(true)}
-//   >
-//     <Text style={styles.dropdownButtonText}>
-//       {model || "Select Model"}
-//     </Text>
-//     <Ionicons name="chevron-down" size={20} color="#666" />
-//   </TouchableOpacity>
-// </View>
-
-//             </View>
-
-//             <View style={styles.inputRow}>
-//               <View style={[styles.inputGroup, styles.halfInput]}>
-//                 <Text style={styles.inputLabel}>Year *</Text>
-//                 <TextInput
-//                   style={styles.textInput}
-//                   placeholder="e.g., 2020"
-//                   value={vehicleDetails.year}
-//                   onChangeText={(text) => setVehicleDetails(prev => ({...prev, year: text}))}
-//                   placeholderTextColor="#999"
-//                   keyboardType="numeric"
-//                 />
-//               </View>
-
-//               <View style={[styles.inputGroup, styles.halfInput]}>
-//                 <Text style={styles.inputLabel}>Color</Text>
-//                 <TextInput
-//                   style={styles.textInput}
-//                   placeholder="e.g., Silver"
-//                   value={vehicleDetails.color}
-//                   onChangeText={(text) => setVehicleDetails(prev => ({...prev, color: text}))}
-//                   placeholderTextColor="#999"
-//                 />
-//               </View>
-//             </View>
-
-//             <View style={styles.inputGroup}>
-//               <Text style={styles.inputLabel}>Registration Number</Text>
-//               <TextInput
-//                 style={styles.textInput}
-//                 placeholder="e.g., ABC-1234"
-//                 value={vehicleDetails.registrationNumber}
-//                 onChangeText={(text) => setVehicleDetails(prev => ({...prev, registrationNumber: text}))}
-//                 placeholderTextColor="#999"
-//               />
-//             </View>
-
-//             <View style={styles.inputGroup}>
-//               <Text style={styles.inputLabel}>Max Seats Offered: {vehicleDetails.maxSeats}</Text>
-//               <View style={styles.seatsContainer}>
-//                 {['1', '2','3', '4', '5', '6', '7', '8'].map((seats) => (
-//                   <TouchableOpacity
-//                     key={seats}
-//                     style={[
-//                       styles.seatButton,
-//                       vehicleDetails.maxSeats === seats && styles.seatButtonSelected
-//                     ]}
-//                     onPress={() => setVehicleDetails(prev => ({...prev, maxSeats: seats}))}
-//                   >
-//                     <Text style={[
-//                       styles.seatButtonText,
-//                       vehicleDetails.maxSeats === seats && styles.seatButtonTextSelected
-//                     ]}>
-//                       {seats}
-//                     </Text>
-//                   </TouchableOpacity>
-//                 ))}
-//               </View>
-//             </View>
-//           </View>
-//         </View>
-
-//         {/* Additional Notes Section */}
-//         <View style={styles.section}>
-//           <Text style={styles.sectionTitle}>Additional Notes</Text>
-//           <TextInput
-//             style={[styles.textInput, styles.textArea]}
-//             placeholder="Any special features or conditions..."
-//             value={additionalNotes}
-//             onChangeText={setAdditionalNotes}
-//             placeholderTextColor="#999"
-//             multiline
-//             numberOfLines={4}
-//             textAlignVertical="top"
-//           />
-//         </View>
-
-//         {/* Save Button */}
-//         <TouchableOpacity style={styles.saveButton} onPress={handleSaveVehicle}>
-//           <Text style={styles.saveButtonText}>Save Vehicle</Text>
-//         </TouchableOpacity>
-
-//       </ScrollView>
-
-//       {/* Scroll to Top Button */}
-//       {showScrollTop && (
-//         <TouchableOpacity style={styles.scrollTopButton} onPress={scrollToTop}>
-//           <Ionicons name="chevron-up" size={24} color="#fff" />
-//         </TouchableOpacity>
-//       )}
-
-//       {/* Vehicle Type Dropdown Modal */}
-//       <Modal
-//         visible={showVehicleTypeDropdown}
-//         transparent={true}
-//         animationType="slide"
-//         statusBarTranslucent={true}
-//       >
-//         <View style={styles.modalOverlay}>
-//           <TouchableOpacity 
-//             style={styles.modalBackdrop}
-//             activeOpacity={1}
-//             onPress={() => setShowVehicleTypeDropdown(false)}
-//           />
-//           <View style={styles.bottomSheet}>
-//             <View style={styles.dragHandle} />
-//             <View style={styles.modalHeader}>
-//               <Text style={styles.modalTitle}>Select Vehicle Type</Text>
-//               <TouchableOpacity 
-//                 onPress={() => setShowVehicleTypeDropdown(false)}
-//               >
-//                 <Ionicons name="close" size={24} color="#666" />
-//               </TouchableOpacity>
-//             </View>
-//             <ScrollView style={styles.modalScrollView}>
-//               {vehicleTypes.map((type) => (
-//                 <TouchableOpacity
-//                   key={type.value}
-//                   style={[
-//                     styles.modalOption,
-//                     vehicleType === type.value && styles.modalOptionSelected
-//                   ]}
-//                   onPress={() => {
-//                     setVehicleType(type.value as 'Car' | 'Bike');
-//                     setShowVehicleTypeDropdown(false);
-//                   }}
-//                 >
-//                   <Ionicons 
-//                     name={type.icon as any} 
-//                     size={24} 
-//                     color={vehicleType === type.value ? '#184080' : '#666'} 
-//                   />
-//                   <Text style={[
-//                     styles.modalOptionText,
-//                     vehicleType === type.value && styles.modalOptionTextSelected
-//                   ]}>
-//                     {type.label}
-//                   </Text>
-//                 </TouchableOpacity>
-//               ))}
-//             </ScrollView>
-//           </View>
-//         </View>
-//       </Modal>
-// <Modal visible={showMakeDropdown} transparent animationType="slide">
-//   <View style={styles.modalOverlay}>
-//     <View style={styles.bottomSheet}>
-//       <TextInput
-//         placeholder="Search make..."
-//         style={styles.textInput}
-//         value={searchQuery}
-//         onChangeText={setSearchQuery}
-//       />
-//       <ScrollView>
-//         {renderSearchableList(Object.keys(VEHICLE_MASTER), (v) => {
-//           setMake(v);
-//           setModel(""); // reset model
-//           setShowMakeDropdown(false);
-//         })}
-//       </ScrollView>
-//     </View>
-//   </View>
-// </Modal>
-// <Modal visible={showModelDropdown} transparent animationType="slide">
-//   <View style={styles.modalOverlay}>
-//     <View style={styles.bottomSheet}>
-//       <TextInput
-//         placeholder="Search model..."
-//         style={styles.textInput}
-//         value={searchQuery}
-//         onChangeText={setSearchQuery}
-//       />
-//       <ScrollView>
-//         {make &&
-//           renderSearchableList(VEHICLE_MASTER[make] || [], (v) => {
-//             setModel(v);
-//             setShowModelDropdown(false);
-//           })}
-//       </ScrollView>
-//     </View>
-//   </View>
-// </Modal>
-// <Modal visible={showFuelTypeDropdown} transparent animationType="slide">
-//   <View style={styles.modalOverlay}>
-//     <View style={styles.bottomSheet}>
-//       <TextInput
-//         placeholder="Search fuel type..."
-//         style={styles.textInput}
-//         value={searchQuery}
-//         onChangeText={setSearchQuery}
-//       />
-//       <ScrollView>
-//         {renderSearchableList(FUEL_TYPES, (v) => {
-//           setFuelType(v);
-//           setShowFuelTypeDropdown(false);
-//         })}
-//       </ScrollView>
-//     </View>
-//   </View>
-// </Modal>
-
-
-//       {/* Body Type Dropdown Modal */}
-//       <Modal
-//         visible={showBodyTypeDropdown}
-//         transparent={true}
-//         animationType="slide"
-//         statusBarTranslucent={true}
-//       >
-//         <View style={styles.modalOverlay}>
-//           <TouchableOpacity 
-//             style={styles.modalBackdrop}
-//             activeOpacity={1}
-//             onPress={() => setShowBodyTypeDropdown(false)}
-//           />
-//           <View style={styles.bottomSheet}>
-//             <View style={styles.dragHandle} />
-//             <View style={styles.modalHeader}>
-//               <Text style={styles.modalTitle}>Select Body Type</Text>
-//               <TouchableOpacity 
-//                 onPress={() => setShowBodyTypeDropdown(false)}
-//               >
-//                 <Ionicons name="close" size={24} color="#666" />
-//               </TouchableOpacity>
-//             </View>
-//             <ScrollView style={styles.modalScrollView}>
-//               {bodyTypes.map((type) => (
-//                 <TouchableOpacity
-//                   key={type}
-//                   style={[
-//                     styles.modalOption,
-//                     bodyType === type && styles.modalOptionSelected
-//                   ]}
-//                   onPress={() => {
-//                     setBodyType(type);
-//                     setShowBodyTypeDropdown(false);
-//                   }}
-//                 >
-//                   <Text style={[
-//                     styles.modalOptionText,
-//                     bodyType === type && styles.modalOptionTextSelected
-//                   ]}>
-//                     {type}
-//                   </Text>
-//                   {bodyType === type && (
-//                     <Ionicons name="checkmark" size={20} color="#184080" />
-//                   )}
-//                 </TouchableOpacity>
-//               ))}
-//             </ScrollView>
-//           </View>
-//         </View>
-//       </Modal>
-//     </View>
-//   );
-// };
-
-// const styles = StyleSheet.create({
-//   container: {
-//     flex: 1,
-//     backgroundColor: '#ffffff',
-//   },
-//   topHeader: {
-//     flexDirection: "row",
-//     alignItems: "center",
-//     paddingTop: StatusBar.currentHeight ? StatusBar.currentHeight + 10 : 50,
-//     paddingHorizontal: 20,
-//     paddingBottom: 20,
-//     borderBottomLeftRadius: 25,
-//     borderBottomRightRadius: 25,
-//     shadowColor: "#000",
-//     shadowOffset: { width: 0, height: 4 },
-//     shadowOpacity: 0.3,
-//     shadowRadius: 8,
-//     elevation: 8,
-//   },
-//   backButton: {
-//     flexDirection: 'row',
-//     alignItems: 'center',
-//   },
-//   scrollView: {
-//     flex: 1,
-//   },
-//   header: {
-//     padding: 20,
-//     backgroundColor: '#ffffff',
-//     paddingTop: 20,
-//   },
-//   mainTitle: {
-//     fontSize: 24,
-//     fontWeight: '600',
-//     color: '#1a1a1a',
-//     marginBottom: 16,
-//   },
-//   section: {
-//     padding: 20,
-//   },
-//   sectionTitle: {
-//     fontSize: 18,
-//     fontWeight: '600',
-//     color: '#1a1a1a',
-//     marginBottom: 6,
-//   },
-//   // Vehicle Details Container
-//   detailsContainer: {
-//     margin: 20,
-//     backgroundColor: '#f8f9fa',
-//     borderRadius: 12,
-//     padding: 20,
-//     shadowColor: "#000",
-//     shadowOffset: { width: 0, height: 2 },
-//     shadowOpacity: 0.1,
-//     shadowRadius: 4,
-//     elevation: 3,
-//   },
-//   detailsContainerTitle: {
-//     fontSize: 20,
-//     fontWeight: '600',
-//     color: '#1a1a1a',
-//     marginBottom: 16,
-//   },
-//   formContainer: {
-//     gap: 16,
-//   },
-//   inputRow: {
-//     flexDirection: 'row',
-//     gap: 12,
-//   },
-//   inputGroup: {
-//     gap: 8,
-//     flex: 1,
-//   },
-//   halfInput: {
-//     flex: 1,
-//   },
-//   inputLabel: {
-//     fontSize: 16,
-//     fontWeight: '600',
-//     color: '#1a1a1a',
-//   },
-//   textInput: {
-//     borderWidth: 1,
-//     borderColor: '#e0e0e0',
-//     borderRadius: 8,
-//     padding: 12,
-//     fontSize: 16,
-//     backgroundColor: '#ffffff',
-//   },
-//   textArea: {
-//     minHeight: 100,
-//     textAlignVertical: 'top',
-//   },
-//   // Dropdown Styles
-//   dropdownButton: {
-//     flexDirection: 'row',
-//     alignItems: 'center',
-//     justifyContent: 'space-between',
-//     borderWidth: 1,
-//     borderColor: '#e0e0e0',
-//     borderRadius: 8,
-//     padding: 16,
-//     backgroundColor: '#fafafa',
-//   },
-//   dropdownButtonText: {
-//     fontSize: 16,
-//     color: '#1a1a1a',
-//   },
-//   dropdownPlaceholder: {
-//     color: '#999',
-//   },
-//   // Bottom Sheet Modal Styles - FIXED
-//   modalOverlay: {
-//     flex: 1,
-//     backgroundColor: 'rgba(0, 0, 0, 0.5)',
-//     justifyContent: 'flex-end',
-//   },
-//   modalBackdrop: {
-//     ...StyleSheet.absoluteFillObject,
-//   },
-//   bottomSheet: {
-//     backgroundColor: 'white',
-//     borderTopLeftRadius: 20,
-//     borderTopRightRadius: 20,
-//     maxHeight: screenHeight * 0.6,
-//   },
-//   dragHandle: {
-//     width: 40,
-//     height: 4,
-//     backgroundColor: '#ddd',
-//     borderRadius: 2,
-//     alignSelf: 'center',
-//     marginTop: 8,
-//     marginBottom: 8,
-//   },
-//   modalHeader: {
-//     flexDirection: 'row',
-//     justifyContent: 'space-between',
-//     alignItems: 'center',
-//     padding: 20,
-//     borderBottomWidth: 1,
-//     borderBottomColor: '#e0e0e0',
-//   },
-//   modalTitle: {
-//     fontSize: 18,
-//     fontWeight: '600',
-//     color: '#1a1a1a',
-//   },
-//   modalScrollView: {
-//     maxHeight: 400,
-//   },
-//   modalOption: {
-//     flexDirection: 'row',
-//     alignItems: 'center',
-//     justifyContent: 'space-between',
-//     padding: 16,
-//     borderBottomWidth: 1,
-//     borderBottomColor: '#f0f0f0',
-//   },
-//   modalOptionSelected: {
-//     backgroundColor: '#f8f9fa',
-//   },
-//   modalOptionText: {
-//     fontSize: 16,
-//     color: '#1a1a1a',
-//     flex: 1,
-//     marginLeft: 12,
-//   },
-//   modalOptionTextSelected: {
-//     color: '#184080',
-//     fontWeight: '600',
-//   },
-//   // Upload Styles
-//   uploadContainer: {
-//     alignItems: 'center',
-//   },
-//   uploadBox: {
-//     width: '100%',
-//     padding: 40,
-//     borderWidth: 2,
-//     borderColor: '#e0e0e0',
-//     borderStyle: 'dashed',
-//     borderRadius: 12,
-//     alignItems: 'center',
-//     backgroundColor: '#fafafa',
-//   },
-//   uploadText: {
-//     fontSize: 16,
-//     color: '#666666',
-//     textAlign: 'center',
-//     marginVertical: 16,
-//   },
-//   uploadButton: {
-//     backgroundColor: '#184080',
-//     paddingHorizontal: 24,
-//     paddingVertical: 12,
-//     borderRadius: 8,
-//     marginBottom: 8,
-//   },
-//   uploadButtonText: {
-//     color: 'white',
-//     fontSize: 16,
-//     fontWeight: '600',
-//   },
-//   uploadSubtext: {
-//     fontSize: 14,
-//     color: '#999999',
-//   },
-//   // Seats Styles
-//   seatsContainer: {
-//     flexDirection: 'row',
-//     flexWrap: 'wrap',
-//     gap: 8,
-//   },
-//   seatButton: {
-//     paddingHorizontal: 16,
-//     paddingVertical: 8,
-//     backgroundColor: '#f8f9fa',
-//     borderRadius: 6,
-//     borderWidth: 1,
-//     borderColor: '#e0e0e0',
-//   },
-//   seatButtonSelected: {
-//     backgroundColor: '#184080',
-//     borderColor: '#184080',
-//   },
-//   seatButtonText: {
-//     fontSize: 14,
-//     color: '#666666',
-//     fontWeight: '500',
-//   },
-//   seatButtonTextSelected: {
-//     color: 'white',
-//   },
-//   // Save Button
-//   saveButton: {
-//     margin: 20,
-//     backgroundColor: '#184080',
-//     paddingVertical: 16,
-//     borderRadius: 8,
-//     alignItems: 'center',
-//   },
-//   saveButtonText: {
-//     color: 'white',
-//     fontSize: 18,
-//     fontWeight: '600',
-//   },
-//   // Scroll to Top Button
-//   scrollTopButton: {
-//     position: 'absolute',
-//     bottom: 30,
-//     right: 20,
-//     width: 50,
-//     height: 50,
-//     borderRadius: 25,
-//     backgroundColor: '#184080',
-//     justifyContent: 'center',
-//     alignItems: 'center',
-//     shadowColor: '#000',
-//     shadowOffset: {
-//       width: 0,
-//       height: 2,
-//     },
-//     shadowOpacity: 0.25,
-//     shadowRadius: 3.84,
-//     elevation: 5,
-//   },
-// });
-
-// export default AddVehicleScreen;
-import React, { useState,useEffect} from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -893,35 +11,76 @@ import {
   Image,
   Alert,
   KeyboardAvoidingView,
-  Platform
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
+import * as ImageManipulator from "expo-image-manipulator";
 import { Colors, Typography } from "../constants/Colors";
 import DatabaseService from "../services/addvehicle_ds";
 import { useAuth } from "../context/AuthContext";
+
 /* ================= DATA ================= */
 const VEHICLE_TYPES = ["Car", "Bike"];
-const BODY_TYPES = ["Hatchback", "Sedan", "SUV", "Coupe", "Convertible"];
+const BODY_TYPES: Record<string, string[]> = {
+  Car: ["Hatchback", "Sedan", "SUV", "Coupe", "Convertible", "MUV", "Wagon"],
+  Bike: ["Sports", "Cruiser", "Commuter", "Scooter", "Dirt Bike", "Touring"],
+};
 const FUEL_TYPES = ["Petrol", "Diesel", "CNG", "Electric", "Hybrid"];
 
-const VEHICLE_MASTER: Record<string, string[]> = {
-  Toyota: ["Camry", "Corolla", "Innova"],
-  Honda: ["City", "Amaze", "Civic"],
-  Hyundai: ["i10", "i20", "Creta"],
-  Tata: ["Nexon", "Punch", "Harrier"],
+const VEHICLE_MASTER: Record<string, Record<string, string[]>> = {
+  Car: {
+    Toyota: ["Camry", "Corolla", "Innova", "Fortuner", "Land Cruiser"],
+    Honda: ["City", "Amaze", "Civic", "CR-V", "Accord"],
+    Hyundai: ["i10", "i20", "Creta", "Verna", "Tucson", "Venue"],
+    Tata: ["Nexon", "Punch", "Harrier", "Safari", "Tiago", "Altroz"],
+    Maruti: ["Swift", "Dzire", "Baleno", "Vitara Brezza", "Ertiga"],
+    Mahindra: ["XUV700", "Thar", "Scorpio", "XUV300"],
+    Kia: ["Seltos", "Sonet", "Carnival"],
+    Ford: ["EcoSport", "Endeavour", "Figo", "Aspire"],
+    Volkswagen: ["Polo", "Vento", "Tiguan"],
+    BMW: ["3 Series", "5 Series", "X1", "X3"],
+    Mercedes: ["C-Class", "E-Class", "GLC", "GLE"],
+    Audi: ["A4", "A6", "Q3", "Q5"],
+  },
+  Bike: {
+    Hero: ["Splendor", "Passion", "Glamour", "Xtreme"],
+    Honda: ["Unicorn", "Shine", "CBR", "Activa"],
+    Bajaj: ["Pulsar", "Discover", "Avenger", "Dominar"],
+    TVS: ["Apache", "Jupiter", "Ntorq", "Radeon"],
+    RoyalEnfield: ["Bullet", "Classic", "Himalayan", "Meteor"],
+    Yamaha: ["FZ", "R15", "MT-15", "Fascino"],
+    Suzuki: ["Access", "Gixxer", "Burgman"],
+    KTM: ["Duke", "RC"],
+    Kawasaki: ["Ninja", "Z900"],
+  },
+};
+
+const SEATS_MAP: Record<string, string> = {
+  Hatchback: "5",
+  Sedan: "5",
+  SUV: "7",
+  Coupe: "4",
+  Convertible: "4",
+  MUV: "8",
+  Wagon: "5",
+  Sports: "2",
+  Cruiser: "2",
+  Commuter: "2",
+  Scooter: "2",
+  "Dirt Bike": "2",
+  Touring: "2",
 };
 
 type ModalType = "vehicle" | "body" | "fuel" | "make" | "model" | null;
 import { API_BASE_URL } from "../config/config_ip";
+
 export default function AddNewVehicleScreen({ navigation, route }) {
   const { user } = useAuth();
-
   const phoneNumber = user?.phone_number;
-
-const editingVehicle = route?.params?.vehicle || null;
-const isEdit = !!editingVehicle;
+  const editingVehicle = route?.params?.vehicle || null;
+  const isEdit = !!editingVehicle;
 
   /* ================= STATE ================= */
   const [vehicleType, setVehicleType] = useState("");
@@ -929,123 +88,335 @@ const isEdit = !!editingVehicle;
   const [fuelType, setFuelType] = useState("");
   const [make, setMake] = useState("");
   const [model, setModel] = useState("");
-
   const [year, setYear] = useState("");
   const [registration, setRegistration] = useState("");
   const [color, setColor] = useState("");
-  const [maxSeats, setMaxSeats] = useState("4");
+  const [maxSeats, setMaxSeats] = useState("");
   const [notes, setNotes] = useState("");
-
-  const [vehiclePhoto, setVehiclePhoto] = useState<string | null>(null);
-
+  const [photos, setPhotos] = useState<string[]>([]);
   const [activeModal, setActiveModal] = useState<ModalType>(null);
   const [search, setSearch] = useState("");
+  const [yearSearch, setYearSearch] = useState("");
+  const [showYearDropdown, setShowYearDropdown] = useState(false);
+  
+  // Flag to track if initial load is done for edit mode
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
 
-  /* ================= IMAGE ================= */
+  // Get current year
+  const currentYear = new Date().getFullYear();
+
+  // Generate year options based on fuel type
+  const getYearOptions = () => {
+    let yearsBack = 15;
+    if (fuelType === "Diesel") {
+      yearsBack = 10;
+    }
+    const years = [];
+    for (let i = 0; i <= yearsBack; i++) {
+      years.push((currentYear - i).toString());
+    }
+    return years;
+  };
+
+  const yearOptions = getYearOptions();
+  const filteredYears = yearOptions.filter(year =>
+    year.toLowerCase().includes(yearSearch.toLowerCase())
+  );
+
+  // Update max seats when body type changes (only for new entries, not during edit load)
+  useEffect(() => {
+    if (!isInitialLoad && bodyType && SEATS_MAP[bodyType]) {
+      setMaxSeats(SEATS_MAP[bodyType]);
+    } else if (!isInitialLoad && !bodyType) {
+      setMaxSeats("");
+    }
+  }, [bodyType, isInitialLoad]);
+
+  // Reset dependent fields when vehicle type changes (only for new entries)
+  useEffect(() => {
+    // Don't reset during initial load in edit mode
+    if (!isInitialLoad && !isEdit) {
+      setBodyType("");
+      setMake("");
+      setModel("");
+    }
+  }, [vehicleType, isInitialLoad, isEdit]);
+
+  // Reset model when make changes (only for new entries)
+  useEffect(() => {
+    if (!isInitialLoad && !isEdit) {
+      setModel("");
+    }
+  }, [make, isInitialLoad, isEdit]);
+
+  // Load editing vehicle data
+  useEffect(() => {
+    if (!editingVehicle) {
+      setIsInitialLoad(false);
+      return;
+    }
+
+    setVehicleType(editingVehicle.vehicle_type || "");
+    setBodyType(editingVehicle.body_type || "");
+    setFuelType(editingVehicle.fuel_type || "");
+    setMake(editingVehicle.make || "");
+    setModel(editingVehicle.model || "");
+    setYear(String(editingVehicle.year || ""));
+    setRegistration(editingVehicle.registration_number || "");
+    setColor(editingVehicle.color || "");
+    setMaxSeats(String(editingVehicle.max_seats || ""));
+    
+    // Handle notes and photos
+    if (editingVehicle.notes && editingVehicle.notes.startsWith('{"photos":')) {
+      try {
+        const parsedNotes = JSON.parse(editingVehicle.notes);
+        setNotes(parsedNotes.notes || "");
+        setPhotos(parsedNotes.photos || []);
+      } catch (e) {
+        setNotes(editingVehicle.notes || "");
+        setPhotos(editingVehicle.photos || []);
+      }
+    } else {
+      setNotes(editingVehicle.notes || "");
+      setPhotos(editingVehicle.photos || (editingVehicle.photo_url ? [editingVehicle.photo_url] : []));
+    }
+    
+    // Mark initial load as complete after setting all values
+    setTimeout(() => {
+      setIsInitialLoad(false);
+    }, 100);
+  }, [editingVehicle]);
+
+  /* ================= IMAGE HANDLING ================= */
   const pickImage = async () => {
-    const res = await ImagePicker.launchImageLibraryAsync({
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert("Permission Denied", "Need camera roll permissions to upload photos.");
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.8,
+      allowsMultipleSelection: true,
+      selectionLimit: 5 - photos.length,
+    });
+
+    if (!result.canceled && result.assets) {
+      const newPhotos = [...photos];
+      for (const asset of result.assets) {
+        if (newPhotos.length < 5) {
+          const manipulated = await ImageManipulator.manipulateAsync(
+            asset.uri,
+            [{ resize: { width: 1024 } }],
+            { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
+          );
+          newPhotos.push(manipulated.uri);
+        }
+      }
+      setPhotos(newPhotos);
+    }
+  };
+
+  const takePhoto = async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert("Permission Denied", "Need camera permissions to take photos.");
+      return;
+    }
+
+    if (photos.length >= 5) {
+      Alert.alert("Limit Reached", "You can upload maximum 5 photos.");
+      return;
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
       quality: 0.8,
     });
 
-    if (!res.canceled) {
-      setVehiclePhoto(res.assets[0].uri);
+    if (!result.canceled && result.assets) {
+      const manipulated = await ImageManipulator.manipulateAsync(
+        result.assets[0].uri,
+        [{ resize: { width: 1024 } }],
+        { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
+      );
+      setPhotos([...photos, manipulated.uri]);
     }
   };
-useEffect(() => {
-  if (!editingVehicle) return;
 
-  setVehicleType(editingVehicle.vehicle_type || "");
-  setBodyType(editingVehicle.body_type || "");
-  setFuelType(editingVehicle.fuel_type || "");
-  setMake(editingVehicle.make || "");
-  setModel(editingVehicle.model || "");
+  const removePhoto = (index: number) => {
+    if (!isEdit && photos.length === 1) {
+      Alert.alert("Cannot Remove", "At least one photo is required");
+      return;
+    }
+    
+    if (isEdit && photos.length === 1) {
+      Alert.alert("Cannot Remove", "At least one photo is required. Please add another photo before removing this one.");
+      return;
+    }
 
-  setYear(String(editingVehicle.year || ""));
-  setRegistration(editingVehicle.registration_number || "");
-  setColor(editingVehicle.color || "");
-  setMaxSeats(String(editingVehicle.max_seats || "4"));
-  setNotes(editingVehicle.notes || "");
-
-  if (editingVehicle.photo_url) {
-    setVehiclePhoto(
-      editingVehicle.photo_url.startsWith("http")
-        ? editingVehicle.photo_url
-        : `${API_BASE_URL}${editingVehicle.photo_url}`
+    Alert.alert(
+      "Remove Photo",
+      "Are you sure you want to remove this photo?",
+      [
+        { text: "Cancel", style: "cancel" },
+        { 
+          text: "Remove", 
+          style: "destructive",
+          onPress: () => {
+            const newPhotos = [...photos];
+            newPhotos.splice(index, 1);
+            setPhotos(newPhotos);
+          }
+        }
+      ]
     );
-  }
-}, [editingVehicle]);
+  };
+
+  const showImageOptions = () => {
+    Alert.alert(
+      "Add Photo",
+      "Choose an option",
+      [
+        { text: "Take Photo", onPress: takePhoto },
+        { text: "Choose from Gallery", onPress: pickImage },
+        { text: "Cancel", style: "cancel" },
+      ],
+      { cancelable: true }
+    );
+  };
+
+  /* ================= VALIDATION ================= */
+  const validateRegistrationNumber = (reg: string) => {
+    const regPattern = /^[A-Z]{2}[0-9]{1,2}[A-Z]{1,2}[0-9]{4}$/i;
+    if (!reg.trim()) return true;
+    return regPattern.test(reg.toUpperCase().replace(/\s/g, ""));
+  };
+
+  const formatRegistrationNumber = (text: string) => {
+    let cleaned = text.toUpperCase().replace(/[^A-Z0-9]/g, "");
+    if (cleaned.length > 2 && cleaned.length <= 4) {
+      cleaned = cleaned.slice(0, 2) + " " + cleaned.slice(2);
+    } else if (cleaned.length > 4 && cleaned.length <= 6) {
+      cleaned = cleaned.slice(0, 2) + " " + cleaned.slice(2, 4) + " " + cleaned.slice(4);
+    } else if (cleaned.length > 6) {
+      cleaned = cleaned.slice(0, 2) + " " + cleaned.slice(2, 4) + " " + cleaned.slice(4, 6) + " " + cleaned.slice(6, 10);
+    }
+    return cleaned;
+  };
+
+  const handleRegistrationChange = (text: string) => {
+    const formatted = formatRegistrationNumber(text);
+    setRegistration(formatted);
+  };
 
   /* ================= SAVE ================= */
- const handleSave = async () => {
-  if (!phoneNumber) {
-    Alert.alert("Session Error", "User session not found. Please login again.");
-    return;
-  }
-
-  if (!vehicleType || !bodyType || !fuelType || !make || !model) {
-    Alert.alert("Error", "Please fill all required fields");
-    return;
-  }
-
-  const formData = new FormData();
-  formData.append("phone_number", phoneNumber);
-  formData.append("vehicle_type", vehicleType);
-  formData.append("body_type", bodyType);
-  formData.append("fuel_type", fuelType);
-  formData.append("make", make);
-  formData.append("model", model);
-  formData.append("year", year);
-  formData.append("registration_number", registration);
-  formData.append("color", color);
-  formData.append("max_seats", maxSeats);
-  formData.append("notes", notes); // ✅ NOTES ARE OK
-
-  if (vehiclePhoto && !vehiclePhoto.startsWith("http")) {
-    formData.append("photo", {
-      uri: vehiclePhoto,
-      name: "vehicle.jpg",
-      type: "image/jpeg",
-    } as any);
-  }
-
-  try {
-    if (isEdit) {
-      // ✅ UPDATE (NOT INSERT)
-      await DatabaseService.updateVehicle(editingVehicle.id, formData);
-      Alert.alert("Success", "Vehicle updated successfully");
-    } else {
-      // ✅ ADD
-      await DatabaseService.addVehicle(formData);
-      Alert.alert("Success", "Vehicle added successfully");
+  const handleSave = async () => {
+    if (!phoneNumber) {
+      Alert.alert("Session Error", "User session not found. Please login again.");
+      return;
     }
 
-    navigation.goBack();
-  } catch (e: any) {
-    Alert.alert(
-      "Error",
-      e?.response?.data?.detail || "Failed to save vehicle"
-    );
-  }
-};
- const handleBack = () => {
-    navigation.goBack();
+    // Validate at least one photo
+    if (photos.length === 0) {
+      Alert.alert("Photo Required", "Please upload at least one vehicle photo");
+      return;
+    }
+
+    if (!vehicleType) {
+      Alert.alert("Error", "Please select Vehicle Type");
+      return;
+    }
+    if (!bodyType) {
+      Alert.alert("Error", "Please select Body Type");
+      return;
+    }
+    if (!make) {
+      Alert.alert("Error", "Please select Make");
+      return;
+    }
+    if (!model) {
+      Alert.alert("Error", "Please select Model");
+      return;
+    }
+    if (!fuelType) {
+      Alert.alert("Error", "Please select Fuel Type");
+      return;
+    }
+    if (!year) {
+      Alert.alert("Error", "Year is required");
+      return;
+    }
+    if (!registration.trim()) {
+      Alert.alert("Error", "Registration Number is required");
+      return;
+    }
+    if (!validateRegistrationNumber(registration.replace(/\s/g, ""))) {
+      Alert.alert("Error", "Please enter a valid Registration Number (e.g., MH12AB1234)");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("phone_number", phoneNumber);
+    formData.append("vehicle_type", vehicleType);
+    formData.append("body_type", bodyType);
+    formData.append("fuel_type", fuelType);
+    formData.append("make", make);
+    formData.append("model", model);
+    formData.append("year", year);
+    formData.append("registration_number", registration.replace(/\s/g, ""));
+    formData.append("color", color);
+    formData.append("max_seats", maxSeats);
+    formData.append("notes", notes);
+
+    // Append only new photos (ones that are not existing URLs)
+    const newPhotos = photos.filter(photo => !photo.startsWith("http"));
+    newPhotos.forEach((photo, index) => {
+      formData.append("photos", {
+        uri: photo,
+        name: `vehicle_${index + 1}.jpg`,
+        type: "image/jpeg",
+      } as any);
+    });
+
+    // Append existing photo URLs to keep them
+    const existingPhotoUrls = photos.filter(photo => photo.startsWith("http"));
+    if (existingPhotoUrls.length > 0) {
+      formData.append("existing_photo_urls", JSON.stringify(existingPhotoUrls));
+    }
+
+    try {
+      if (isEdit) {
+        await DatabaseService.updateVehicle(editingVehicle.id, formData);
+        Alert.alert("Success", "Vehicle updated successfully");
+      } else {
+        await DatabaseService.addVehicle(formData);
+        Alert.alert("Success", "Vehicle added successfully");
+      }
+      navigation.goBack();
+    } catch (e: any) {
+      Alert.alert("Error", e?.message || "Failed to save vehicle");
+    }
   };
 
+  const handleBack = () => {
+    navigation.goBack();
+  };
 
   /* ================= MODAL ================= */
   const renderModal = (
     title: string,
     data: string[],
     selected: string,
-    onSelect: (v: string) => void
+    onSelect: (v: string) => void,
+    disabled = false
   ) => {
     const filtered = data.filter(v =>
       v.toLowerCase().includes(search.toLowerCase())
     );
 
     return (
-      <Modal transparent animationType="slide">
+      <Modal transparent animationType="slide" visible={activeModal !== null}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalSheet}>
             <View style={styles.modalHeader}>
@@ -1060,9 +431,10 @@ useEffect(() => {
               value={search}
               onChangeText={setSearch}
               style={styles.searchInput}
+              placeholderTextColor="#9CA3AF"
             />
 
-            <ScrollView>
+            <ScrollView showsVerticalScrollIndicator={false}>
               {filtered.map(item => {
                 const isSelected = selected === item;
                 return (
@@ -1077,6 +449,7 @@ useEffect(() => {
                       setSearch("");
                       setActiveModal(null);
                     }}
+                    disabled={disabled}
                   >
                     <Text
                       style={[
@@ -1096,6 +469,9 @@ useEffect(() => {
                   </TouchableOpacity>
                 );
               })}
+              {filtered.length === 0 && (
+                <Text style={styles.noResultsText}>No options found</Text>
+              )}
             </ScrollView>
           </View>
         </View>
@@ -1103,176 +479,453 @@ useEffect(() => {
     );
   };
 
-  /* ================= UI ================= */
+  const renderYearModal = () => (
+    <Modal transparent animationType="slide" visible={showYearDropdown}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalSheet}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Select Year</Text>
+            <TouchableOpacity onPress={() => setShowYearDropdown(false)}>
+              <MaterialIcons name="close" size={26} color={Colors.primary} />
+            </TouchableOpacity>
+          </View>
+
+          <TextInput
+            placeholder="Search year..."
+            value={yearSearch}
+            onChangeText={setYearSearch}
+            style={styles.searchInput}
+            placeholderTextColor="#9CA3AF"
+            keyboardType="numeric"
+          />
+
+          <ScrollView showsVerticalScrollIndicator={false}>
+            {filteredYears.map(y => {
+              const isSelected = year === y;
+              return (
+                <TouchableOpacity
+                  key={y}
+                  style={[
+                    styles.modalItem,
+                    isSelected && styles.modalItemSelected,
+                  ]}
+                  onPress={() => {
+                    setYear(y);
+                    setYearSearch("");
+                    setShowYearDropdown(false);
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.modalItemText,
+                      isSelected && styles.modalItemTextSelected,
+                    ]}
+                  >
+                    {y}
+                  </Text>
+                  {isSelected && (
+                    <MaterialIcons
+                      name="check-circle"
+                      size={22}
+                      color={Colors.primary}
+                    />
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+
+  const getBodyTypes = () => {
+    if (!vehicleType) return [];
+    return BODY_TYPES[vehicleType] || [];
+  };
+
+  const getMakes = () => {
+    if (!vehicleType) return [];
+    return Object.keys(VEHICLE_MASTER[vehicleType] || {});
+  };
+
+  const getModels = () => {
+    if (!vehicleType || !make) return [];
+    return VEHICLE_MASTER[vehicleType]?.[make] || [];
+  };
+
   return (
     <SafeAreaView style={styles.container}>
-          <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
-          
-          <KeyboardAvoidingView
-            style={styles.keyboardAvoidingView}
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          >
-            {/* Header */}
-            <View style={styles.header}>
-              <TouchableOpacity style={styles.modernBackButton} onPress={handleBack}>
-                <MaterialIcons name="arrow-back-ios" size={28} color={Colors.orange1} />
-              </TouchableOpacity>
-<Text style={styles.headerTitle}>
-          {isEdit ? "Edit Vehicle" : "Add Vehicle"}
-        </Text>              <View style={styles.headerSpacer} />
-            </View>
-    
+      <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
 
-      <ScrollView contentContainerStyle={styles.scroll}>
-        {/* PHOTO */}
-        <TouchableOpacity style={styles.photoCard} onPress={pickImage}>
-          {vehiclePhoto ? (
-            <Image source={{ uri: vehiclePhoto }} style={styles.vehicleImage} />
-          ) : (
-            <>
-              <Ionicons name="camera-outline" size={40} color={Colors.primary} />
-              <Text style={styles.photoText}>Upload Vehicle Photo</Text>
-            </>
-          )}
-        </TouchableOpacity>
-
-        {/* SELECTORS */}
-        <Selector label="Vehicle Type *" value={vehicleType} onPress={() => setActiveModal("vehicle")} />
-        <Selector label="Body Type *" value={bodyType} onPress={() => setActiveModal("body")} />
-        <Selector label="Fuel Type *" value={fuelType} onPress={() => setActiveModal("fuel")} />
-        <Selector label="Make *" value={make} onPress={() => setActiveModal("make")} />
-        <Selector label="Model *" value={model} onPress={() => setActiveModal("model")} />
-
-        {/* INPUTS */}
-        <Input label="Year" value={year} onChange={setYear} />
-        <Input label="Registration Number" value={registration} onChange={setRegistration} />
-        <Input label="Color" value={color} onChange={setColor} />
-
-        {/* NOTES */}
-        <View style={styles.inputBox}>
-          <Text style={styles.label}>Notes</Text>
-          <TextInput
-            style={[styles.input, styles.textArea]}
-            value={notes}
-            onChangeText={setNotes}
-            placeholder="Any additional information..."
-            multiline
-          />
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoidingView}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+      >
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.modernBackButton} onPress={handleBack}>
+            <MaterialIcons name="arrow-back-ios" size={28} color={Colors.orange1} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>
+            {isEdit ? "Edit Vehicle" : "Add Vehicle"}
+          </Text>
+          <View style={styles.headerSpacer} />
         </View>
 
-        {/* SAVE */}
-        <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
-          <Text style={styles.saveText}>Save Vehicle</Text>
-        </TouchableOpacity>
-      </ScrollView>
-            </KeyboardAvoidingView>
-      
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* PHOTO SECTION */}
+          <View style={styles.photoSection}>
+            <Text style={styles.sectionSubheading}>
+              Vehicle Photos <Text style={styles.requiredStar}>*</Text>
+              <Text style={styles.subText}> (Max 5, at least 1 required)</Text>
+            </Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photoScroll}>
+              {photos.map((photo, index) => (
+                <View key={index} style={styles.photoCardContainer}>
+                  <Image source={{ uri: photo }} style={styles.vehicleImage} />
+                  <TouchableOpacity
+                    style={styles.deletePhotoBtn}
+                    onPress={() => removePhoto(index)}
+                  >
+                    <MaterialIcons name="close" size={20} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+              ))}
+              {photos.length < 5 && (
+                <TouchableOpacity style={styles.addPhotoCard} onPress={showImageOptions}>
+                  <Ionicons name="camera-outline" size={32} color={Colors.primary} />
+                  <Text style={styles.addPhotoText}>Add Photo</Text>
+                </TouchableOpacity>
+              )}
+            </ScrollView>
+            {/* {photos.length === 0 && (
+              <Text style={styles.warningText}>⚠️ At least one photo is required</Text>
+            )} */}
+          </View>
+
+          {/* SELECTORS */}
+          <Selector
+            label="Vehicle Type"
+            value={vehicleType}
+            onPress={() => setActiveModal("vehicle")}
+            required
+          />
+          <Selector
+            label="Body Type"
+            value={bodyType}
+            onPress={() => getBodyTypes().length > 0 && setActiveModal("body")}
+            required
+            disabled={!vehicleType}
+            disabledText={!vehicleType ? "Select Vehicle Type first" : ""}
+          />
+          <Selector
+            label="Make"
+            value={make}
+            onPress={() => getMakes().length > 0 && setActiveModal("make")}
+            required
+            disabled={!vehicleType}
+            disabledText={!vehicleType ? "Select Vehicle Type first" : ""}
+          />
+          <Selector
+            label="Model"
+            value={model}
+            onPress={() => getModels().length > 0 && setActiveModal("model")}
+            required
+            disabled={!vehicleType || !make}
+            disabledText={!vehicleType ? "Select Vehicle Type first" : !make ? "Select Make first" : ""}
+          />
+
+          <Selector
+            label="Fuel Type"
+            value={fuelType}
+            onPress={() => setActiveModal("fuel")}
+            required
+          />
+
+          {/* Year */}
+          <View style={styles.inputBox}>
+            <Text style={styles.label}>
+              Year <Text style={styles.requiredStar}>*</Text>
+            </Text>
+            <TouchableOpacity
+              style={styles.searchableSelector}
+              onPress={() => setShowYearDropdown(true)}
+            >
+              <Text style={[styles.selectorValue, !year && styles.placeholderText]}>
+                {year || "Select Year"}
+              </Text>
+              <MaterialIcons name="arrow-drop-down" size={24} color={Colors.primary} />
+            </TouchableOpacity>
+            {fuelType && (
+              <Text style={styles.hintText}>
+                {fuelType === "Diesel" ? "Last 10 years available for Diesel" : "Last 15 years available"}
+              </Text>
+            )}
+          </View>
+
+          {/* Registration Number */}
+          <View style={styles.inputBox}>
+            <Text style={styles.label}>
+              Registration Number <Text style={styles.requiredStar}>*</Text>
+            </Text>
+            <TextInput
+              style={styles.input}
+              value={registration}
+              onChangeText={handleRegistrationChange}
+              placeholder="e.g., MH12AB1234"
+              placeholderTextColor="#9CA3AF"
+              autoCapitalize="characters"
+              maxLength={13}
+            />
+            {registration.length > 0 && !validateRegistrationNumber(registration.replace(/\s/g, "")) && (
+              <Text style={styles.errorText}>Invalid registration number format</Text>
+            )}
+          </View>
+
+          {/* Color */}
+          <View style={styles.inputBox}>
+            <Text style={styles.label}>Color</Text>
+            <TextInput
+              style={styles.input}
+              value={color}
+              onChangeText={setColor}
+              placeholder="e.g., Red, Blue, Black"
+              placeholderTextColor="#9CA3AF"
+            />
+          </View>
+
+          {/* Number of Seats */}
+          <View style={styles.inputBox}>
+            <Text style={styles.label}>Number of Seats</Text>
+            <View style={styles.seatsContainer}>
+              <TextInput
+                style={styles.seatsInput}
+                value={maxSeats}
+                editable={false}
+                placeholder="Auto-detected"
+                placeholderTextColor="#9CA3AF"
+              />
+              {bodyType && maxSeats && (
+                <Text style={styles.seatsHint}>Based on {bodyType}</Text>
+              )}
+            </View>
+          </View>
+
+          {/* Notes */}
+          <View style={styles.inputBox}>
+            <Text style={styles.label}>Notes</Text>
+            <TextInput
+              style={[styles.input, styles.textArea]}
+              value={notes}
+              onChangeText={text => setNotes(text.slice(0, 300))}
+              placeholder="Any additional information (max 300 characters)..."
+              placeholderTextColor="#9CA3AF"
+              multiline
+              maxLength={300}
+            />
+            <Text style={styles.charCount}>{notes.length}/300</Text>
+          </View>
+
+          {/* Save Button */}
+          <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
+            <Text style={styles.saveText}>{isEdit ? "Update Vehicle" : "Save Vehicle"}</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       {/* MODALS */}
       {activeModal === "vehicle" &&
         renderModal("Vehicle Type", VEHICLE_TYPES, vehicleType, setVehicleType)}
       {activeModal === "body" &&
-        renderModal("Body Type", BODY_TYPES, bodyType, setBodyType)}
+        renderModal("Body Type", getBodyTypes(), bodyType, setBodyType, !vehicleType)}
+      {activeModal === "make" &&
+        renderModal("Make", getMakes(), make, setMake, !vehicleType)}
+      {activeModal === "model" &&
+        renderModal("Model", getModels(), model, setModel, !vehicleType || !make)}
       {activeModal === "fuel" &&
         renderModal("Fuel Type", FUEL_TYPES, fuelType, setFuelType)}
-      {activeModal === "make" &&
-        renderModal("Make", Object.keys(VEHICLE_MASTER), make, v => {
-          setMake(v);
-          setModel("");
-        })}
-      {activeModal === "model" &&
-        renderModal("Model", VEHICLE_MASTER[make] || [], model, setModel)}
+      {renderYearModal()}
     </SafeAreaView>
   );
 }
 
-/* ================= REUSABLE ================= */
-const Selector = ({ label, value, onPress }) => (
-  <TouchableOpacity style={styles.selector} onPress={onPress}>
-    <Text style={styles.label}>{label}</Text>
-    <Text style={styles.value}>{value || "Select"}</Text>
-  </TouchableOpacity>
-);
-
-const Input = ({ label, value, onChange }) => (
+const Selector = ({ label, value, onPress, required, disabled, disabledText }) => (
   <View style={styles.inputBox}>
-    <Text style={styles.label}>{label}</Text>
-    <TextInput style={styles.input} value={value} onChangeText={onChange} />
+    <Text style={styles.label}>
+      {label} {required && <Text style={styles.requiredStar}>*</Text>}
+    </Text>
+    <TouchableOpacity
+      style={[styles.selector, disabled && styles.disabledSelector]}
+      onPress={onPress}
+      disabled={disabled}
+    >
+      <Text style={[styles.selectorValue, !value && styles.placeholderText]}>
+        {value || (disabled ? disabledText || "Select" : "Select")}
+      </Text>
+      <MaterialIcons name="arrow-drop-down" size={24} color={Colors.primary} />
+    </TouchableOpacity>
   </View>
 );
 
-/* ================= STYLES ================= */
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.white },
-
-   keyboardAvoidingView: {
-    flex: 1,
-  },
-   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  keyboardAvoidingView: { flex: 1 },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 0.5,
-    borderBottomColor: '#F3F4F6',
+    paddingVertical: 16,
+    backgroundColor: Colors.white,
   },
   modernBackButton: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   headerTitle: {
     ...Typography.h2,
-    fontSize: 28,
-    fontWeight: '700',
+    fontSize: 24,
+    fontWeight: "700",
     color: Colors.primary,
     flex: 1,
-    textAlign: 'center',
+    textAlign: "center",
   },
-  headerSpacer: {
-    width: 44,
-  },
+  headerSpacer: { width: 44 },
   scroll: { padding: 20, paddingBottom: 40 },
 
-  photoCard: {
-    height: 180,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: "#E5E7EB",
+  photoSection: { marginBottom: 20 },
+  sectionSubheading: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: Colors.primary,
+    marginBottom: 12,
+    letterSpacing: 0.5,
+  },
+  subText: {
+    fontSize: 12,
+    fontWeight: "normal",
+    color: "#6B7280",
+  },
+  photoScroll: { flexDirection: "row" },
+  photoCardContainer: {
+    width: 100,
+    height: 100,
+    borderRadius: 12,
+    marginRight: 12,
+    position: "relative",
+  },
+  vehicleImage: { width: "100%", height: "100%", borderRadius: 12 },
+  deletePhotoBtn: {
+    position: "absolute",
+    top: -8,
+    right: -8,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    borderRadius: 12,
+    width: 24,
+    height: 24,
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 20,
   },
-  vehicleImage: { width: "100%", height: "100%", borderRadius: 16 },
-  photoText: { marginTop: 10, fontWeight: "700", color: Colors.primary },
-
-  selector: {
+  addPhotoCard: {
+    width: 100,
+    height: 100,
+    borderRadius: 12,
     borderWidth: 1.5,
     borderColor: "#E5E7EB",
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 12,
+    borderStyle: "dashed",
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#F9FAFB",
   },
-  label: { fontWeight: "700", color: Colors.primary },
-  value: { marginTop: 4, fontSize: 16 },
+  addPhotoText: { fontSize: 11, color: Colors.primary, marginTop: 4 },
+  warningText: {
+    fontSize: 12,
+    color: "#EF4444",
+    marginTop: 8,
+    textAlign: "center",
+  },
 
-  inputBox: { marginBottom: 12 },
+  inputBox: { marginBottom: 16 },
+  label: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: Colors.primary,
+    marginBottom: 6,
+    letterSpacing: 0.3,
+  },
+  requiredStar: { color: "#EF4444" },
+  selector: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    borderWidth: 1.5,
+    borderColor: "#E5E7EB",
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    backgroundColor: "#fff",
+  },
+  disabledSelector: {
+    backgroundColor: "#F3F4F6",
+    borderColor: "#E5E7EB",
+  },
+  selectorValue: { fontSize: 15, color: "#1F2937" },
+  placeholderText: { color: "#9CA3AF" },
+  searchableSelector: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    borderWidth: 1.5,
+    borderColor: "#E5E7EB",
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    backgroundColor: "#fff",
+  },
   input: {
     borderWidth: 1.5,
     borderColor: "#E5E7EB",
-    borderRadius: 14,
-    padding: 14,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: "#1F2937",
+    backgroundColor: "#fff",
   },
   textArea: { minHeight: 100, textAlignVertical: "top" },
+  charCount: { fontSize: 11, color: "#9CA3AF", textAlign: "right", marginTop: 4 },
+  hintText: { fontSize: 11, color: "#9CA3AF", marginTop: 4 },
+  errorText: { fontSize: 11, color: "#EF4444", marginTop: 4 },
+  seatsContainer: { flexDirection: "row", alignItems: "center" },
+  seatsInput: {
+    flex: 1,
+    borderWidth: 1.5,
+    borderColor: "#E5E7EB",
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    backgroundColor: "#F9FAFB",
+    color: "#6B7280",
+  },
+  seatsHint: { fontSize: 11, color: "#9CA3AF", marginLeft: 8 },
 
   saveBtn: {
     backgroundColor: Colors.primary,
-    padding: 18,
-    borderRadius: 16,
+    paddingVertical: 16,
+    borderRadius: 12,
     marginTop: 20,
     alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   saveText: { color: "#fff", fontWeight: "700", fontSize: 16 },
 
@@ -1285,28 +938,35 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    padding: 16,
-    maxHeight: "70%",
+    padding: 20,
+    maxHeight: "75%",
   },
   modalHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 10,
+    alignItems: "center",
+    marginBottom: 16,
   },
   modalTitle: { fontSize: 18, fontWeight: "700", color: Colors.primary },
   searchInput: {
     borderWidth: 1.5,
     borderColor: "#E5E7EB",
     borderRadius: 12,
-    padding: 12,
-    marginBottom: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 12,
+    fontSize: 15,
   },
   modalItem: {
     paddingVertical: 14,
     flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "center",
+    borderBottomWidth: 0.5,
+    borderBottomColor: "#F3F4F6",
   },
-  modalItemSelected: { backgroundColor: "#EEF4FF" },
-  modalItemText: { fontSize: 16 },
+  modalItemSelected: { backgroundColor: "#EEF4FF", borderRadius: 8, paddingHorizontal: 8 },
+  modalItemText: { fontSize: 16, color: "#374151" },
   modalItemTextSelected: { fontWeight: "700", color: Colors.primary },
+  noResultsText: { textAlign: "center", paddingVertical: 20, color: "#9CA3AF" },
 });
