@@ -32,16 +32,14 @@ def credit_if_not_done(db: Session, booking: RideBooking):
     db.add(credit)
     db.commit()
 
-
 @router.get("/api/v1/rewards")
 def get_rewards(phone_number: str, db: Session = Depends(get_db)):
 
     completed_bookings = db.query(RideBooking).filter(
-         RideBooking.passenger_phone == phone_number,
+        RideBooking.passenger_phone == phone_number,
         RideBooking.status == "completed"
     ).all()
 
-    # 🔥 AUTO CREDIT HERE
     for booking in completed_bookings:
         credit_if_not_done(db, booking)
 
@@ -57,9 +55,18 @@ def get_rewards(phone_number: str, db: Session = Depends(get_db)):
         .all()
 
     credited_ids = {r.reward_id for r in credited}
+    
+    # Get total D-Coins balance
+    all_transactions = db.query(DCoinRedemption).filter(
+        DCoinRedemption.phone_number == phone_number
+    ).all()
+    
+    total_balance = sum(t.coins for t in all_transactions if t.type == "CREDIT") - \
+                    sum(t.coins for t in all_transactions if t.type == "DEBIT")
 
     return {
         "completed_rides": completed_rides,
+        "total_dcoins_balance": total_balance,  # Add this
         "rewards": [
             {
                 "id": r.id,
@@ -71,7 +78,6 @@ def get_rewards(phone_number: str, db: Session = Depends(get_db)):
         ],
         "credited_rewards": list(credited_ids)
     }
-
 @router.post("/api/v1/rewards/credit")
 def credit_reward(data: dict, db: Session = Depends(get_db)):
 
