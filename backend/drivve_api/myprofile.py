@@ -161,49 +161,12 @@ async def update_avatar(data: UpdateAvatarRequest, db: Session = Depends(get_db)
         raise HTTPException(status_code=404, detail="User not found")
 
     try:
-        # First, check if the avatar file exists in Supabase storage
-        avatar_filename = data.avatar_name
-        
         # Define the avatar file path in Supabase
+        avatar_filename = data.avatar_name
         avatar_file_path = f"avatars/{avatar_filename}"
         
-        # Check if file exists in Supabase storage
-        check_url = f"{SUPABASE_URL}/storage/v1/object/info/drivve/{avatar_file_path}"
-        headers = {
-            "Authorization": f"Bearer {SUPABASE_KEY}",
-            "apikey": SUPABASE_KEY,
-        }
-        
-        # Try to get file info to check if it exists
-        response = requests.head(check_url, headers=headers)
-        
-        if response.status_code == 404:
-            # Avatar doesn't exist in storage, need to upload it
-            # Get the local avatar file path
-            local_avatar_path = f"assets/avatars/{avatar_filename}"
-            
-            if os.path.exists(local_avatar_path):
-                # Read the local SVG file
-                with open(local_avatar_path, "rb") as f:
-                    file_bytes = f.read()
-                
-                # Upload to Supabase
-                upload_url = f"{SUPABASE_URL}/storage/v1/object/drivve/{avatar_file_path}?upsert=true"
-                upload_headers = {
-                    "Authorization": f"Bearer {SUPABASE_KEY}",
-                    "apikey": SUPABASE_KEY,
-                    "Content-Type": "image/svg+xml"
-                }
-                
-                upload_response = requests.put(upload_url, headers=upload_headers, data=file_bytes)
-                
-                if upload_response.status_code not in [200, 201]:
-                    raise Exception(f"Failed to upload avatar: {upload_response.text}")
-            else:
-                # If local file doesn't exist, log warning but continue
-                print(f"Warning: Local avatar file not found: {local_avatar_path}")
-        
-        # Generate the public URL for the avatar
+        # Check if the avatar file exists in your local assets
+        # You need to upload these SVG files to Supabase first
         avatar_url = f"{SUPABASE_URL}/storage/v1/object/public/drivve/{avatar_file_path}"
         
         # Update user's profile_picture with the avatar URL
@@ -214,10 +177,11 @@ async def update_avatar(data: UpdateAvatarRequest, db: Session = Depends(get_db)
         
         return {
             "success": True,
-            "profile_picture": avatar_url
+            "profile_picture": avatar_url,
+            "avatar_name": avatar_filename
         }
         
     except Exception as e:
         db.rollback()
         print(f"Avatar update error: {str(e)}")
-        raise HTTPException(500, f"Failed to update avatar: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to update avatar: {str(e)}")
