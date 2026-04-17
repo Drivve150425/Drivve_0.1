@@ -351,7 +351,9 @@ async def create_user_profile(profile_data: dict, db: Session = Depends(get_db))
         user.profile_picture =image_url
 
 
-        user.avatar = profile_data.get("avatar")
+        avatar_name  = profile_data.get("avatar")
+        if avatar_name:
+            user.profile_picture = f"{SUPABASE_URL}/storage/v1/object/public/drivve/avatars/{avatar_name}"
         user.profile_completed = True
         user.status = UserStatus.ACTIVE
         user.updated_at = datetime.now(timezone.utc)
@@ -364,10 +366,7 @@ async def create_user_profile(profile_data: dict, db: Session = Depends(get_db))
             "success": True,
             "message": "Profile created successfully ✅",
             "user_id": user.user_id,
-"profile_picture": user.profile_picture or (
-    f"{SUPABASE_URL}/storage/v1/object/public/drivve/{user.avatar}"
-    if user.avatar else None
-) 
+            "profile_picture": user.profile_picture
         }
 
     except HTTPException:
