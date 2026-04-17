@@ -37,7 +37,7 @@ import DatePickerModal from '../components/DatePickerModal';
 import ProfilePictureModal from '../components/ProfilePictureModal';
 import AvatarPicker from '../components/AvatarPicker';
 import { useAuth } from "../context/AuthContext";
-
+import { SvgCssUri } from 'react-native-svg/css';
 const { width, height } = Dimensions.get("window");
 
 
@@ -45,6 +45,7 @@ const { width, height } = Dimensions.get("window");
 export default function MyProfileScreen({ navigation, route })  {
   const scrollViewRef = useRef<ScrollView>(null);
   const { user } = useAuth();
+  const [isAvatar, setIsAvatar] = useState(false);
 
   const phoneFromRoute = user?.phone_number;
   // Animation refs
@@ -595,22 +596,39 @@ if (!result.canceled && result.assets[0]) {
   }
 };
 
-
-  const renderProfileImage = () => {
-    if (profileImage) {
-      return <Image source={{ uri: profileImage.uri }} style={styles.profileImage as ImageStyle} />;
-    } else if (selectedAvatar) {
-      const Icon = selectedAvatar.component;
-      if (Icon) {
-        return <Icon width={140} height={140} style={styles.avatarSvg} />;
-      }
-      return <Text style={styles.avatarPreview}>{selectedAvatar.emoji || selectedAvatar.name || selectedAvatar.id}</Text>;
-    } else if (profileData.image) {
-      return <Image source={{ uri: profileData.image }} style={styles.profileImage as ImageStyle} />;
-    } else {
-      return <MaterialIcons name="add-a-photo" size={45} color={Colors.white} />;
+const renderProfileImage = () => {
+  // Priority 1: Newly selected image from camera/gallery
+  if (profileImage) {
+    return <Image source={{ uri: profileImage.uri }} style={styles.profileImage as ImageStyle} />;
+  } 
+  // Priority 2: Selected avatar from picker (local SVG component)
+  else if (selectedAvatar) {
+    const Icon = selectedAvatar.component;
+    if (Icon) {
+      return <Icon width={140} height={140} style={styles.avatarSvg} />;
     }
-  };
+    return <Text style={styles.avatarPreview}>{selectedAvatar.emoji || selectedAvatar.name}</Text>;
+  } 
+  // Priority 3: Saved avatar URL from database (SVG from Supabase)
+ else if (profileData.image && profileData.image.includes('/avatars/')) {
+  return (
+    <SvgCssUri
+      uri={profileData.image}
+      width={140}
+      height={140}
+    />
+  );
+
+  } 
+  // Priority 4: Regular profile image (JPG/PNG)
+  else if (profileData.image) {
+    return <Image source={{ uri: profileData.image }} style={styles.profileImage as ImageStyle} />;
+  } 
+  // Priority 5: Default
+  else {
+    return <MaterialIcons name="add-a-photo" size={45} color={Colors.white} />;
+  }
+};
 
   const InfoField = ({
     label,
@@ -1068,24 +1086,31 @@ if (!result.canceled && result.assets[0]) {
         onGallery={selectFromGallery}
         onAvatar={() => setShowAvatarPicker(true)}
       />
-
-      {/* Avatar Picker Modal */}
-    <AvatarPicker
+<AvatarPicker
   visible={showAvatarPicker}
   onClose={() => setShowAvatarPicker(false)}
-  onSelect={(avatar) => {
+  onSelect={async (avatar) => {
     setSelectedAvatar(avatar);
     setProfileImage(null);
-
-    DatabaseService.updateUserProfile({
-      phone_number: phoneFromRoute,
-      avatar: avatar.id,
-    })
-      .then(() => showProfileUpdateSuccess())
-      .catch(() => {
-        setAlertMessage("Failed to update profile picture");
+    
+    try {
+      // Use the dedicated avatar endpoint instead of updateUserProfile
+      const response = await DatabaseService.updateAvatar(phoneFromRoute, avatar.id);
+      
+      if (response?.success) {
+        setProfileData(prev => ({
+          ...prev,
+          image: response.profile_picture
+        }));
+        showProfileUpdateSuccess();
+      } else {
+        setAlertMessage("Failed to update avatar");
         setShowErrorAlert(true);
-      });
+      }
+    } catch (error) {
+      setAlertMessage("Failed to update avatar");
+      setShowErrorAlert(true);
+    }
   }}
   selectedAvatar={selectedAvatar}
 />

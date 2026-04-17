@@ -11,16 +11,15 @@ import AvatarD1 from '../assets/avatars/avatarD1.svg';
 
 const AVATARS = {
   male: [
-    { id: 'male1', component: AvatarM1, name: 'Male 1' },
-    { id: 'male2', component: AvatarM2, name: 'Male 2' },
+    { id: 'avatarM1.svg', component: AvatarM1, name: 'Male 1', filename: 'avatarM1.svg' },
+    { id: 'avatarM2.svg', component: AvatarM2, name: 'Male 2', filename: 'avatarM2.svg' },
   ],
   female: [
-    // reuse same svg set or add different files if available
-    { id: 'female1', component: AvatarF1, name: 'Female 1' },
-    { id: 'female2', component: AvatarF2, name: 'Female 2' },
+    { id: 'avatarF1.svg', component: AvatarF1, name: 'Female 1', filename: 'avatarF1.svg' },
+    { id: 'avatarF2.svg', component: AvatarF2, name: 'Female 2', filename: 'avatarF2.svg' },
   ],
   default: [
-    { id: 'default1', component: AvatarD1, name: 'Default 1' },
+    { id: 'avatarD1.svg', component: AvatarD1, name: 'Default 1', filename: 'avatarD1.svg' },
   ]
 };
 

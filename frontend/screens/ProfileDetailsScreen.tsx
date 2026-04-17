@@ -26,6 +26,8 @@ import { Alert } from "react-native";
 const { width, height } = Dimensions.get('window');
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from "../context/AuthContext";
+import { SvgCssUri  } from 'react-native-svg/css';
+
 import { Linking } from "react-native";
 type RootStackParamList = {
   MyVehicleScreen: { phoneNumber: string };
@@ -73,7 +75,8 @@ export default function ProfileScreen({ navigation, route }: Props) {
     const scrollViewRef = useRef(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [profileImage, setProfileImage] = useState(null);
-
+  const [isAvatar, setIsAvatar] = useState(false);
+const { setUser } = useAuth(); 
  // ✅ Use AuthContext for session management
   const { user, logout: authLogout } = useAuth();
 
@@ -117,23 +120,37 @@ const loadProfile = async () => {
 
     if (res?.success && res.user) {
 
-      setUserName(res.user.full_name || "User");
+      const u = res.user;
+ setUser(prev => ({
+    ...prev,
+    profile_picture: u.profile_picture,
+    full_name: u.full_name,
+  }));
+      console.log("🔥 USER DATA:", u);
 
-      const dbPhone = res.user.phone_number || "";
-      setPhoneNumber(dbPhone.startsWith("+") ? dbPhone : `+91 ${dbPhone}`);
+      // ✅ SET NAME
+      setUserName(
+        u.full_name ||
+        `${u.first_name || ""} ${u.last_name || ""}`.trim() ||
+        "User"
+      );
 
-      // ✅ SET PROFILE IMAGE
-      if (res.user.profile_picture) {
-        setProfileImage(res.user.profile_picture);
-        console.log("PROFILE IMAGE:", res.user.profile_picture);
-      }
+      // ✅ SET PHONE
+      setPhoneNumber(u.phone_number || "");
 
+      // ✅ SET IMAGE (your existing logic)
+      const imageUrl = u.profile_picture;
+
+      setProfileImage(null);
+      setTimeout(() => {
+        setProfileImage(imageUrl || null);
+      }, 50);
     }
+
   } catch (err) {
     console.log("Profile fetch error:", err);
   }
 };
-
 
 useFocusEffect(
   useCallback(() => {
@@ -252,39 +269,50 @@ useFocusEffect(
             style={styles.profileGradient}
           />
 
-          <View style={styles.profileImageContainer}>
-            <TouchableOpacity
-              style={styles.profileImageWrapper}
-              onPress={handleEditProfile}
-              activeOpacity={0.8}
-            >
-              <LinearGradient
-                colors={[Colors.white, '#F3F4F6']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.profileImageCircle}
-              >
-               <Image
-                  source={
-                    profileImage
-                      ? { uri: profileImage }
-                      : require("../assets/icon.png") // optional fallback
-                  }
-                  style={styles.profileImage}
-                />
+// In your component, update the image rendering section:
+// In your component, update the image rendering section:
+<View style={styles.profileImageContainer}>
+  <TouchableOpacity
+    style={styles.profileImageWrapper}
+    onPress={handleEditProfile}
+    activeOpacity={0.8}
+  >
+    <LinearGradient
+      colors={[Colors.white, '#F3F4F6']}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={styles.profileImageCircle}
+    >
+   {profileImage ? (
+  profileImage.endsWith(".svg") ? (
+    <SvgCssUri
+      uri={profileImage}
+      width={100}
+      height={100}
+    />
+  ) : (
+    <Image
+      source={{ uri: profileImage }}
+      style={styles.profileImage}
+    />
+  )
+) : (
+  <Image
+    source={require("../assets/icon.png")}
+    style={styles.profileImage}
+  />
+)}
+    </LinearGradient>
 
-              </LinearGradient>
-
-              {/* Edit icon overlay */}
-              <View style={styles.editIconContainer}>
-                <MaterialCommunityIcons
-                  name="account-box-edit-outline"
-                  size={18}
-                  color={Colors.primary}
-                />
-              </View>
-            </TouchableOpacity>
-          </View>
+    <View style={styles.editIconContainer}>
+      <MaterialCommunityIcons
+        name="account-box-edit-outline"
+        size={18}
+        color={Colors.primary}
+      />
+    </View>
+  </TouchableOpacity>
+</View>
 
           <Text style={styles.profileName}>
             {userName || "User"}

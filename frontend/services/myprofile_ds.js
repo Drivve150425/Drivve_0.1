@@ -132,6 +132,33 @@ async updateProfilePicture(phone, imageUri) {
     return null;
   }
 }
+// Add this method to DatabaseService class in myprofile_ds.js
+async updateAvatar(phoneNumber, avatarName) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/v1/users/update-avatar`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+      },
+      body: JSON.stringify({
+        phone_number: phoneNumber,
+        avatar_name: avatarName,
+      }),
+    });
 
+    const text = await response.text();
+
+    if (!response.ok) {
+      console.error("❌ Avatar update failed:", response.status, text);
+      return null;
+    }
+
+    return JSON.parse(text);
+  } catch (err) {
+    console.log("❌ Avatar update error:", err);
+    return null;
+  }
+}
 }
 export default new DatabaseService();

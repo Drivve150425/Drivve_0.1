@@ -366,7 +366,7 @@ export default function CreateProfileScreen({ navigation, route }) {
         profile_image: base64Image,
 
         // Store avatar id (or name) instead of JSON.stringify(component)
-        avatar: selectedAvatar?.id || null,
+        avatar: selectedAvatar?.id  || null,
         is_active: true,
         profile_completed: true
       };
@@ -780,11 +780,6 @@ export default function CreateProfileScreen({ navigation, route }) {
           setSelectedAvatar(avatar);
           setProfileImage(null);
 
-          // ✅ CALL BACKEND HERE
-          await myDatabaseService.selectAvatar(
-            fullPhoneNumber || (countryCode + phoneNumber),
-            avatar.id   // or avatar.name depending on your data
-          );
         }}
         selectedAvatar={selectedAvatar}
       />

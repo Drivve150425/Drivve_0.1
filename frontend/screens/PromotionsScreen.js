@@ -8,7 +8,7 @@ import {
   TouchableOpacity,
   StatusBar,
   Alert,
-     KeyboardAvoidingView,
+  KeyboardAvoidingView,
   Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -81,64 +81,78 @@ export default function PromotionsScreen({ navigation, route }) {
       ]
     );
   };
- const handleBack = () => {
+  
+  const handleBack = () => {
     navigation.goBack();
   };
+  
   return (
-     <SafeAreaView style={styles.container}>
-             <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
-             
-             <KeyboardAvoidingView
-               style={styles.keyboardAvoidingView}
-               behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
-             >
-               {/* Header */}
-               <View style={styles.header}>
-                 <TouchableOpacity style={styles.modernBackButton} onPress={handleBack}>
-                   <MaterialIcons name="arrow-back-ios" size={28} color={Colors.secondary} />
-                 </TouchableOpacity>
-                 <Text style={styles.headerTitle}>Promotions & Offers</Text>
-                 <View style={styles.headerSpacer} />
-               </View>
-      <ScrollView contentContainerStyle={styles.scroll}>
-        {promotions.length === 0 && (
-          <View style={styles.emptyContainer}>
-            <Ionicons name="pricetags-outline" size={60} />
-            <Text style={styles.emptyTitle}>No Offers Available</Text>
-          </View>
-        )}
+    <SafeAreaView style={styles.container}>
+      <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
+      
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoidingView}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+      >
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.modernBackButton} onPress={handleBack}>
+            <MaterialIcons name="arrow-back-ios" size={28} color={Colors.secondary} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Promotions & Offers</Text>
+          <View style={styles.headerSpacer} />
+        </View>
+        
+        <ScrollView contentContainerStyle={styles.scroll}>
+          {promotions.length === 0 && (
+            <View style={styles.emptyContainer}>
+              <Ionicons name="pricetags-outline" size={60} />
+              <Text style={styles.emptyTitle}>No Offers Available</Text>
+            </View>
+          )}
 
-        {promotions.map(item => (
-          <View key={item.id} style={styles.card}>
-            {item.image_url && (
-              <Image source={{ uri: item.image_url }} style={styles.image} />
-            )}
-
-            <View style={styles.content}>
-              <Text style={styles.company}>{item.company_name}</Text>
-              <Text style={styles.title}>{item.title}</Text>
-              <Text style={styles.desc}>{item.description}</Text>
-
-              {item.promo_code && (
-                <TouchableOpacity
-                  style={styles.codeRow}
-                  onPress={() => copyCode(item.promo_code)}
-                >
-                  <Text style={styles.code}>{item.promo_code}</Text>
-                  <Ionicons name="copy-outline" size={18} />
-                </TouchableOpacity>
+          {promotions.map(item => (
+            <View key={item.id} style={styles.card}>
+              {item.image_url && (
+                <Image source={{ uri: item.image_url }} style={styles.image} />
               )}
 
-              <TouchableOpacity
-                style={styles.redeemBtn}
-                onPress={() => redeemOffer(item)}
-              >
-                <Text style={styles.redeemText}>Redeem Now</Text>
-              </TouchableOpacity>
+              <View style={styles.content}>
+                <Text style={styles.company}>{item.company_name}</Text>
+                <Text style={styles.title}>{item.title}</Text>
+                <Text style={styles.desc}>{item.description}</Text>
+
+                {item.promo_code && (
+                  <TouchableOpacity
+                    style={styles.codeContainer}
+                    onPress={() => copyCode(item.promo_code)}
+                    activeOpacity={0.8}
+                  >
+                    <View style={styles.codeWrapper}>
+                      <Ionicons name="ticket-outline" size={20} color={Colors.primary} />
+                      <Text style={styles.codeLabel}>PROMO CODE</Text>
+                    </View>
+                    <View style={styles.codeRow}>
+                      <Text style={styles.code}>{item.promo_code}</Text>
+                      <View style={styles.copyButton}>
+                        <Ionicons name="copy-outline" size={20} color={Colors.primary} />
+                        <Text style={styles.copyText}>Copy</Text>
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                )}
+
+                <TouchableOpacity
+                  style={styles.redeemBtn}
+                  onPress={() => redeemOffer(item)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.redeemText}>Redeem Now</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-          </View>
-        ))}
-      </ScrollView>
+          ))}
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -147,94 +161,169 @@ export default function PromotionsScreen({ navigation, route }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#fff" },
 
+  keyboardAvoidingView: {
+    flex: 1,
+  },
   
- keyboardAvoidingView: {
-     flex: 1,
-   },
-   header: {
-     flexDirection: 'row',
-     alignItems: 'center',
-     paddingHorizontal: 16,
-     paddingVertical: 12,
-     borderBottomWidth: 0.5,
-     borderBottomColor: '#F3F4F6',
-   },
-   modernBackButton: {
-     width: 44,
-     height: 44,
-     borderRadius: 22,
-     justifyContent: 'center',
-     alignItems: 'center',
-   },
-   headerTitle: {
-     ...Typography.h2,
-     fontSize: 28,
-     fontWeight: '700',
-     color: Colors.primary,
-     flex: 1,
-     textAlign: 'center',
-   },
-   headerSpacer: {
-     width: 44,
-   },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#F3F4F6',
+  },
+  
+  modernBackButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  
+  headerTitle: {
+    ...Typography.h2,
+    fontSize: 28,
+    fontWeight: '700',
+    color: Colors.primary,
+    flex: 1,
+    textAlign: 'center',
+  },
+  
+  headerSpacer: {
+    width: 44,
+  },
+  
   scroll: { padding: 16 },
 
   card: {
-    borderRadius: 16,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: "#E5E7EB",
-    marginBottom: 16,
-    backgroundColor: "#F9FAFB",
+    marginBottom: 20,
+    backgroundColor: "#FFFFFF",
     overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 6,
   },
 
   image: { width: "100%", height: 160 },
 
-  content: { padding: 16 },
+  content: { padding: 20 },
 
   company: {
-    fontSize: 13,
-    fontWeight: "700",
+    fontSize: 12,
+    fontWeight: "800",
     color: Colors.orange1,
     textTransform: "uppercase",
+    letterSpacing: 1,
+    marginBottom: 4,
   },
 
   title: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: "700",
-    marginVertical: 6,
+    marginBottom: 8,
+    color: Colors.primary,
   },
 
-  desc: { fontSize: 14, color: "#374151" },
+  desc: { 
+    fontSize: 14, 
+    color: "#6B7280",
+    lineHeight: 20,
+    marginBottom: 16,
+  },
 
-  codeRow: {
-    marginTop: 10,
-    padding: 12,
-    borderRadius: 10,
+  // New attractive code container without dashed border
+  codeContainer: {
+    marginTop: 8,
+    marginBottom: 16,
+    backgroundColor: "#F8F9FA",
+    borderRadius: 16,
+    overflow: "hidden",
     borderWidth: 1,
-    borderStyle: "dashed",
+    borderColor: "#E8EDF2",
+  },
+  
+  codeWrapper: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F0F2F5",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E8EDF2",
+  },
+  
+  codeLabel: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: Colors.primary,
+    letterSpacing: 1,
+    marginLeft: 8,
+  },
+  
+  codeRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    backgroundColor: "#fff",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
   },
-
-  code: { fontWeight: "800" },
+  
+  code: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: Colors.primary,
+    letterSpacing: 1.5,
+  },
+  
+  copyButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+  },
+  
+  copyText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: Colors.primary,
+    marginLeft: 4,
+  },
 
   redeemBtn: {
-    marginTop: 12,
+    marginTop: 8,
     backgroundColor: Colors.primary,
-    padding: 14,
-    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 14,
     alignItems: "center",
-  },
-
-  redeemDisabled: {
-    backgroundColor: "#9CA3AF",
+    shadowColor: Colors.primary,
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 3,
   },
 
   redeemText: {
     color: "#fff",
     fontWeight: "700",
+    fontSize: 16,
   },
 
   emptyContainer: {
@@ -245,5 +334,7 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 24,
     fontWeight: "700",
+    color: Colors.primary,
+    marginTop: 16,
   },
 });
