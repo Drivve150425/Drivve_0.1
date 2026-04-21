@@ -44,7 +44,9 @@ const { width, height } = Dimensions.get("window");
 
 export default function MyProfileScreen({ navigation, route })  {
   const scrollViewRef = useRef<ScrollView>(null);
-  const { user } = useAuth();
+  const { user, isGuest } = useAuth();
+  
+
   const [isAvatar, setIsAvatar] = useState(false);
 
   const phoneFromRoute = user?.phone_number;

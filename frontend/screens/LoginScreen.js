@@ -22,12 +22,14 @@ import { getDefaultCountry } from '../constants/CountryData';
 import FirebaseAuthService from '../services/FirebaseAuthService';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { useAuth } from '../context/AuthContext';
 import DatabaseService from '../services/loginscreen_ds';
 import { Button } from 'react-native';  // Explicit import
 
 const { width } = Dimensions.get('window');
 
 export default function LoginScreen({ navigation }) {
+  const { loginGuest } = useAuth();
   const insets = useSafeAreaInsets();
   
   // State management
@@ -171,11 +173,16 @@ export default function LoginScreen({ navigation }) {
     }
   };
 
-  const skipToHome = async () => {
-    navigation.reset({
-      index: 0,
-      routes: [{ name: 'Home' }],
-    });
+const skipToHome = async () => {
+    try {
+      console.log('🧑‍🚀 Continue as Guest pressed');
+      await loginGuest();
+      console.log('✅ Guest login completed, navigating to Home');
+      // Safer navigation - replace current screen instead of full reset
+      navigation.replace('Home');
+    } catch (error) {
+      console.error('❌ Guest login failed:', error);
+    }
   };
 
   const handleTermsPress = () => {
@@ -422,11 +429,12 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
   },
   skipButtonContainer: {
-    position: 'static',
-    //bottom: 10,
-    //zIndex: 10000,
-    elevation: 20,
-    top: 10, // fallback when safe-area insets are not available
+    position: 'absolute',
+    bottom: 40,
+    left: 20,
+    right: 20,
+    zIndex: 1000,
+    elevation: 10,
   },
   skipButton: {
     

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -20,15 +20,30 @@ import BackgroundAnimation from '../components/BackgroundAnimation';
 import BottomNavigation from '../components/BottomNavigation';
 import { Colors, Typography } from '../constants/Colors';
 import { Roboto_300Light } from '@expo-google-fonts/roboto';
-import { useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 const { width, height } = Dimensions.get('window');
-const DRAWER_HEIGHT = verticalScale(160);
+const DRAWER_HEIGHT = 160; // Fixed - no verticalScale yet
 import { API_BASE_URL } from "../config/config_ip";
 
-import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
 export default function HomeScreen({ navigation }) {
-  const { user } = useAuth();
+  const { user, loading: authLoading, isAuthenticated } = useAuth();
+  const [localLoading, setLocalLoading] = useState(true);
+
+  // 🔒 Improved Session Guard
+  useEffect(() => {
+    if (localLoading && authLoading) return; // Still loading
+
+    if (!authLoading && !isAuthenticated && !user?.isGuest) {
+      // Single delayed redirect, no console.log spam
+      const timer = setTimeout(() => {
+        navigation.replace('Login');
+      }, 500); // Brief delay for state sync
+      return () => clearTimeout(timer);
+    }
+    
+    // Session valid, stop local loading
+    setLocalLoading(false);
+  }, [isAuthenticated, authLoading, localLoading, navigation]);
 
   const userId = user?.id;
   const phoneNumber = user?.phone_number;
@@ -234,7 +249,7 @@ const openNotifications = () => {
     
     switch (tabName) {
       case 'home':
-        navigation.navigate('Home', { phoneNumber: user?.phone_number});
+        navigation.navigate('Home');
         break;
       case 'myride':
         navigation.navigate('MyRides', {phoneNumber: user?.phone_number});
@@ -314,6 +329,7 @@ const openNotifications = () => {
 
     // const greeting = getGreeting(userData?.firstName || firstName || 'User');
     const greeting = getGreeting(firstName);
+    const greetingText = greeting.line1 + '\\n' + greeting.secondLine; // Safe for Alert
     const firstLine = greeting.line1;
     const secondLine = greeting.line2;
 

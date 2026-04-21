@@ -23,8 +23,22 @@ import { FontFamily } from "../constants/Fonts";
 import { API_BASE_URL } from "../config/config_ip";
 
 export default function MyRides({ route, navigation }) {
-  const { user } = useAuth();
+  const { user, isAuthenticated, isGuest } = useAuth();
   const phoneNumber = user?.phone_number;
+
+  useEffect(() => {
+    if (!isAuthenticated || isGuest) {
+      Alert.alert(
+        'Login Required',
+        'Please complete login/profile to view rides.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+{ text: 'Login', onPress: () => navigation.navigate('Login') }
+        ]
+      );
+      navigation.goBack();
+    }
+  }, [isAuthenticated, isGuest]);
 
   const initialTab = route?.params?.initialTab || "posted";
   const targetBookingId = route?.params?.bookingId || null;

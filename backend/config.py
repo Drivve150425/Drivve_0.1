@@ -29,7 +29,7 @@ class Settings:
         "*",  # Allow all for development
         "http://localhost:19000",
         f"{BASE_URL}:19000",
-        "exp://192.168.1.7:19000"
+        "exp://192.168.1.2:19000"
     ]
 
 settings = Settings()

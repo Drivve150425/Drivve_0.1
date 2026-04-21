@@ -3,11 +3,13 @@ import { View, Text, StyleSheet, Dimensions, StatusBar, Animated } from 'react-n
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, Typography } from '../constants/Colors';
 import SplashLogo from '../components/SplashLogo';
+import { useAuth } from '../context/AuthContext';
 
 const { width } = Dimensions.get('window');
 
 export default function SplashScreen({ navigation, onFinish }) {
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const { loading, isAuthenticated } = useAuth();
 
   useEffect(() => {
     Animated.timing(fadeAnim, {
@@ -17,14 +19,19 @@ export default function SplashScreen({ navigation, onFinish }) {
     }).start();
 
     const timer = setTimeout(() => {
+      console.log('🕒 Splash timer complete. Auth state:', { loading, isAuthenticated });
+      
+      // Smart navigation based on session
+      console.log('🕒 Splash → LoginScreen (guest/login flow)');
+      navigation.replace('Login');
+      
       if (onFinish) {
         onFinish();
       }
-      navigation.replace('Login');
-    }, 3000);
+    }, 2000); // Reduced to 2s for faster validation
 
     return () => clearTimeout(timer);
-  }, [navigation, onFinish, fadeAnim]);
+  }, [navigation, onFinish, fadeAnim, loading, isAuthenticated]);
 
   const logoWidth = Math.min(width * 0.7, 300);
   const logoHeight = logoWidth * (125 / 204);

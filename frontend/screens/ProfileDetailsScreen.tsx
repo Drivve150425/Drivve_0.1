@@ -23,10 +23,11 @@ import { useFocusEffect } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { CommonActions } from "@react-navigation/native";
 import { Alert } from "react-native";
-const { width, height } = Dimensions.get('window');
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from "../context/AuthContext";
 import { SvgCssUri  } from 'react-native-svg/css';
+
+const { width, height } = Dimensions.get('window');
 
 import { Linking } from "react-native";
 type RootStackParamList = {
@@ -72,91 +73,96 @@ type ScreensWithoutPhone =
   | "HelpSupportScreen"
   // | "AdminDocumentApprovalScreen";
 export default function ProfileScreen({ navigation, route }: Props) {
-    const scrollViewRef = useRef(null);
-  const [showScrollTop, setShowScrollTop] = useState(false);
-  const [profileImage, setProfileImage] = useState(null);
-  const [isAvatar, setIsAvatar] = useState(false);
-const { setUser } = useAuth(); 
- // ✅ Use AuthContext for session management
-  const { user, logout: authLogout } = useAuth();
-
+  const { user, isAuthenticated, isGuest } = useAuth();
+  
   /* ✅ Get phone from route params or AuthContext */
   const phoneFromRoute = route?.params?.phoneNumber || null;
   const phoneFromAuth = user?.phoneNumber || user?.phone || null;
   const userFromAuth = user?.userName || user?.name || "User";
   const phoneFromRouteOrAuth = phoneFromRoute || phoneFromAuth;
-
   const [userName, setUserName] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
 
-const handleLogout = () => {
-  Alert.alert(
-    "Logout",
-    "Are you sure you want to logout?",
-    [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Logout",
-        style: "destructive",
-        onPress: async () => {
-         await authLogout();
-          navigation.dispatch(
-            CommonActions.reset({
-              index: 0,
-              routes: [{ name: "Login" }],
-            })
+  const scrollViewRef = useRef(null);
+  const [showScrollTop, setShowScrollTop] = useState(false);
+  const [profileImage, setProfileImage] = useState<string | null>(null);
+  const [isAvatar, setIsAvatar] = useState(false);
+
+  const {logout: authLogout, loading } = useAuth();
+
+    useEffect(() => {
+        if (isGuest) {
+          Alert.alert(
+            'Login Required',
+            'Please complete login/profile.',
+            [
+              { text: 'Cancel', style: 'cancel', onPress: () => navigation.goBack() },
+              { text: 'Login', onPress: () => navigation.navigate('Login') }
+            ]
           );
-        },
-      },
-    ]
-  );
-};
-const loadProfile = async () => {
-  try {
-    const phoneToUse = phoneFromRouteOrAuth;
-    if (!phoneToUse) return;
+          return;
+        }
+      }, [isGuest, navigation]);
 
-    const res = await DatabaseService.getUserProfile(phoneToUse);
+  // // Guest mode guard
+  // useEffect(() => {
+  //   if (!loading && !isAuthenticated && !isGuest) {
+  //     Alert.alert(
+  //       'Login Required',
+  //       'Please login to view your profile.',
+  //       [
+  //         { text: 'Cancel', style: 'cancel' },
+  //         { text: 'Login', onPress: () => navigation.navigate('Login' as any) }
+  //       ]
+  //     );
+  //     navigation.goBack();
+  //     return;
+  //   }
+  // }, [loading, isAuthenticated, isGuest, navigation]);
 
-    if (res?.success && res.user) {
+  const loadProfile = async () => {
+    try {
+      const phoneToUse = phoneFromRouteOrAuth;
+      if (!phoneToUse) return;
 
-      const u = res.user;
- setUser(prev => ({
-    ...prev,
-    profile_picture: u.profile_picture,
-    full_name: u.full_name,
-  }));
-      console.log("🔥 USER DATA:", u);
+      const res = await DatabaseService.getUserProfile(phoneToUse);
 
-      // ✅ SET NAME
-      setUserName(
-        u.full_name ||
-        `${u.first_name || ""} ${u.last_name || ""}`.trim() ||
-        "User"
-      );
+      if (res?.success && res.user) {
 
-      // ✅ SET PHONE
-      setPhoneNumber(u.phone_number || "");
+        const u = res.user;
+        // setUser removed - local state only
+        console.log("Profile updated locally:", { profile_picture: u.profile_picture, full_name: u.full_name });
+        console.log("🔥 USER DATA:", u);
 
-      // ✅ SET IMAGE (your existing logic)
-      const imageUrl = u.profile_picture;
+        // ✅ SET NAME
+        setUserName(
+          u.full_name ||
+          `${u.first_name || ""} ${u.last_name || ""}`.trim() ||
+          "User"
+        );
 
-      setProfileImage(null);
-      setTimeout(() => {
-        setProfileImage(imageUrl || null);
-      }, 50);
+        // ✅ SET PHONE
+        setPhoneNumber(u.phone_number || "");
+
+        // ✅ SET IMAGE (your existing logic)
+        const imageUrl = u.profile_picture;
+
+        setProfileImage(null);
+        setTimeout(() => {
+          setProfileImage(imageUrl || null);
+        }, 50);
+      }
+
+    } catch (err) {
+      console.log("Profile fetch error:", err);
     }
+  };
 
-  } catch (err) {
-    console.log("Profile fetch error:", err);
-  }
-};
-
-useFocusEffect(
-  useCallback(() => {
-    loadProfile(); // 🔥 runs when coming back from edit screen
-  }, [phoneFromRouteOrAuth])
-);
+  useFocusEffect(
+    useCallback(() => {
+      loadProfile(); // 🔥 runs when coming back from edit screen
+    }, [phoneFromRouteOrAuth])
+  );
 
   const infoItems: {
     title: string;
@@ -206,26 +212,26 @@ useFocusEffect(
     return;
   }
   const screensWithPhone: ScreensWithPhone[] = [
-    "MyVehicleScreen",
-    "SavedAddressScreen",
-    "DocumentVerificationScreen",
-    "MatchingPreferenceScreen",
-    "EmergencyContactsscreen",
-    "DCoinScreen",
-    // "RewardsScreen",
-    "ShareAppScreen",
-    "PromotionScreen",
-    "Settings",
-    "FeedbackScreen",
-    // "RideFeedbackScreen",
-  ];
+      "MyVehicleScreen",
+      "SavedAddressScreen",
+      "DocumentVerificationScreen",
+      "MatchingPreferenceScreen",
+      "EmergencyContactsscreen",
+      "DCoinScreen",
+      // "RewardsScreen",
+      "ShareAppScreen",
+      "PromotionScreen",
+      "Settings",
+      "FeedbackScreen",
+      // "RideFeedbackScreen",
+    ];
 
-  if (screensWithPhone.includes(screen as ScreensWithPhone)) {
-    navigation.navigate(screen as ScreensWithPhone, { phoneNumber });
-  } else {
-    navigation.navigate(screen as ScreensWithoutPhone);
-  }
-};
+    if (screensWithPhone.includes(screen as ScreensWithPhone)) {
+      navigation.navigate(screen as ScreensWithPhone, { phoneNumber });
+    } else {
+      navigation.navigate(screen as ScreensWithoutPhone);
+    }
+  };
 
   const handleBack = () => {
     navigation.goBack();
@@ -235,6 +241,24 @@ useFocusEffect(
     navigation.navigate("myprofilescreen", {
       phoneNumber: phoneNumber,
     });
+  };
+
+  const handleLogout = () => {
+    Alert.alert(
+      "Logout",
+      "Are you sure you want to logout?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Logout",
+          style: "destructive",
+          onPress: async () => {
+          await authLogout();
+            navigation.navigate("Login");
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -394,13 +418,13 @@ useFocusEffect(
             )
           )}
 
-<TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-            <LinearGradient
-              colors={[Colors.primary, '#0D3A6F']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.logoutGradient}
-            >
+            <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+              <LinearGradient
+                colors={[Colors.primary, '#0D3A6F']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.logoutGradient}
+              >
               <Ionicons name="log-out-outline" size={22} color="white" />
               <Text style={styles.logoutText}>Log out</Text>
             </LinearGradient>

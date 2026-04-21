@@ -607,25 +607,49 @@ import { Colors, Typography } from '../constants/Colors';
 import { useFocusEffect } from '@react-navigation/native';
 import BottomNavigation from '../components/BottomNavigation';
 import CommonHeader from '../components/CommonHeader';
-import { API_URL } from "../config/config_ip";
+import { API_BASE_URL } from "../config/config_ip";
 import { useAuth } from '../context/AuthContext';
+import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
 
 const { width, height } = Dimensions.get('window');
 
-// Responsive scaling functions
-const scale = (size) => (width / 375) * size;
-const verticalScale = (size) => (height / 812) * size;
-const moderateScale = (size, factor = 0.5) => size + (scale(size) - size) * factor;
 
+// Guest auth guard
 const ChatListScreen = ({ navigation }) => {
-  const { token } = useAuth();
+  const { user, isAuthenticated, isGuest, loading: authLoading } = useAuth();
+
+  useEffect(() => {
+    if (isGuest) {
+      Alert.alert(
+        'Login Required',
+        'Please complete login to access chats.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Login', onPress: () => navigation.navigate('Login') }
+        ]
+      );
+      return;
+    }
+  }, [isGuest, navigation]);
+
   const [searchQuery, setSearchQuery] = useState('');
+
+
+  // Responsive scaling functions
+  const scale = (size) => (width / 375) * size;
+  const verticalScale = (size) => (height / 812) * size;
+  const moderateScale = (size, factor = 0.5) => size + (scale(size) - size) * factor;
+
+
   const [chats, setChats] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [activeBottomTab, setActiveBottomTab] = useState('chat');
-  const [isReloading, setIsReloading] = useState(false); // ✅ NEW STATE FOR RELOADING
-  const { user } = useAuth();
+  const [isReloading, setIsReloading] = useState(false);
+  
+
+  
+
   
   // Handle bottom navigation
   const handleBottomNavigation = (tabName) => {
@@ -664,15 +688,9 @@ const ChatListScreen = ({ navigation }) => {
         setLoading(true);
       }
 
-if (!token) {
-        console.log('No token found');
-        setChats([]);
-        setLoading(false);
-        setRefreshing(false);
-        return;
-      }
-      // If no token (testing mode), show mock data
+      // ✅ Single token check - use mock for guest/demo
       if (!token) {
+        console.log('No token - guest/demo mode');
         console.log('No token found, loading mock data for testing');
         const mockChats = [
           {

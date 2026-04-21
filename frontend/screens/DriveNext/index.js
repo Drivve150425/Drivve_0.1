@@ -104,8 +104,8 @@ export default function DriveNextScreen({ navigation, route }) {
         const response = await axios.post(
           `${API_BASE_URL}/get-route`,
           {
-            from_coords: fromCoords,
-            to_coords: toCoords
+            from_coords: [fromCoords.longitude, fromCoords.latitude],
+            to_coords: [toCoords.longitude, toCoords.latitude]
           }
         );
 

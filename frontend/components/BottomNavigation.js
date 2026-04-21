@@ -210,9 +210,10 @@ import {
   Animated,
   StyleSheet,
   Platform,
-  Text
+  Text,
+  Alert
 } from 'react-native';
-
+import { useAuth } from '../context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/Colors';
 import { Image } from 'react-native';
@@ -236,8 +237,10 @@ const BottomNavigation = ({
   activeTab,
   onNavigate,
   unreadCount = 0,
-  profileImage
+  profileImage,
+  navigation
 }) => {
+  const { isAuthenticated, user } = useAuth() || { isAuthenticated: false, user: {} };
 
   const indicatorX = useRef(new Animated.Value(0)).current;
   const [containerWidth, setContainerWidth] = useState(0);
