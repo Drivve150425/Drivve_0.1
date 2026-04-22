@@ -352,6 +352,8 @@ const skipToHome = async () => {
                           size={30}
                           color="#FFFFFF"
                           style={styles.arrow}
+                          alignItems="center"
+                          textAlignVertical="center"
                         />
                       </>
                     )}
@@ -379,7 +381,7 @@ const skipToHome = async () => {
                         accessibilityRole="button"
                         activeOpacity={0.8}
                       >
-                        <Text style={styles.skipButtonText}> Continue as Guest </Text>
+                        <Text style={styles.skipButtonText}>Continue as Guest </Text>
                       </TouchableOpacity>
                     </View>
           </Animated.View>

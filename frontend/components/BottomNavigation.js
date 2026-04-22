@@ -388,7 +388,7 @@ const styles = StyleSheet.create({
 
  navBar: {
     height: verticalScale(56),
-    backgroundColor: '#ffffffc5' , //Colors.white,
+    backgroundColor: '#dfdada38' ,//'#ffffffc5' , //Colors.white,
     borderRadius: moderateScale(40),
     borderColor: Colors.light,
     flexDirection: 'row',

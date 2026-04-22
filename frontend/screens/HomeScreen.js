@@ -22,7 +22,8 @@ import { Colors, Typography } from '../constants/Colors';
 import { Roboto_300Light } from '@expo-google-fonts/roboto';
 import { useAuth } from '../context/AuthContext';
 const { width, height } = Dimensions.get('window');
-const DRAWER_HEIGHT = 160; // Fixed - no verticalScale yet
+const DRAWER_HEIGHT = verticalScale(160);
+import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
 import { API_BASE_URL } from "../config/config_ip";
 
 export default function HomeScreen({ navigation }) {
@@ -799,11 +800,11 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     overflow: 'hidden',
     marginTop: 15,
-    shadowColor: Colors.primary,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
-    elevation: 8,
+    //shadowColor: Colors.primary,
+    //shadowOffset: { width: 0, height: 8 },
+    //shadowOpacity: 0.3,
+    //shadowRadius: 16,
+    //elevation: 8,
     paddingVertical: 13,
     alignItems: 'center',
     justifyContent: 'center',

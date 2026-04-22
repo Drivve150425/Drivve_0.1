@@ -121,7 +121,7 @@ export const AuthProvider = ({ children }) => {
       loginGuest,
       logout, 
       loading,
-updateLastUsed,
+      updateLastUsed,
       isGuest: !!user?.isGuest
     }}>
       {children}
