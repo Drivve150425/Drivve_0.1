@@ -138,15 +138,9 @@ export default function LoginScreen({ navigation }) {
       
       console.log('🔥 Firebase OTP Result:', result.success ? 'SUCCESS' : 'FAILED');
       
-      if (result.success) {
+   if (result.success) {
 
-  // 🔐 SAVE OTP IN BACKEND DATABASE (CRITICAL)
-  await DatabaseService.sendOtp(selectedCountry.dial + phoneNumber);
-
-  if (Platform.OS !== 'web') {
-    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  }
-
+  // ✅ Navigate immediately
   navigation.navigate('OTP', {
     phoneNumber: phoneNumber,
     countryCode: selectedCountry.dial,
@@ -155,6 +149,12 @@ export default function LoginScreen({ navigation }) {
     confirmationResult: result.confirmationResult,
     verificationId: result.verificationId,
   });
+
+  // 🚀 Run backend in background (NO WAIT)
+  DatabaseService.sendOtp(selectedCountry.dial + phoneNumber)
+    .then(() => console.log("OTP saved"))
+    .catch(err => console.log("Save OTP error", err));
+
 }
  else {
         setError(result.message);
@@ -334,18 +334,7 @@ const skipToHome = async () => {
                   style={styles.gradientButton}
                 >
                   <View style={styles.nextButtonContent}>
-                    {isLoading ? (
-                      <>
-                        <MaterialIcons 
-                          name="hourglass-empty" 
-                          size={20} 
-                          color="#FFFFFF"
-                          style={styles.loadingIcon}
-                        />
-                        <Text style={styles.nextButtonText}>Sending OTP...</Text>
-                      </>
-                    ) : (
-                      <>
+                
                         <Text style={styles.nextButtonText}>Next</Text>
                         <MaterialIcons
                           name="chevron-right"
@@ -355,8 +344,8 @@ const skipToHome = async () => {
                           alignItems="center"
                           textAlignVertical="center"
                         />
-                      </>
-                    )}
+                      
+                    
                   </View>
                 </LinearGradient>
               </TouchableOpacity>
@@ -591,22 +580,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  nextButtonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+ nextButtonContent: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 0, // 👈 add spacing
+},
   nextButtonText: {
-    ...Typography.button,
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    letterSpacing: 0.5,
-    paddingBottom: 10,
-    paddingTop: 16,
-    textAlignVertical: 'center',
-    textAlign: 'center',
-  },
+  ...Typography.button,
+  fontSize: 18,
+  fontWeight: '700',
+  color: '#FFFFFF',
+},
   arrow: {
     marginLeft: 1,
     alignItems: 'center',

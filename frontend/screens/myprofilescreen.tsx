@@ -1248,11 +1248,12 @@ editIconContainer: {
     marginTop: 8,
   },
   sectionTitle: {
-    ...Typography.h2,
+    ...Typography.h3,
     marginLeft: 5,
     marginTop: 0,
     marginBottom: 5,
     color: Colors.primary,
+    fontWeight:700
   },
   
   infoCard: {

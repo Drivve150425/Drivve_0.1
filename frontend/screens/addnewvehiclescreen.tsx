@@ -244,34 +244,24 @@ export default function AddNewVehicleScreen({ navigation, route }) {
     }
   };
 
-  const removePhoto = (index: number) => {
-    if (!isEdit && photos.length === 1) {
-      Alert.alert("Cannot Remove", "At least one photo is required");
-      return;
-    }
-    
-    if (isEdit && photos.length === 1) {
-      Alert.alert("Cannot Remove", "At least one photo is required. Please add another photo before removing this one.");
-      return;
-    }
-
-    Alert.alert(
-      "Remove Photo",
-      "Are you sure you want to remove this photo?",
-      [
-        { text: "Cancel", style: "cancel" },
-        { 
-          text: "Remove", 
-          style: "destructive",
-          onPress: () => {
-            const newPhotos = [...photos];
-            newPhotos.splice(index, 1);
-            setPhotos(newPhotos);
-          }
-        }
-      ]
-    );
-  };
+const removePhoto = (index: number) => {
+  Alert.alert(
+    "Remove Photo",
+    "Are you sure you want to remove this photo?",
+    [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Remove",
+        style: "destructive",
+        onPress: () => {
+          const newPhotos = [...photos];
+          newPhotos.splice(index, 1);
+          setPhotos(newPhotos);
+        },
+      },
+    ]
+  );
+};
 
   const showImageOptions = () => {
     Alert.alert(
@@ -708,12 +698,13 @@ export default function AddNewVehicleScreen({ navigation, route }) {
                 placeholder="Auto-detected"
                 placeholderTextColor="#9CA3AF"
               />
-              {bodyType && maxSeats && (
+             
+            </View>
+             {bodyType && maxSeats && (
                 <Text style={styles.seatsHint}>Based on {bodyType}</Text>
               )}
-            </View>
           </View>
-
+            
           {/* Notes */}
           <View style={styles.inputBox}>
             <Text style={styles.label}>Notes</Text>
@@ -820,17 +811,18 @@ const styles = StyleSheet.create({
     position: "relative",
   },
   vehicleImage: { width: "100%", height: "100%", borderRadius: 12 },
-  deletePhotoBtn: {
-    position: "absolute",
-    top: -8,
-    right: -8,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    borderRadius: 12,
-    width: 24,
-    height: 24,
-    justifyContent: "center",
-    alignItems: "center",
-  },
+ deletePhotoBtn: {
+  position: "absolute",
+  top: 4,       // 👈 change from -8
+  right: 4,     // 👈 change from -8
+  backgroundColor: "rgba(0,0,0,0.6)",
+  borderRadius: 12,
+  width: 24,
+  height: 24,
+  justifyContent: "center",
+  alignItems: "center",
+  zIndex: 10,   // 👈 add this
+},
   addPhotoCard: {
     width: 100,
     height: 100,
@@ -913,7 +905,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#F9FAFB",
     color: "#6B7280",
   },
-  seatsHint: { fontSize: 11, color: "#9CA3AF", marginLeft: 8 },
+  seatsHint: { fontSize: 14, color: "#9CA3AF", marginLeft: 8 },
 
   saveBtn: {
     backgroundColor: Colors.primary,
