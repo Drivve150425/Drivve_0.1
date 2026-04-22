@@ -696,8 +696,10 @@ export default function MyVehicleScreen({ navigation, route }) {
 
         {/* LIST */}
         <Animated.ScrollView
-          contentContainerStyle={styles.scroll}
-          showsVerticalScrollIndicator={false}
+contentContainerStyle={[
+  styles.scroll,
+  vehicles.length === 0 && { flex: 1, justifyContent: "center" }
+]}          showsVerticalScrollIndicator={false}
           style={{
             opacity: fadeAnim,
             transform: [{ translateY: slideAnim }],

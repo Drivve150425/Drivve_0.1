@@ -1734,13 +1734,7 @@ ${geo.country || ''}
         You haven't saved any addresses yet.{'\n'}
         Add your first address to get started.
       </Text>
-      <TouchableOpacity 
-        style={styles.addFirstAddressButton}
-        onPress={handleAddAddress}
-      >
-        <MaterialIcons name="add-location-alt" size={24} color={Colors.white} />
-        <Text style={styles.addFirstAddressText}>Add Your First Address</Text>
-      </TouchableOpacity>
+    
     </View>
   );
 
@@ -1874,21 +1868,16 @@ ${geo.country || ''}
             {step === 1 ? "Saved Addresses" : step === 2 ? "Select Location" : "Save Address"}
           </Text>
 
-          {/* Right Side (Fixed Width for Alignment) */}
-          <View style={styles.rightContainer}>
-            {step === 1 && (
-              <TouchableOpacity onPress={handleAddAddress}>
-                <MaterialIcons name="add" size={28} color="#ED7117" />
-              </TouchableOpacity>
-            )}
-          </View>
+       
         </View>
 
         {/* Step 1: List Addresses */}
         {step === 1 && (
           <Animated.ScrollView 
-            contentContainerStyle={styles.scrollContent}
-            showsVerticalScrollIndicator={false}
+contentContainerStyle={[
+  styles.scrollContent,
+  addresses.length === 0 && { flex: 1, justifyContent: "center" }
+]}            showsVerticalScrollIndicator={false}
             style={{
               opacity: fadeAnim,
               transform: [{ translateY: slideAnim }],
@@ -1905,7 +1894,14 @@ ${geo.country || ''}
             )}
           </Animated.ScrollView>
         )}
-
+{step === 1 && (
+  <TouchableOpacity
+    style={styles.fab}
+    onPress={handleAddAddress}
+  >
+    <MaterialIcons name="add" size={30} color={Colors.white} />
+  </TouchableOpacity>
+)}
         {/* Step 2: Map View */}
         {step === 2 && (
           <View style={{ flex: 1 }}>
@@ -2120,12 +2116,16 @@ const styles = StyleSheet.create({
     borderBottomColor: '#F3F4F6',
   },
   headerTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: Colors.primary,
-    flex: 1,
-    textAlign: 'center',
-  },
+      ...Typography.h2,
+      fontSize: 28,
+      fontWeight: '700',
+      color: Colors.primary,
+      flex: 1,
+      textAlign: 'center',
+    },
+    headerSpacer: {
+      width: 44,
+    },
   rightContainer: {
     width: 40,
     alignItems: 'flex-end',
@@ -2213,11 +2213,11 @@ const styles = StyleSheet.create({
     color: '#184080',
     fontWeight: '500',
   },
-  emptyStateContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 60,
-  },
+emptyStateContainer: {
+  flex: 1,
+  justifyContent: 'center',
+  alignItems: 'center',
+},
   emptyStateIcon: {
     marginBottom: 24,
   },
@@ -2563,4 +2563,22 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 2,
   },
+  fab: {
+  position: "absolute",
+  bottom: 30,
+  right: 20,
+  width: 60,
+  height: 60,
+  borderRadius: 30,
+  backgroundColor: Colors.primary,
+
+  justifyContent: "center",
+  alignItems: "center",
+
+  elevation: 8,
+  shadowColor: "#000",
+  shadowOpacity: 0.2,
+  shadowRadius: 6,
+  shadowOffset: { width: 0, height: 4 },
+},
 });

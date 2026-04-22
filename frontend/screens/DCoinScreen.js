@@ -754,7 +754,7 @@ colors={["#1E3A8A", "#3B82F6"]}
           </LinearGradient>
 
           {/* REDEEM BUTTON */}
-          {balanceCoins >= 25 && (
+          {/* {balanceCoins >= 25 && (
             <TouchableOpacity
               style={styles.redeemButton}
               onPress={handleRedeem}
@@ -769,7 +769,7 @@ colors={["#1E3A8A", "#3B82F6"]}
                 <Text style={styles.redeemSubtext}>Get ₹{balanceRupees}</Text>
               </LinearGradient>
             </TouchableOpacity>
-          )}
+          )} */}
 
           {/* REWARDS CARD */}
           <TouchableOpacity

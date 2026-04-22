@@ -1591,24 +1591,46 @@ const handleBack = () => {
 
   <Text style={styles.headerTitle}>Emergency contact</Text>
 
-  <TouchableOpacity style={styles.infoButton}>
-    <Ionicons
-      name="information-circle-outline"
-      size={26}
-      color={Colors.secondary}
-    />
-  </TouchableOpacity>
+<TouchableOpacity 
+  style={styles.infoButton}
+  onPress={() =>
+    Alert.alert(
+      "About Trusted Circle",
+      "Your Trusted Circle contacts will be notified in case of emergency. You can add up to 3 trusted contacts."
+    )
+  }
+>
+  <Ionicons
+    name="information-circle-outline"
+    size={26}
+    color={Colors.secondary}
+  />
+</TouchableOpacity>
 </View>
 
-        <ScrollView contentContainerStyle={styles.content}>
-          {/* TRUSTED */}
-          <Text style={styles.sectionTitle}>Your Trusted Circle</Text>
-          {userContacts.map(c => renderContact(c))}
+     <ScrollView contentContainerStyle={styles.content}>
 
-          {/* EMERGENCY */}
-          <Text style={styles.sectionTitleemergency}>Emergency Numbers</Text>
-          {systemContacts.map(c => renderContact(c, true))}
-        </ScrollView>
+  {/* EMERGENCY FIRST */}
+  {systemContacts.length > 0 && (
+    <>
+      <Text style={styles.sectionTitleemergency}>
+        Emergency Numbers
+      </Text>
+      {systemContacts.map(c => renderContact(c, true))}
+    </>
+  )}
+
+  {/* TRUSTED AFTER */}
+  {userContacts.length > 0 && (
+    <>
+      <Text style={styles.sectionTitle}>
+        Your Trusted Circle
+      </Text>
+      {userContacts.map(c => renderContact(c))}
+    </>
+  )}
+
+</ScrollView>
       </KeyboardAvoidingView>
 
       {/* FLOAT BUTTON */}
