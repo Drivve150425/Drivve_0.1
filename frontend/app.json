@@ -4,7 +4,7 @@
     "slug": "drivve",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/8logo.png",
     "userInterfaceStyle": "light",
     "splash": {
       "image": "./assets/splash.png",

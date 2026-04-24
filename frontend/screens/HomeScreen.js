@@ -408,23 +408,13 @@ const openNotifications = () => {
                   <Text style={[styles.tabButtonText, activeTab === 'drive' && styles.tabButtonTextActive]}>Offer a Ride</Text>
                 </TouchableOpacity>
               </View>
-              {/*
+              
           <ScrollView 
             style={styles.scrollView}
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
-          > */}
-          <Animated.ScrollView 
-            ref={scrollViewRef}
-            contentContainerStyle={styles.scrollContent}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            style={{
-              opacity: fadeAnim,
-              transform: [{ translateY: slideAnim }],
-            }}
+            
           >
-        
 
               <View style={[styles.Titlecontainer]}>
                 <Text style={[styles.TitleText]}>{activeTab === 'ride' ? 'Find a ride' : 'Offer a ride'}</Text>
@@ -541,8 +531,7 @@ const openNotifications = () => {
 
             
 
-          {/*</ScrollView>*/}
-          </Animated.ScrollView>
+          </ScrollView>
         </Animated.View>
         
 
