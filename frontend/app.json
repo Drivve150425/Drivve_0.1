@@ -17,7 +17,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.drivve.app",
-      "buildNumber": "1",
+      "buildNumber": "2",
       "requireFullScreen": false,
       "googleServicesFile": "./GoogleService-Info.plist",
       "config": {
@@ -34,7 +34,7 @@
         "backgroundColor": "#184080"
       },
       "package": "com.drivve.app",
-      "versionCode": 1,
+      "versionCode": 2,
       "googleServicesFile": "./google-services.json",
       "config": {
         "googleMaps": {
