@@ -1,5 +1,10 @@
 import os
+import json
+from dotenv import load_dotenv
 from firebase_admin import credentials, initialize_app, auth
+
+# Load environment variables from .env file (if present)
+load_dotenv()
 
 # Path to the service account JSON downloaded from Firebase Console
 # User must place their firebase-service-account.json in the backend/ directory
@@ -14,15 +19,29 @@ def init_firebase_admin():
     if firebase_app is not None:
         return firebase_app
 
-    if os.path.exists(SERVICE_ACCOUNT_PATH):
+    service_account_json = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON")
+
+    if service_account_json:
+        try:
+            cred_dict = json.loads(service_account_json)
+            cred = credentials.Certificate(cred_dict)
+            firebase_app = initialize_app(cred)
+            print("✅ Firebase Admin SDK initialized from environment variable")
+        except Exception as e:
+            print(
+                "⚠️  Failed to parse FIREBASE_SERVICE_ACCOUNT_JSON:", e,
+                "\n   Firebase token verification will be skipped in dev mode.",
+            )
+            firebase_app = None
+    elif os.path.exists(SERVICE_ACCOUNT_PATH):
         cred = credentials.Certificate(SERVICE_ACCOUNT_PATH)
         firebase_app = initialize_app(cred)
-        print("✅ Firebase Admin SDK initialized")
+        print("✅ Firebase Admin SDK initialized from file")
     else:
         print(
-            "⚠️  firebase-service-account.json not found at",
+            "⚠️  FIREBASE_SERVICE_ACCOUNT_JSON not set and firebase-service-account.json not found at",
             SERVICE_ACCOUNT_PATH,
-            "— Firebase token verification will be skipped in dev mode.",
+            "\n   Firebase token verification will be skipped in dev mode.",
         )
         firebase_app = None
     return firebase_app
