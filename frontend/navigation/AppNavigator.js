@@ -52,6 +52,7 @@ import LocationSearchScreen from '../screens/LocationSearchScreen';
 import MyRides from '../screens/MyRides';
 import RideSuccessScreen from '../screens/RideSuccessScreen';
 import RideDetailScreen from '../screens/RideDetailScreen';
+import ViewProfileScreen from '../screens/ViewProfileScreen';
 
 
 // Suppress navigation warnings for iOS
@@ -389,6 +390,12 @@ export default function AppNavigator({ user }) {
         <Stack.Screen 
           name="RideDetailScreen" 
           component={RideDetailScreen}
+          options={{ headerShown: false }}
+        />
+
+        <Stack.Screen 
+          name="ViewProfileScreen" 
+          component={ViewProfileScreen}
           options={{ headerShown: false }}
         />
 

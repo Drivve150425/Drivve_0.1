@@ -241,7 +241,7 @@ export default function OTPScreen({ navigation, route }) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       phone_number: fullNumber,
-      otp_code: otpValue,
+      firebase_id_token: result.token,
       device_name: deviceName,
       device_type: deviceType,
     }),
@@ -708,6 +708,7 @@ export default function OTPScreen({ navigation, route }) {
         ]}
         onBackdropPress={() => setShowResendAlert(false)}
       />
+
     </SafeAreaView>
   );
 }

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -21,6 +21,7 @@ import BottomNavigation from '../components/BottomNavigation';
 import { Colors, Typography } from '../constants/Colors';
 import { Roboto_300Light } from '@expo-google-fonts/roboto';
 import { useAuth } from '../context/AuthContext';
+import { useFocusEffect } from '@react-navigation/native';
 const { width, height } = Dimensions.get('window');
 const DRAWER_HEIGHT = verticalScale(160);
 import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
@@ -111,6 +112,13 @@ export default function HomeScreen({ navigation }) {
 
   // Bottom navigation active button
   const [activeBottomTab, setActiveBottomTab] = useState('home');
+
+  // Reset bottom nav to Home whenever this screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      setActiveBottomTab('home');
+    }, [setActiveBottomTab])
+  );
 
   //const backgroundGradientColors = [Colors.primary, '#2563eb', '#3b82f6', '#2980b9', Colors.blue, '#1e40af'];
 
@@ -336,7 +344,7 @@ const openNotifications = () => {
 
   return (
     <View style={styles.container}>
-      <StatusBar hidden={true} />
+      {/*<StatusBar hidden={true} />*/}
 
       {/* Animated header background (touch-safe, behind everything) */}
        <BackgroundAnimation height={360} />
@@ -388,8 +396,8 @@ const openNotifications = () => {
           ></TouchableOpacity>
             <View style={styles.earningSection}>
               <Text style={styles.earningTitle}>Total Earning</Text>
-              <Text style={styles.earningAmount}>₹10</Text>
-              <Text style={styles.earningSubtext}>CO₂ Saved: 50%</Text>
+              <Text style={styles.earningAmount}>₹0</Text>
+              <Text style={styles.earningSubtext}>CO₂ Saved: 0%</Text>
             </View>
           </Animated.View>
 
@@ -495,8 +503,8 @@ const openNotifications = () => {
                   </TouchableOpacity>
                 </View>
               )}
-            
-            {/*Extra Info.*/}
+          
+            {/*Extra Info and Quick Actions
             <View style={styles.seprator}> </View>
             <Text style={styles.stext}>Quick Actions</Text>
             <View style={styles.quickaction}> 
@@ -507,12 +515,7 @@ const openNotifications = () => {
                 <Text style={[{textAlign: 'center', ...Typography.button, color:Colors.dark}]}>Recurring Rides</Text>
                 <Text style={[{textAlign: 'center', ...Typography.button, color:Colors.gray}]}>Set up daily rides</Text>
               </TouchableOpacity>
-              
-              <TouchableOpacity
-                style={styles.quick1} //onPress={}
-              >
-               {/* <Ionicons style={styles.qicon} name="calendar-outline" size={25} color={Colors.secondary} />*/}
-              </TouchableOpacity>
+          
             </View>
 
             <View style={styles.quickaction}> 
@@ -529,7 +532,7 @@ const openNotifications = () => {
 
             <View style={[{marginBottom: 100}]}></View>
 
-            
+          */}
 
           </ScrollView>
         </Animated.View>
@@ -763,7 +766,7 @@ const styles = StyleSheet.create({
   },
    drawerContent: {
     flex: 1,
-    // backgroundColor: 'rgba(255,255,255,0.1)',
+    //backgroundColor: 'rgba(255,255,255,0.1)',
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
   },

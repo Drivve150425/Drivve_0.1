@@ -1,5 +1,5 @@
 import { API_BASE_URL } from "../config/config_ip";
-console.log("CREATE",API_BASE_URL)
+console.log("CREATE", API_BASE_URL);
 
 class DatabaseService {
 async sendOtp(phone_number) {

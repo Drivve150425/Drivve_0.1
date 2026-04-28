@@ -253,6 +253,9 @@ from drivve_api.vehicles import router as vehicles_router
 from drivve_api.about_us import router as about_router
 from drivve_api.createprofile import router as createprofile_router
 from drivve_api.myprofile import router as profile_router
+from drivve_api.chat import router as chat_router
+from drivve_api.chat_socket import socket_app
+
 app.include_router(otp_router)
 app.include_router(account_router)
 app.include_router(blocked_users_router)
@@ -275,6 +278,10 @@ app.include_router(vehicles_router)
 app.include_router(about_router)
 app.include_router(createprofile_router)
 app.include_router(profile_router)
+app.include_router(chat_router)
+
+# Mount Socket.IO ASGI app at /socket.io/
+app.mount("/socket.io", socket_app)
 from fastapi.staticfiles import StaticFiles
 from routers.routes import router as riderrouter
 from routers.routes import router as routes_router

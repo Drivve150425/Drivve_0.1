@@ -416,13 +416,14 @@
 #     }
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import text
 from database import get_db
-from models import Ride, RideBooking, UserNotification, NotificationType
+from models import Ride, RideBooking, User, UserNotification, NotificationType
 from datetime import datetime, timezone, timedelta
 from pydantic import BaseModel, field_validator
 from typing import Optional, Dict, List
+import math
 
 
 router = APIRouter()
@@ -489,6 +490,17 @@ class CreateRideBookingRequest(BaseModel):
     ride_id: int
     passenger_phone: str
     seats_requested: int = 1
+    from_coords: Optional[List[float]] = None   # [lng, lat] rider original pickup
+    to_coords: Optional[List[float]] = None     # [lng, lat] rider original drop
+
+    @field_validator("from_coords", "to_coords")
+    @classmethod
+    def validate_optional_coords(cls, value):
+        if value is None:
+            return value
+        if len(value) != 2:
+            raise ValueError("Coordinates must contain exactly [lng, lat]")
+        return value
 
 
 class UpdateRideRequest(CreateRideRequest):
@@ -541,6 +553,42 @@ def to_ist(dt: datetime) -> datetime:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(IST)
+
+
+def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Return distance in meters between two lat/lon points."""
+    R = 6371000
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return R * c
+
+
+def find_nearest_route_vertex(route_coords: List[List[float]], lng: float, lat: float) -> Optional[Dict]:
+    """
+    Find the nearest vertex in the route_coordinates array to the given point.
+    route_coords is [[lng, lat], [lng, lat], ...] from Google Routes API.
+    Returns {"lng": float, "lat": float} or None.
+    """
+    if not route_coords or len(route_coords) < 2:
+        return None
+
+    best = None
+    best_dist = float('inf')
+
+    for point in route_coords:
+        if not isinstance(point, (list, tuple)) or len(point) < 2:
+            continue
+        plng, plat = float(point[0]), float(point[1])
+        dist = haversine_m(lat, lng, plat, plng)
+        if dist < best_dist:
+            best_dist = dist
+            best = {"lng": plng, "lat": plat}
+
+    return best
 
 
 @router.post("/post-ride")
@@ -624,30 +672,101 @@ def post_ride(data: CreateRideRequest, db: Session = Depends(get_db)):
 def get_my_rides(phone_number: str, db: Session = Depends(get_db)):
     normalized_phone = normalize_phone(phone_number)
 
-    # Posted rides with explicit coords
+    # Posted rides (do not eagerly load bookings to avoid missing-column issues)
     posted_rides = db.query(Ride)\
         .filter(Ride.phone_number == normalized_phone)\
         .order_by(Ride.departure_time.desc())\
         .all()
-    
-    # Transform to include coords arrays
+
+    posted_ride_ids = [r.id for r in posted_rides]
+    bookings_map = {}
+    if posted_ride_ids:
+        all_bookings = db.query(RideBooking)\
+            .filter(RideBooking.ride_id.in_(posted_ride_ids))\
+            .all()
+        for bk in all_bookings:
+            bookings_map.setdefault(bk.ride_id, []).append({
+                "id": bk.id,
+                "ride_id": bk.ride_id,
+                "passenger_phone": bk.passenger_phone,
+                "passenger_name": None,
+                "seats_requested": bk.seats_booked,
+                "status": bk.status,
+                "created_at": bk.created_at.isoformat() if bk.created_at else None,
+            })
+
     posted_rides_formatted = []
     for ride in posted_rides:
+        bookings_list = bookings_map.get(ride.id, [])
+
         posted_rides_formatted.append({
-            **ride.__dict__,
+            "id": ride.id,
+            "phone_number": ride.phone_number,
+            "origin": ride.origin,
+            "destination": ride.destination,
             "origin_coords": [ride.origin_lon, ride.origin_lat] if ride.origin_lon and ride.origin_lat else None,
             "destination_coords": [ride.destination_lon, ride.destination_lat] if ride.destination_lon and ride.destination_lat else None,
+            "departure_time": ride.departure_time.isoformat() if ride.departure_time else None,
             "departure_time_js": ride.departure_time.isoformat() if ride.departure_time else None,
+            "available_seats": ride.available_seats,
+            "price_per_seat": ride.price_per_seat,
+            "distance_km": ride.distance_km,
+            "duration_text": ride.duration_text,
+            "total_estimated_price": ride.total_estimated_price,
+            "preferences": ride.preferences,
+            "status": ride.status,
+            "vehicle_id": ride.vehicle_id,
+            "created_at": ride.created_at.isoformat() if ride.created_at else None,
+            "bookings": bookings_list,
         })
 
-    requested_bookings = db.query(RideBooking)\
+    # Requested rides with ride and driver info joined
+    requested_bookings = db.query(RideBooking, Ride, User)\
+        .join(Ride, RideBooking.ride_id == Ride.id)\
+        .outerjoin(User, User.phone_number == Ride.phone_number)\
         .filter(RideBooking.passenger_phone == normalized_phone)\
         .order_by(RideBooking.created_at.desc())\
         .all()
 
+    requested_rides_formatted = []
+    for booking, ride, driver in requested_bookings:
+        driver_name = None
+        if driver:
+            driver_name = driver.full_name or " ".join(
+                p for p in [driver.first_name, driver.last_name] if p
+            ).strip()
+        if not driver_name:
+            driver_name = f"Driver {str(ride.phone_number)[-4:]}"
+
+        requested_rides_formatted.append({
+            "id": booking.id,
+            "ride_id": booking.ride_id,
+            "passenger_phone": booking.passenger_phone,
+            "seats_requested": booking.seats_booked,
+            "total_amount": booking.total_amount,
+            "status": booking.status,
+            "created_at": booking.created_at.isoformat() if booking.created_at else None,
+
+            # Ride details
+            "origin": ride.origin,
+            "destination": ride.destination,
+            "departure_time": ride.departure_time.isoformat() if ride.departure_time else None,
+            "price_per_seat": ride.price_per_seat,
+            "available_seats": ride.available_seats,
+            "distance_km": ride.distance_km,
+            "duration_text": ride.duration_text,
+            "ride_status": ride.status,
+
+            # Driver details
+            "driver_name": driver_name,
+            "driver_phone": ride.phone_number,
+            "driver_user_id": driver.user_id if driver else None,
+            "profile_completed": driver.profile_completed if driver else False,
+        })
+
     return {
         "posted_rides": posted_rides_formatted,
-        "requested_rides": requested_bookings
+        "requested_rides": requested_rides_formatted
     }
 
 
@@ -664,10 +783,10 @@ def accept_booking(booking_id: int, db: Session = Depends(get_db)):
     if not ride:
         raise HTTPException(status_code=404, detail="Ride not found")
 
-    if ride.available_seats < booking.seats_requested:
+    if ride.available_seats < booking.seats_booked:
         raise HTTPException(status_code=400, detail="Not enough seats available")
 
-    ride.available_seats -= booking.seats_requested
+    ride.available_seats -= booking.seats_booked
     booking.status = "accepted"
 
     if ride.available_seats == 0:
@@ -719,7 +838,7 @@ def cancel_booking(booking_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Ride not found")
 
     if booking.status == "accepted":
-        ride.available_seats += booking.seats_requested
+        ride.available_seats += booking.seats_booked
 
         if ride.status == "full":
             ride.status = "active"
@@ -760,6 +879,7 @@ def search_rides(data: SearchRidesRequest, db: Session = Depends(get_db)):
                 r.duration_text,
                 r.total_estimated_price,
                 r.route_line,
+                r.route_coordinates,
 
                 u.id AS user_db_id,
                 u.user_id AS driver_user_id,
@@ -863,8 +983,10 @@ def search_rides(data: SearchRidesRequest, db: Session = Depends(get_db)):
             )
         )
 
-        pickup_point = parse_point_wkt(row["pickup_point_wkt"])
-        drop_point = parse_point_wkt(row["drop_point_wkt"])
+        # Use nearest route vertex for accessible junction points
+        route_coords = row.get("route_coordinates") or []
+        pickup_point = find_nearest_route_vertex(route_coords, data.from_coords[0], data.from_coords[1])
+        drop_point = find_nearest_route_vertex(route_coords, data.to_coords[0], data.to_coords[1])
 
         full_name = (
             row.get("full_name")
@@ -920,6 +1042,7 @@ def search_rides(data: SearchRidesRequest, db: Session = Depends(get_db)):
             "durationText": row["duration_text"],
             "totalEstimatedPrice": row["total_estimated_price"],
             "timeDifferenceMin": round(time_diff_min),
+            "routeCoordinates": route_coords,
         })
 
     rides.sort(
@@ -1046,10 +1169,79 @@ def create_ride_booking(data: CreateRideBookingRequest, db: Session = Depends(ge
     if existing_booking:
         raise HTTPException(status_code=400, detail="You already requested this ride")
 
+    # Compute intersection points if coords provided
+    pickup_lat = pickup_lon = drop_lat = drop_lon = None
+    int_pickup_lat = int_pickup_lon = int_drop_lat = int_drop_lon = None
+    pickup_walk_m = drop_walk_m = None
+
+    if data.from_coords and data.to_coords and ride.route_coordinates:
+        try:
+            sql = text("""
+                WITH input AS (
+                    SELECT
+                        ST_SetSRID(ST_MakePoint(:from_lng, :from_lat), 4326)::geography AS rider_pickup,
+                        ST_SetSRID(ST_MakePoint(:to_lng, :to_lat), 4326)::geography AS rider_drop
+                )
+                SELECT
+                    ST_Distance(r.route_line, i.rider_pickup) AS pickup_distance_m,
+                    ST_Distance(r.route_line, i.rider_drop) AS drop_distance_m
+                FROM rides r
+                CROSS JOIN input i
+                WHERE r.id = :ride_id
+            """)
+
+            result = db.execute(sql, {
+                "ride_id": ride.id,
+                "from_lng": data.from_coords[0],
+                "from_lat": data.from_coords[1],
+                "to_lng": data.to_coords[0],
+                "to_lat": data.to_coords[1],
+            }).mappings().first()
+
+            if result:
+                pickup_walk_m = int(float(result["pickup_distance_m"]))
+                drop_walk_m = int(float(result["drop_distance_m"]))
+
+                # Use nearest route vertex for accessible junction points
+                route_coords = ride.route_coordinates or []
+                pickup_pt = find_nearest_route_vertex(route_coords, data.from_coords[0], data.from_coords[1])
+                drop_pt = find_nearest_route_vertex(route_coords, data.to_coords[0], data.to_coords[1])
+
+                if pickup_pt:
+                    int_pickup_lon = pickup_pt["lng"]
+                    int_pickup_lat = pickup_pt["lat"]
+                if drop_pt:
+                    int_drop_lon = drop_pt["lng"]
+                    int_drop_lat = drop_pt["lat"]
+
+                pickup_lat = data.from_coords[1]
+                pickup_lon = data.from_coords[0]
+                drop_lat = data.to_coords[1]
+                drop_lon = data.to_coords[0]
+        except Exception as e:
+            print(f"⚠️ Intersection compute error (non-fatal): {e}")
+
+    # Defensive: ensure price_per_seat is valid before computing total
+    if ride.price_per_seat is None:
+        raise HTTPException(status_code=500, detail="Ride pricing is not configured. Please contact support.")
+
+    total_amount = ride.price_per_seat * data.seats_requested
+
     booking = RideBooking(
         ride_id=data.ride_id,
         passenger_phone=passenger_phone,
-        seats_requested=data.seats_requested,
+        seats_booked=data.seats_requested,
+        total_amount=total_amount,
+        pickup_lat=pickup_lat,
+        pickup_lon=pickup_lon,
+        drop_lat=drop_lat,
+        drop_lon=drop_lon,
+        intersection_pickup_lat=int_pickup_lat,
+        intersection_pickup_lon=int_pickup_lon,
+        intersection_drop_lat=int_drop_lat,
+        intersection_drop_lon=int_drop_lon,
+        pickup_walk_distance_m=pickup_walk_m,
+        drop_walk_distance_m=drop_walk_m,
         status="pending"
     )
 
@@ -1084,4 +1276,53 @@ def create_ride_booking(data: CreateRideBookingRequest, db: Session = Depends(ge
         "message": "Ride request sent successfully",
         "booking_id": booking.id,
         "status": booking.status
+    }
+
+
+@router.get("/ride/{ride_id}/passengers")
+def get_ride_passengers(ride_id: int, db: Session = Depends(get_db)):
+    ride = db.query(Ride).filter(Ride.id == ride_id).first()
+    if not ride:
+        raise HTTPException(status_code=404, detail="Ride not found")
+
+    bookings = db.query(RideBooking).filter(
+        RideBooking.ride_id == ride_id,
+        RideBooking.status.in_(["pending", "accepted"])
+    ).order_by(RideBooking.created_at.asc()).all()
+
+    passengers = []
+    for idx, bk in enumerate(bookings, start=1):
+        p = db.query(User).filter(
+            User.phone_number == bk.passenger_phone
+        ).first()
+
+        passengers.append({
+            "booking_id": bk.id,
+            "passenger_phone": bk.passenger_phone,
+            "passenger_name": p.full_name if p and p.full_name else (p.first_name if p else f"Passenger {idx}"),
+            "profile_picture": p.profile_picture if p else None,
+            "seats_booked": bk.seats_booked,
+            "status": bk.status,
+            "pickup_lat": bk.pickup_lat,
+            "pickup_lon": bk.pickup_lon,
+            "drop_lat": bk.drop_lat,
+            "drop_lon": bk.drop_lon,
+            "intersection_pickup_lat": bk.intersection_pickup_lat,
+            "intersection_pickup_lon": bk.intersection_pickup_lon,
+            "intersection_drop_lat": bk.intersection_drop_lat,
+            "intersection_drop_lon": bk.intersection_drop_lon,
+            "pickup_walk_distance_m": bk.pickup_walk_distance_m,
+            "drop_walk_distance_m": bk.drop_walk_distance_m,
+        })
+
+    return {
+        "ride_id": ride_id,
+        "origin": ride.origin,
+        "destination": ride.destination,
+        "origin_lon": ride.origin_lon,
+        "origin_lat": ride.origin_lat,
+        "destination_lon": ride.destination_lon,
+        "destination_lat": ride.destination_lat,
+        "route_coordinates": ride.route_coordinates,
+        "passengers": passengers
     }

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "427437171781",
+    "project_id": "drivve-a1299",
+    "storage_bucket": "drivve-a1299.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:427437171781:android:59e5a2ad9b23c97218af2c",
+        "android_client_info": {
+          "package_name": "com.drivve.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDMQ5mAbAA0rn6Ew9uQZFzqxzzzPelQe9w"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

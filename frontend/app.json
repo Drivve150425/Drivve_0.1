@@ -19,8 +19,10 @@
       "bundleIdentifier": "com.drivve.app",
       "buildNumber": "1",
       "requireFullScreen": false,
+      "googleServicesFile": "./GoogleService-Info.plist",
       "config": {
-        "usesNonExemptEncryption": false
+        "usesNonExemptEncryption": false,
+        "googleMapsApiKey": "AIzaSyDUmZXstmZbpfNFfN-J08fc5Qac5AOfQMw"
       },
       "infoPlist": {
         "UIViewControllerBasedStatusBarAppearance": true
@@ -33,6 +35,12 @@
       },
       "package": "com.drivve.app",
       "versionCode": 1,
+      "googleServicesFile": "./google-services.json",
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyDUmZXstmZbpfNFfN-J08fc5Qac5AOfQMw"
+        }
+      },
       "permissions": [
         "android.permission.RECORD_AUDIO",
         "android.permission.RECORD_AUDIO",
@@ -46,6 +54,7 @@
     },
     "plugins": [
       "expo-font",
+      "@react-native-firebase/app",
       [
         "expo-image-picker",
         {

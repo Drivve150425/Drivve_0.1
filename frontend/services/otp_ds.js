@@ -1,6 +1,6 @@
 import { API_BASE_URL } from "../config/config_ip";
-print("CREATE",API_BASE_URL)
 import { Platform } from 'react-native';
+import * as Device from 'expo-device';
 
  class DatabaseService {
 
@@ -126,7 +126,7 @@ import { Platform } from 'react-native';
 
     console.log("📱 Sending device:", deviceName, deviceType);
 
-    const res = await fetch(`${BASE_URL}/api/verify-otp`, {
+    const res = await fetch(`${API_BASE_URL}/api/verify-otp`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

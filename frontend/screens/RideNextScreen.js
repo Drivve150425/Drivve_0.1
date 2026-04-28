@@ -886,7 +886,10 @@ export default function RideNextScreen({ navigation, route }) {
   }, [availableRides, quickFilters, advancedFilters, sortBy]);
 
   const handleCardPress = (ride) => {
-    navigation.navigate('RideDetailScreen', { ride });
+    navigation.navigate('RideDetailScreen', { 
+      ride,
+      searchData: searchData || null,  // rider's original pickup/drop for intersection viz
+    });
   };
 
   const toggleQuickFilter = (key) => {

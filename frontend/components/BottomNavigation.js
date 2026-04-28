@@ -374,21 +374,23 @@ export default BottomNavigation;
 
 const styles = StyleSheet.create({
 
-  wrapper: {
-    position: 'absolute',
-    bottom: verticalScale(0),
-    width: '100%',
-    alignItems: 'center',
-    zIndex: 50,
-    backgroundColor: Colors.white,
-    borderRadius: moderateScale(40),
-    paddingBottom: verticalScale(10),
-    paddingTop: verticalScale(2),
-  },
+  // wrapper: {
+  //   position: 'absolute',
+  //   bottom: verticalScale(18),
+  //   width: '100%',
+  //   alignItems: 'center',
+  //   //zIndex: 50,
+  //   backgroundColor: '#ffffff',//Colors.white,
+  //   borderRadius: moderateScale(100),
+  //   //paddingBottom: verticalScale(10),
+  //   //paddingTop: verticalScale(2),
+  //   },
 
  navBar: {
     height: verticalScale(56),
-    backgroundColor: '#dfdada38' ,//'#ffffffc5' , //Colors.white,
+    position: 'absolute',
+    bottom: verticalScale(18),
+    backgroundColor: Platform.OS === 'ios' ? '#ffffffc5' : '#dfdada3e',//'#dfdada38' ,//'#ffffffc5' , //Colors.white,
     borderRadius: moderateScale(40),
     borderColor: Colors.light,
     flexDirection: 'row',
@@ -397,7 +399,6 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     alignItems: 'center',
     paddingHorizontal: 0, // remove extra padding
-
     shadowColor: Colors.gray,//'#5B6FD8',
     shadowOpacity: .80,
     shadowRadius: 2,

@@ -605,7 +605,6 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors, Typography } from '../constants/Colors';
 import { useFocusEffect } from '@react-navigation/native';
-import BottomNavigation from '../components/BottomNavigation';
 import CommonHeader from '../components/CommonHeader';
 import { API_BASE_URL } from "../config/config_ip";
 import { useAuth } from '../context/AuthContext';
@@ -644,35 +643,12 @@ const ChatListScreen = ({ navigation }) => {
   const [chats, setChats] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeBottomTab, setActiveBottomTab] = useState('chat');
   const [isReloading, setIsReloading] = useState(false);
   
 
   
 
   
-  // Handle bottom navigation
-  const handleBottomNavigation = (tabName) => {
-    setActiveBottomTab(tabName);
-
-    switch (tabName) {
-      case 'home':
-        navigation.navigate('Home', { phoneNumber: user?.phone_number});
-        break;
-      case 'myride':
-        navigation.navigate('MyRides', {phoneNumber: user?.phone_number});
-        break;
-      case 'chat':
-        navigation.navigate('ChatList', {phoneNumber: user?.phone_number});
-        break;
-      case 'profile':
-        navigation.navigate('ProfileDetails', {phoneNumber: user?.phone_number});
-        break;
-      default:
-        break;
-    }
-  };
-
   // Load conversations when screen comes into focus
   useFocusEffect(
     useCallback(() => {
@@ -688,10 +664,10 @@ const ChatListScreen = ({ navigation }) => {
         setLoading(true);
       }
 
-      // ✅ Single token check - use mock for guest/demo
-      if (!token) {
-        console.log('No token - guest/demo mode');
-        console.log('No token found, loading mock data for testing');
+      // ✅ Use phone_number for auth (app doesn't use JWT tokens)
+      const myPhone = user?.phone_number;
+      if (!myPhone || myPhone === 'guest_mode') {
+        console.log('No phone - guest/demo mode');
         const mockChats = [
           {
             id: '1',
@@ -754,10 +730,10 @@ const ChatListScreen = ({ navigation }) => {
         return;
       }
 
-      const response = await fetch(`${API_URL}/api/chat/conversations`, {
+      const response = await fetch(`${API_BASE_URL}/api/chat/conversations`, {
         method: 'GET',
         headers: {
-          'Authorization': `Bearer ${token}`,
+          'X-Phone-Number': myPhone,
           'Content-Type': 'application/json',
         },
       });
@@ -970,10 +946,6 @@ const ChatListScreen = ({ navigation }) => {
             <Text style={styles.reloadButtonText}>Try Again</Text>
           </TouchableOpacity>
         </View>
-        <BottomNavigation 
-          activeTab={activeBottomTab}
-          onNavigate={handleBottomNavigation}
-        />
       </SafeAreaView>
     );
   }
@@ -1049,12 +1021,6 @@ const ChatListScreen = ({ navigation }) => {
           }
         />
       )}
-
-      {/* Reusable Bottom Navigation Component */}
-      <BottomNavigation 
-        activeTab={activeBottomTab}
-        onNavigate={handleBottomNavigation}
-      />
     </SafeAreaView>
   );
 };

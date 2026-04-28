@@ -403,13 +403,8 @@ const skipToHome = async () => {
         selectedCountry={selectedCountry}
       />
       
-      {/* reCAPTCHA container for web */}
-        {Platform.OS === 'web' && (
-          <div id="recaptcha-container" style={{ display: 'none' }}></div>
-        )}
       </SafeAreaView>
 
-      
     </View>
   );
 }

@@ -151,6 +151,22 @@ class RideBooking(Base):
     seats_booked = Column(Integer, nullable=False)
     total_amount = Column(Float, nullable=False)
 
+    # Rider original pickup / drop coordinates
+    pickup_lat = Column(Float, nullable=True)
+    pickup_lon = Column(Float, nullable=True)
+    drop_lat = Column(Float, nullable=True)
+    drop_lon = Column(Float, nullable=True)
+
+    # Intersection points on driver's route
+    intersection_pickup_lat = Column(Float, nullable=True)
+    intersection_pickup_lon = Column(Float, nullable=True)
+    intersection_drop_lat = Column(Float, nullable=True)
+    intersection_drop_lon = Column(Float, nullable=True)
+
+    # Walk distances in meters
+    pickup_walk_distance_m = Column(Integer, nullable=True)
+    drop_walk_distance_m = Column(Integer, nullable=True)
+
     status = Column(String(20), default="pending")
     # pending | accepted | rejected | cancelled | completed
 
@@ -697,3 +713,35 @@ class LiveLocation(Base):
     lng = Column(Float, nullable=False)
 
     updated_at = Column(DateTime, default=datetime.utcnow)
+
+
+# ================== CHAT TABLES ==================
+
+class Conversation(Base):
+    __tablename__ = "conversations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    participant_1_phone = Column(String(20), index=True, nullable=False)
+    participant_2_phone = Column(String(20), index=True, nullable=False)
+    ride_id = Column(Integer, ForeignKey("rides.id"), nullable=True)
+
+    last_message = Column(Text, nullable=True)
+    last_message_time = Column(DateTime(timezone=True), nullable=True)
+    last_message_type = Column(String(20), default="text")
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class ChatMessage(Base):
+    __tablename__ = "chat_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    conversation_id = Column(Integer, ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False, index=True)
+    sender_phone = Column(String(20), index=True, nullable=False)
+
+    text = Column(Text, nullable=False)
+    type = Column(String(20), default="text")   # text | voice
+    file_url = Column(String(500), nullable=True)
+    status = Column(String(20), default="sent") # sent | delivered | seen
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

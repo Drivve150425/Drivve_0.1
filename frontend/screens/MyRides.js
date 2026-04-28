@@ -96,8 +96,19 @@ export default function MyRides({ route, navigation }) {
 
     try {
       const res = await axios.get(`${API_BASE_URL}/my-rides/${phoneNumber}`);
+      // For requested rides, join with Ride to get actual ride details
+      // Note: Backend now returns properly constructed dictionaries
+      // but we add defensive fallbacks in case some fields are missing
+      const requestedFormated = (res.data.requested_rides || []).map((req) => ({
+        ...req,
+        // Ensure these fields exist for backward compatibility
+        origin: req.origin || req.ride?.origin || null,
+        destination: req.destination || req.ride?.destination || null,
+        departure_time: req.departure_time || req.ride?.departure_time || null,
+        driver_name: req.driver_name || req.ride?.driver_name || null,
+      }));
       setPostedRides(Array.isArray(res.data.posted_rides) ? res.data.posted_rides : []);
-      setRequestedRides(Array.isArray(res.data.requested_rides) ? res.data.requested_rides : []);
+      setRequestedRides(requestedFormated);
     } catch (error) {
       console.log("Error fetching rides:", error);
       Alert.alert("Error", "Could not load your rides.");

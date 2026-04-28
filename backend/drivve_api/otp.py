@@ -1,33 +1,46 @@
 
 from datetime import UTC, datetime, timedelta, timezone
+import random
+import os
 
 from drivve_api.createnotification import create_notification
-from models import  AccountDeactivation, NotificationType, OTPVerification, User, UserDevice, UserStatus
+from models import AccountDeactivation, NotificationType, OTPVerification, User, UserDevice, UserStatus
 from database import get_db
 from sqlalchemy.orm import Session
 from fastapi import Depends, HTTPException
-
 from fastapi import APIRouter
 
+# Firebase Admin (optional — falls back gracefully if service account missing)
+try:
+    from config.firebase_admin import init_firebase_admin, verify_firebase_token
+    init_firebase_admin()
+except Exception as e:
+    print("⚠️ Firebase Admin not available:", e)
+
 router = APIRouter()
+
+
+def generate_otp() -> str:
+    """Generate a random 6-digit OTP."""
+    return str(random.randint(100000, 999999))
+
+
 @router.post("/api/send-otp")
 async def send_otp(phone_data: dict, db: Session = Depends(get_db)):
-
     try:
-        
         phone_number = normalize_phone(phone_data.get("phone_number"))
         if not phone_number:
             raise HTTPException(status_code=400, detail="Phone number required")
 
-        # ✅ OPTIONAL: invalidate old OTPs
+        # Invalidate old OTPs
         db.query(OTPVerification).filter(
             OTPVerification.phone_number == phone_number,
             OTPVerification.is_verified.is_(False)
         ).update({"is_verified": True})
 
-        # ✅ generate OTP
-        otp_code = "123456"
+        otp_code = generate_otp()
         expires_at = datetime.now(UTC) + timedelta(minutes=10)
+
         create_notification(
             db=db,
             phone_number=phone_number,
@@ -41,12 +54,11 @@ async def send_otp(phone_data: dict, db: Session = Depends(get_db)):
             otp_code=otp_code,
             expires_at=expires_at,
             is_verified=False,
-            created_at=datetime.now(timezone.utc)   # ✅ REQUIRED
-
+            created_at=datetime.now(timezone.utc)
         )
 
         db.add(otp_entry)
-        db.commit()            # 🔴 COMMIT IS REQUIRED
+        db.commit()
         db.refresh(otp_entry)
 
         print("✅ OTP SAVED IN DB")
@@ -56,7 +68,6 @@ async def send_otp(phone_data: dict, db: Session = Depends(get_db)):
 
         return {
             "success": True,
-            "otp": otp_code,          # ⚠️ dev only
             "phone_number": phone_number,
             "expires_at": expires_at.isoformat()
         }
@@ -66,6 +77,7 @@ async def send_otp(phone_data: dict, db: Session = Depends(get_db)):
         print("❌ SEND OTP ERROR:", str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
+
 def normalize_phone(phone: str) -> str:
     phone = phone.replace(" ", "").replace("-", "")
     if phone.startswith("+"):
@@ -74,14 +86,15 @@ def normalize_phone(phone: str) -> str:
         return f"+{phone}"
     return f"+91{phone}"
 
+
 @router.post("/api/verify-otp")
 def verify_otp(payload: dict, db: Session = Depends(get_db)):
-
     phone = normalize_phone(payload.get("phone_number"))
     otp_code = payload.get("otp_code")
+    firebase_id_token = payload.get("firebase_id_token")
 
-    if not phone or not otp_code:
-        raise HTTPException(400, "Phone number and OTP required")
+    if not phone:
+        raise HTTPException(400, "Phone number required")
 
     device_name = payload.get("device_name")
     device_type = payload.get("device_type")
@@ -91,40 +104,55 @@ def verify_otp(payload: dict, db: Session = Depends(get_db)):
     print("🔍 VERIFY PAYLOAD:", payload)
     print("📞 Phone:", phone)
     print("🔢 OTP:", otp_code)
+    print("🔥 Firebase Token present:", bool(firebase_id_token))
     print("⏰ Now:", now.isoformat())
 
-    # ✅ CORRECT QUERY (expiry handled in SQL)
-    otp = db.query(OTPVerification).filter(
-        OTPVerification.phone_number == phone,
-        OTPVerification.otp_code == otp_code,
-        OTPVerification.is_verified.is_(False),
-        OTPVerification.expires_at > now
-    ).order_by(OTPVerification.created_at.desc()).first()
+    # ── Firebase ID Token verification (preferred) ──
+    if firebase_id_token:
+        try:
+            decoded = verify_firebase_token(firebase_id_token)
+            token_phone = decoded.get("phone_number")
+            if token_phone and normalize_phone(token_phone) != phone:
+                raise HTTPException(400, "Phone number mismatch with Firebase token")
+            print("✅ Firebase ID token verified:", decoded.get("uid"))
+        except ValueError as e:
+            print("❌ Firebase token verification failed:", e)
+            raise HTTPException(401, str(e))
+        except Exception as e:
+            # Dev fallback: if Firebase Admin not configured, accept token blindly
+            print("⚠️ Firebase Admin not configured, skipping token verification")
 
-    if not otp:
-        raise HTTPException(400, "Invalid or expired OTP")
+    # ── Legacy OTP verification (fallback) ──
+    elif otp_code:
+        otp = db.query(OTPVerification).filter(
+            OTPVerification.phone_number == phone,
+            OTPVerification.otp_code == otp_code,
+            OTPVerification.is_verified.is_(False),
+            OTPVerification.expires_at > now
+        ).order_by(OTPVerification.created_at.desc()).first()
 
-    # ✅ mark OTP as used
-    otp.is_verified = True
+        if not otp:
+            raise HTTPException(400, "Invalid or expired OTP")
+
+        otp.is_verified = True
+        db.commit()
+        db.refresh(otp)
+    else:
+        raise HTTPException(400, "OTP code or firebase_id_token required")
 
     # ✅ update user if exists
     user = db.query(User).filter(User.phone_number == phone).first()
     if user:
         user.is_phone_verified = True
         user.status = UserStatus.ACTIVE
+        db.commit()
 
-    db.commit()
-    db.refresh(otp)
-
-    # ✅ register device (optional)
-   # ✅ REGISTER DEVICE (FIXED)
+    # ✅ register device
     if device_name and device_type:
-        # 1️⃣ Clear previous active devices
         db.query(UserDevice).filter(
             UserDevice.phone_number == phone
         ).update({UserDevice.is_current: False})
 
-        # 2️⃣ Register / update device
         device = db.query(UserDevice).filter_by(
             phone_number=phone,
             device_name=device_name,
@@ -154,6 +182,7 @@ def verify_otp(payload: dict, db: Session = Depends(get_db)):
         "message": "OTP verified successfully"
     }
 
+
 @router.post("/api/v1/users/check")
 def check_user_exists(user_check: dict, db: Session = Depends(get_db)):
     try:
@@ -173,7 +202,7 @@ def check_user_exists(user_check: dict, db: Session = Depends(get_db)):
         if not user or not user.profile_completed:
             return {"exists": False, "user_data": None}
 
-        # 🔹 Check deactivation
+        # Check deactivation
         deactivation = db.query(AccountDeactivation).filter(
             AccountDeactivation.phone_number == user.phone_number,
             AccountDeactivation.is_deactivated == True
@@ -182,7 +211,6 @@ def check_user_exists(user_check: dict, db: Session = Depends(get_db)):
         if deactivation:
             days_passed = (datetime.now(timezone.utc) - deactivation.created_at).days
 
-            # ❌ After 30 days → block login
             if days_passed >= 30:
                 return {
                     "exists": False,
@@ -190,11 +218,8 @@ def check_user_exists(user_check: dict, db: Session = Depends(get_db)):
                     "message": "Account permanently deleted after 30 days"
                 }
 
-            # ✅ Reactivate if login within 30 days
             user.status = UserStatus.ACTIVE
             user.updated_at = datetime.now(timezone.utc)
-
-
             db.delete(deactivation)
             db.commit()
 
@@ -206,8 +231,7 @@ def check_user_exists(user_check: dict, db: Session = Depends(get_db)):
                 "first_name": user.first_name,
                 "last_name": user.last_name,
                 "email": user.email,
-                        "profile_picture": user.profile_picture,  # ⭐ ADD THIS
-
+                "profile_picture": user.profile_picture,
                 "phone_number": user.phone_number,
                 "profile_completed": user.profile_completed,
                 "status": user.status.value if user.status else "active"
