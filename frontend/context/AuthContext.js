@@ -6,6 +6,56 @@ const AuthContext = createContext();
 // 30 days in milliseconds
 const SESSION_EXPIRY_MS = 30 * 24 * 60 * 60 * 1000;
 
+// ===== In-memory fallback store =====
+// Used when AsyncStorage native module is null (e.g. unlinked dev builds)
+const memoryStore = new Map();
+
+let asyncStorageAvailable = true;
+
+async function safeAsyncGetItem(key) {
+  try {
+    if (!asyncStorageAvailable) throw new Error('AsyncStorage disabled');
+    return await AsyncStorage.getItem(key);
+  } catch (e) {
+    asyncStorageAvailable = false;
+    console.warn('⚠️ AsyncStorage getItem failed, using memory fallback');
+    return memoryStore.get(key) || null;
+  }
+}
+
+async function safeAsyncSetItem(key, value) {
+  try {
+    if (!asyncStorageAvailable) throw new Error('AsyncStorage disabled');
+    return await AsyncStorage.setItem(key, value);
+  } catch (e) {
+    asyncStorageAvailable = false;
+    console.warn('⚠️ AsyncStorage setItem failed, using memory fallback');
+    memoryStore.set(key, value);
+  }
+}
+
+async function safeAsyncRemoveItem(key) {
+  try {
+    if (!asyncStorageAvailable) throw new Error('AsyncStorage disabled');
+    return await AsyncStorage.removeItem(key);
+  } catch (e) {
+    asyncStorageAvailable = false;
+    console.warn('⚠️ AsyncStorage removeItem failed, using memory fallback');
+    memoryStore.delete(key);
+  }
+}
+
+async function safeAsyncMultiRemove(keys) {
+  try {
+    if (!asyncStorageAvailable) throw new Error('AsyncStorage disabled');
+    return await AsyncStorage.multiRemove(keys);
+  } catch (e) {
+    asyncStorageAvailable = false;
+    console.warn('⚠️ AsyncStorage multiRemove failed, using memory fallback');
+    keys.forEach(k => memoryStore.delete(k));
+  }
+}
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -20,7 +70,7 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const loadUser = async () => {
       try {
-        const storedSession = await AsyncStorage.getItem("user");
+        const storedSession = await safeAsyncGetItem("user");
         if (storedSession) {
           const sessionData = JSON.parse(storedSession);
           console.log("🔍 Loaded session:", sessionData);
@@ -36,7 +86,7 @@ export const AuthProvider = ({ children }) => {
             await updateLastUsed();
           } else {
             console.log("❌ Session expired, clearing");
-            await AsyncStorage.removeItem("user");
+            await safeAsyncRemoveItem("user");
             setIsAuthenticated(false);
           }
         }
@@ -53,11 +103,11 @@ export const AuthProvider = ({ children }) => {
   // Update lastUsed timestamp (called on app start & optionally elsewhere)
   const updateLastUsed = async () => {
     try {
-      const storedSession = await AsyncStorage.getItem("user");
+      const storedSession = await safeAsyncGetItem("user");
       if (storedSession) {
         const sessionData = JSON.parse(storedSession);
         sessionData.lastUsed = Date.now();
-        await AsyncStorage.setItem("user", JSON.stringify(sessionData));
+        await safeAsyncSetItem("user", JSON.stringify(sessionData));
         console.log("📅 Updated lastUsed:", new Date(sessionData.lastUsed).toLocaleDateString());
       }
     } catch (error) {
@@ -72,12 +122,15 @@ export const AuthProvider = ({ children }) => {
         userData,
         lastUsed: Date.now()
       };
-      await AsyncStorage.setItem("user", JSON.stringify(sessionData));
+      await safeAsyncSetItem("user", JSON.stringify(sessionData));
       setUser(userData);
       setIsAuthenticated(true);
       console.log("🔐 Login session created");
     } catch (error) {
       console.log("Login store error:", error);
+      // Even if storage fails, still set user state so UI doesn't hang
+      setUser(userData);
+      setIsAuthenticated(true);
     }
   };
 
@@ -91,25 +144,37 @@ export const AuthProvider = ({ children }) => {
         isGuest: true,
         createdAt: Date.now()
       };
-      await AsyncStorage.setItem('guestData', JSON.stringify(guestData));
+      await safeAsyncSetItem('guestData', JSON.stringify(guestData));
       setUser(guestData);
       setIsAuthenticated(true);
       console.log('👤 Guest mode activated + authenticated');
     } catch (error) {
       console.error('Guest login error:', error);
-      throw error; // Re-throw for caller to handle
+      // Still allow guest login even if storage fails
+      const guestData = {
+        id: 'guest_' + Date.now(),
+        first_name: 'Guest',
+        phone_number: 'guest_mode',
+        isGuest: true,
+        createdAt: Date.now()
+      };
+      setUser(guestData);
+      setIsAuthenticated(true);
     }
   };
 
   // 🚪 Logout - clear everything + guest
   const logout = async () => {
     try {
-      await AsyncStorage.multiRemove(['user', 'guestData']);
+      await safeAsyncMultiRemove(['user', 'guestData']);
       setUser(null);
       setIsAuthenticated(false);
       console.log('🚪 All sessions cleared');
     } catch (error) {
       console.log('Logout error:', error);
+      // Ensure state is cleared even if storage fails
+      setUser(null);
+      setIsAuthenticated(false);
     }
   };
 

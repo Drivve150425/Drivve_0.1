@@ -30,9 +30,16 @@ if (Platform.OS === 'web') {
     });
     console.log('✅ Firebase Auth initialized with AsyncStorage persistence');
   } catch (error) {
-    console.log('⚠️ Firebase Auth already initialized');
-    const { getAuth } = require('firebase/auth');
-    auth = getAuth(app);
+    console.log('⚠️ Firebase Auth persistence setup failed, falling back to default auth:', error.message);
+    try {
+      const { getAuth } = require('firebase/auth');
+      auth = getAuth(app);
+      console.log('✅ Firebase Auth initialized with default persistence');
+    } catch (fallbackError) {
+      console.log('❌ Firebase Auth fallback also failed:', fallbackError.message);
+      // Last resort: create a minimal auth-like object to prevent crashes
+      auth = {};
+    }
   }
 }
 
