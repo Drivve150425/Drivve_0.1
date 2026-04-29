@@ -32,7 +32,7 @@ const buildImageUrl = (url) => {
 const getInitials = (name) => {
   if (!name) return '?';
   const parts = name.trim().split(' ').filter(Boolean);
-  if (parts.length > 1) return ${parts[0][0]}${parts[1][0]}.toUpperCase();
+if (parts.length > 1) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
   return parts[0].slice(0, 2).toUpperCase();
 };
 export default function MyRides({ route, navigation }) {
