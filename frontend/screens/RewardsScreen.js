@@ -8,16 +8,18 @@ import {
   StatusBar,
   KeyboardAvoidingView,
   Platform,
-  Alert,
   RefreshControl,
+  ActivityIndicator
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import LottieView from "lottie-react-native";
 
 import DatabaseService from "../services/rewards_ds";
 import { Colors, Typography } from "../constants/Colors";
 import { useAuth } from "../context/AuthContext";
+import CustomAlert from '../components/CustomAlert';
 
 export default function RewardsScreen({ route, navigation }) {
   const { user } = useAuth();
@@ -26,15 +28,58 @@ export default function RewardsScreen({ route, navigation }) {
   const [data, setData] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [isCrediting, setIsCrediting] = useState(false);
+  const [loading, setLoading] = useState(true);
+  
+  // Custom Alert states
+  const [alertVisible, setAlertVisible] = useState(false);
+  const [alertConfig, setAlertConfig] = useState({
+    title: "",
+    message: "",
+    icon: "check-circle",
+    iconColor: "#10B981",
+    buttons: []
+  });
+
+  const showCustomAlert = (title, message, type = 'success') => {
+    let icon = "check-circle";
+    let iconColor = "#10B981";
+    
+    if (type === 'error') {
+      icon = "error";
+      iconColor = "#EF4444";
+    } else if (type === 'warning') {
+      icon = "warning";
+      iconColor = "#F59E0B";
+    } else if (type === 'info') {
+      icon = "info";
+      iconColor = Colors.primary;
+    }
+    
+    setAlertConfig({
+      title,
+      message,
+      icon,
+      iconColor,
+      buttons: [{ text: 'OK', onPress: () => setAlertVisible(false) }]
+    });
+    setAlertVisible(true);
+  };
 
   const loadRewards = useCallback(async () => {
-    if (!phoneNumber) return;
+    if (!phoneNumber) {
+      setLoading(false);
+      return;
+    }
+    
     try {
+      setLoading(true);
       const res = await DatabaseService.getRewards(phoneNumber);
       setData(res);
     } catch (error) {
       console.error("Error loading rewards:", error);
-      Alert.alert("Error", "Failed to load rewards");
+      showCustomAlert("Error", "Failed to load rewards", "error");
+    } finally {
+      setLoading(false);
     }
   }, [phoneNumber]);
 
@@ -56,13 +101,16 @@ export default function RewardsScreen({ route, navigation }) {
         // Reload to show updated credited rewards
         await loadRewards();
         // Show success message
-        Alert.alert(
+        const totalCoinsEarned = unlockedRewards.reduce((sum, r) => sum + r.reward_points, 0);
+        showCustomAlert(
           "Rewards Credited! 🎉",
-          `You've earned ${unlockedRewards.reduce((sum, r) => sum + r.reward_points, 0)} D-Coins!`
+          `You've earned ${totalCoinsEarned} D-Coins!`,
+          "success"
         );
       }
     } catch (error) {
       console.error("Error auto-crediting rewards:", error);
+      showCustomAlert("Error", "Failed to credit rewards", "error");
     } finally {
       setIsCrediting(false);
     }
@@ -86,6 +134,23 @@ export default function RewardsScreen({ route, navigation }) {
     navigation.goBack();
   };
 
+  // Show loader while fetching data
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
+        <View style={styles.loaderContainer}>
+          <LottieView
+            source={require("../assets/loading.json")}
+            autoPlay
+            loop
+            style={{ width: 300, height: 300 }}
+          />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   if (!data) return null;
 
   const totalRewards = data.rewards
@@ -106,12 +171,10 @@ export default function RewardsScreen({ route, navigation }) {
             <MaterialIcons name="arrow-back-ios" size={28} color={Colors.secondary} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Rewards</Text>
-          {/* <TouchableOpacity style={styles.modernBackButton} onPress={onRefresh}>
-            <MaterialIcons name="refresh" size={24} color={Colors.secondary} />
-          </TouchableOpacity> */}
+          <View style={styles.headerSpacer} />
         </View>
 
-        {/* Total Rewards Card */}
+        {/* Total Rewards Card - Optional, commented out but kept for reference */}
         {/* <LinearGradient
           colors={["#F97316", "#FB923C"]}
           style={styles.totalCard}
@@ -141,11 +204,6 @@ export default function RewardsScreen({ route, navigation }) {
               <View key={reward.id} style={styles.card}>
                 <View style={styles.cardHeader}>
                   <View style={styles.titleRow}>
-                    {/* <MaterialIcons 
-                      name={isCredited ? "check-circle" : (unlocked ? "stars" : "lock-outline")} 
-                      size={24} 
-                      color={isCredited ? "#16A34A" : (unlocked ? "#F97316" : "#9CA3AF")} 
-                    /> */}
                     <Text style={styles.title}>{reward.title}</Text>
                   </View>
 
@@ -195,6 +253,17 @@ export default function RewardsScreen({ route, navigation }) {
           })}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Custom Alert */}
+      <CustomAlert
+        visible={alertVisible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        icon={alertConfig.icon}
+        iconColor={alertConfig.iconColor}
+        buttons={alertConfig.buttons}
+        onBackdropPress={() => setAlertVisible(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -202,11 +271,20 @@ export default function RewardsScreen({ route, navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F9FAFB",
+    backgroundColor: Colors.white,
   },
   keyboardAvoidingView: {
     flex: 1,
   },
+  
+  // Loader styles
+  loaderContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: Colors.white,
+  },
+  
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -229,6 +307,9 @@ const styles = StyleSheet.create({
     color: Colors.primary,
     flex: 1,
     textAlign: 'center',
+  },
+  headerSpacer: {
+    width: 44,
   },
   totalCard: {
     margin: 20,
@@ -265,6 +346,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#EEF2F7",
     elevation: 3,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
   },
   cardHeader: {
     flexDirection: "row",

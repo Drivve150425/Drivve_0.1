@@ -15,7 +15,6 @@ import {
   TouchableOpacity,
   StatusBar,
   Image,
-  Alert,
   Animated,
   Platform,
   KeyboardAvoidingView,
@@ -25,6 +24,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import DatabaseService from "../services/myvehicle_ds";
 import { useAuth } from "../context/AuthContext";
+import CustomAlert from '../components/CustomAlert';
 
 import { API_BASE_URL } from "../config/config_ip";
 
@@ -36,9 +36,61 @@ export default function MyVehicleScreen({ navigation, route }) {
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
+  
+  // Custom Alert states
+  const [alertVisible, setAlertVisible] = useState(false);
+  const [alertConfig, setAlertConfig] = useState({
+    title: "",
+    message: "",
+    icon: "check-circle",
+    iconColor: "#10B981",
+    buttons: []
+  });
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
+
+  const showCustomAlert = (title, message, type = 'success') => {
+    let icon = "check-circle";
+    let iconColor = "#10B981";
+    
+    if (type === 'error') {
+      icon = "error";
+      iconColor = "#EF4444";
+    } else if (type === 'warning') {
+      icon = "warning";
+      iconColor = "#F59E0B";
+    } else if (type === 'info') {
+      icon = "info";
+      iconColor = Colors.primary;
+    }
+    
+    setAlertConfig({
+      title,
+      message,
+      icon,
+      iconColor,
+      buttons: [{ text: 'OK', onPress: () => setAlertVisible(false) }]
+    });
+    setAlertVisible(true);
+  };
+
+  const showConfirmationAlert = (title, message, onConfirm) => {
+    setAlertConfig({
+      title,
+      message,
+      icon: "warning",
+      iconColor: "#F59E0B",
+      buttons: [
+        { text: 'Cancel', onPress: () => setAlertVisible(false), style: 'cancel' },
+        { text: 'Delete', onPress: () => {
+          setAlertVisible(false);
+          onConfirm();
+        }, style: 'destructive' }
+      ]
+    });
+    setAlertVisible(true);
+  };
 
   const handleBack = () => navigation.goBack();
 
@@ -74,38 +126,31 @@ export default function MyVehicleScreen({ navigation, route }) {
       setVehicles(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error("Load vehicles error", e);
-      Alert.alert("Error", "Failed to load vehicles");
+      showCustomAlert("Error", "Failed to load vehicles", "error");
     } finally {
       setLoading(false);
     }
   };
 
   const confirmDelete = (vehicle) => {
-    Alert.alert(
+    showConfirmationAlert(
       "Delete Vehicle",
       `Delete ${vehicle.make} ${vehicle.model}?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            setDeleting(true);
-            setDeletingId(vehicle.id);
-            try {
-              await DatabaseService.deleteVehicle(vehicle.id);
-              Alert.alert("Success", "Vehicle deleted successfully");
-              await loadVehicles();
-            } catch (error) {
-              console.error("Delete error:", error);
-              Alert.alert("Error", "Failed to delete vehicle");
-            } finally {
-              setDeleting(false);
-              setDeletingId(null);
-            }
-          },
-        },
-      ]
+      async () => {
+        setDeleting(true);
+        setDeletingId(vehicle.id);
+        try {
+          await DatabaseService.deleteVehicle(vehicle.id);
+          showCustomAlert("Success", "Vehicle deleted successfully", "success");
+          await loadVehicles();
+        } catch (error) {
+          console.error("Delete error:", error);
+          showCustomAlert("Error", "Failed to delete vehicle", "error");
+        } finally {
+          setDeleting(false);
+          setDeletingId(null);
+        }
+      }
     );
   };
 
@@ -116,7 +161,7 @@ export default function MyVehicleScreen({ navigation, route }) {
       {/* IMAGE */}
       <Image
         source={{
-          uri: v.photo_url
+          uri: v.photo_url || "https://via.placeholder.com/400x200?text=No+Image"
         }}
         style={styles.cardImage}
       />
@@ -182,6 +227,23 @@ export default function MyVehicleScreen({ navigation, route }) {
     </View>
   );
 
+  // Show loader while fetching data
+  if (loading && vehicles.length === 0) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
+        <View style={styles.loaderContainer}>
+          <LottieView
+            source={require("../assets/loading.json")}
+            autoPlay
+            loop
+            style={{ width: 300, height: 300 }}
+          />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
@@ -193,13 +255,13 @@ export default function MyVehicleScreen({ navigation, route }) {
 
         {/* HEADER */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={handleBack}>
+          <TouchableOpacity style={styles.modernBackButton} onPress={handleBack}>
             <MaterialIcons name="arrow-back-ios" size={24} color={Colors.secondary} />
           </TouchableOpacity>
 
           <Text style={styles.headerTitle}>Vehicle details</Text>
 
-          <View style={{ width: 24 }} />
+          <View style={styles.headerSpacer} />
         </View>
 
         {/* LIST */}
@@ -214,16 +276,7 @@ export default function MyVehicleScreen({ navigation, route }) {
             transform: [{ translateY: slideAnim }],
           }}
         >
-          {loading ? (
-            <View style={styles.loaderContainer}>
-              <LottieView
-                source={require("../assets/loading.json")}
-                autoPlay
-                loop
-                style={{ width: 300, height: 300 }}
-              />
-            </View>
-          ) : vehicles.length === 0 ? (
+          {vehicles.length === 0 ? (
             <View style={styles.center}>
               <MaterialIcons name="directions-car" size={60} color="#D1D5DB" />
               <Text style={styles.emptyTitle}>No Vehicles Found</Text>
@@ -250,6 +303,17 @@ export default function MyVehicleScreen({ navigation, route }) {
         )}
 
       </KeyboardAvoidingView>
+
+      {/* Custom Alert */}
+      <CustomAlert
+        visible={alertVisible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        icon={alertConfig.icon}
+        iconColor={alertConfig.iconColor}
+        buttons={alertConfig.buttons}
+        onBackdropPress={() => setAlertVisible(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -301,7 +365,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    minHeight: 700,
+    backgroundColor: Colors.white,
   },
   
   loaderText: {
@@ -328,6 +392,7 @@ const styles = StyleSheet.create({
   cardImage: {
     width: "100%",
     height: 150,
+    backgroundColor: "#F3F4F6",
   },
 
   deleteIcon: {
@@ -426,6 +491,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     marginTop: 0,
+    paddingVertical: 60,
   },
 
   emptyTitle: {

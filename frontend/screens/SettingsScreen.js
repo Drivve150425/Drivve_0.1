@@ -6,11 +6,12 @@ import {
   TouchableOpacity,
   ScrollView,
   StatusBar,
-   KeyboardAvoidingView,
+  KeyboardAvoidingView,
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import LottieView from "lottie-react-native";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors, Typography } from '../constants/Colors';
 import { useAuth } from '../context/AuthContext';
@@ -19,6 +20,7 @@ export default function SettingsMainScreen({ navigation, route }) {
   
   const { user } = useAuth();
   const phoneNumber = user?.phone_number;
+  const [loading, setLoading] = useState(true);
 
   /* ================= MENU ================= */
   const menuItems = [
@@ -56,82 +58,116 @@ export default function SettingsMainScreen({ navigation, route }) {
     },
   ];
 
+  /* ================= LOAD CHECK ================= */
+  useEffect(() => {
+    // Simulate a small delay to check if everything is ready
+    const timer = setTimeout(() => {
+      setLoading(false);
+    }, 500);
+    
+    return () => clearTimeout(timer);
+  }, []);
+
   /* ================= GUARD ================= */
-  if (!phoneNumber) {
+  // Show loader while checking
+  if (loading) {
     return (
       <SafeAreaView style={styles.container}>
-        <Text style={{ textAlign: 'center', marginTop: 40 }}>
-          Loading settings…
-        </Text>
+        <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
+        <View style={styles.loaderContainer}>
+          <LottieView
+            source={require("../assets/loading.json")}
+            autoPlay
+            loop
+            style={{ width: 300, height: 300 }}
+          />
+        </View>
       </SafeAreaView>
     );
   }
- const handleBack = () => {
+
+  if (!phoneNumber) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
+        <View style={styles.errorContainer}>
+          <Ionicons name="alert-circle-outline" size={60} color={Colors.orange1} />
+          <Text style={styles.errorTitle}>Unable to Load Settings</Text>
+          <Text style={styles.errorSubtitle}>
+            Please ensure you are logged in
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+  
+  const handleBack = () => {
     navigation.goBack();
   };
+  
   return (
-     <SafeAreaView style={styles.container}>
-                         <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
-                         
-                         <KeyboardAvoidingView
-                           style={styles.keyboardAvoidingView}
-                           behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
-                         >
-                           {/* Header */}
-                           <View style={styles.header}>
-                             <TouchableOpacity style={styles.modernBackButton} onPress={handleBack}>
-                               <MaterialIcons name="arrow-back-ios" size={28} color={Colors.secondary} />
-                             </TouchableOpacity>
-                             <Text style={styles.headerTitle}>Settings</Text>
-                             <View style={styles.headerSpacer} />
-                           </View>
-
-      {/* ================= CONTENT ================= */}
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
+    <SafeAreaView style={styles.container}>
+      <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
+      
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoidingView}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
       >
-        <View style={styles.menuList}>
-          {menuItems.map((item, index) => (
-            <TouchableOpacity
-              key={item.id}
-              style={[
-                styles.menuItem,
-                index === menuItems.length - 1 && styles.lastItem,
-              ]}
-              activeOpacity={0.85}
-              onPress={() =>
-                navigation.navigate(item.screen, {
-                  phone_number: phoneNumber, // ✅ ALWAYS PASSED
-                })
-              }
-            >
-              <View
-                style={[
-                  styles.menuIcon,
-                  { backgroundColor: `${item.color}18` },
-                ]}
-              >
-                <Ionicons name={item.icon} size={24} color={item.color} />
-              </View>
-
-              <View style={styles.menuText}>
-                <Text style={styles.menuTitle}>{item.title}</Text>
-                <Text style={styles.menuDescription}>
-                  {item.description}
-                </Text>
-              </View>
-
-              <MaterialIcons
-                name="chevron-right"
-                size={26}
-                color={Colors.orange1}
-                style={{ opacity: 0.4 }}
-              />
-            </TouchableOpacity>
-          ))}
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.modernBackButton} onPress={handleBack}>
+            <MaterialIcons name="arrow-back-ios" size={28} color={Colors.secondary} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Settings</Text>
+          <View style={styles.headerSpacer} />
         </View>
-      </ScrollView>
+
+        {/* ================= CONTENT ================= */}
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+        >
+          <View style={styles.menuList}>
+            {menuItems.map((item, index) => (
+              <TouchableOpacity
+                key={item.id}
+                style={[
+                  styles.menuItem,
+                  index === menuItems.length - 1 && styles.lastItem,
+                ]}
+                activeOpacity={0.85}
+                onPress={() =>
+                  navigation.navigate(item.screen, {
+                    phone_number: phoneNumber, // ✅ ALWAYS PASSED
+                  })
+                }
+              >
+                <View
+                  style={[
+                    styles.menuIcon,
+                    { backgroundColor: `${item.color}18` },
+                  ]}
+                >
+                  <Ionicons name={item.icon} size={24} color={item.color} />
+                </View>
+
+                <View style={styles.menuText}>
+                  <Text style={styles.menuTitle}>{item.title}</Text>
+                  <Text style={styles.menuDescription}>
+                    {item.description}
+                  </Text>
+                </View>
+
+                <MaterialIcons
+                  name="chevron-right"
+                  size={26}
+                  color={Colors.orange1}
+                  style={{ opacity: 0.4 }}
+                />
+              </TouchableOpacity>
+            ))}
+          </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -140,37 +176,75 @@ export default function SettingsMainScreen({ navigation, route }) {
 /* ================= STYLES ================= */
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.white },
-keyboardAvoidingView: {
-     flex: 1,
-   },
-   header: {
-     flexDirection: 'row',
-     alignItems: 'center',
-     paddingHorizontal: 16,
-     paddingVertical: 12,
-     borderBottomWidth: 0.5,
-     borderBottomColor: '#F3F4F6',
-   },
-   modernBackButton: {
-     width: 44,
-     height: 44,
-     borderRadius: 22,
-     justifyContent: 'center',
-     alignItems: 'center',
-   },
-   headerTitle: {
-     ...Typography.h2,
-     fontSize: 28,
-     fontWeight: '700',
-     color: Colors.primary,
-     flex: 1,
-     textAlign: 'center',
-   },
-   headerSpacer: {
-     width: 44,
-   },
+  container: { 
+    flex: 1, 
+    backgroundColor: Colors.white 
+  },
+  
+  keyboardAvoidingView: {
+    flex: 1,
+  },
+  
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#F3F4F6',
+  },
+  
+  modernBackButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  
+  headerTitle: {
+    ...Typography.h2,
+    fontSize: 28,
+    fontWeight: '700',
+    color: Colors.primary,
+    flex: 1,
+    textAlign: 'center',
+  },
+  
+  headerSpacer: {
+    width: 44,
+  },
 
+  // Loader styles
+  loaderContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: Colors.white,
+  },
+
+  // Error styles
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 40,
+  },
+  
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: Colors.primary,
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  
+  errorSubtitle: {
+    fontSize: 14,
+    color: Colors.gray,
+    marginTop: 8,
+    textAlign: 'center',
+  },
 
   scrollContent: {
     paddingHorizontal: 16,
@@ -200,7 +274,9 @@ keyboardAvoidingView: {
     borderBottomColor: '#F3F4F6',
   },
 
-  lastItem: { borderBottomWidth: 0 },
+  lastItem: { 
+    borderBottomWidth: 0 
+  },
 
   menuIcon: {
     width: 48,
@@ -211,7 +287,9 @@ keyboardAvoidingView: {
     marginRight: 16,
   },
 
-  menuText: { flex: 1 },
+  menuText: { 
+    flex: 1 
+  },
 
   menuTitle: {
     fontSize: 16.5,

@@ -15,6 +15,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Text as RNText,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
@@ -38,30 +39,34 @@ import ProfilePictureModal from '../components/ProfilePictureModal';
 import AvatarPicker from '../components/AvatarPicker';
 import { useAuth } from "../context/AuthContext";
 import { SvgCssUri } from 'react-native-svg/css';
+import LottieView from "lottie-react-native";
+
 const { width, height } = Dimensions.get("window");
-
-
 
 export default function MyProfileScreen({ navigation, route })  {
   const scrollViewRef = useRef<ScrollView>(null);
   const { user, isGuest } = useAuth();
   
-
+  // Add loading state
+  const [isLoading, setIsLoading] = useState(true);
   const [isAvatar, setIsAvatar] = useState(false);
-
   const phoneFromRoute = user?.phone_number;
+
   // Animation refs
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
   const scaleAnim = useRef(new Animated.Value(0.95)).current;
+  
   // Email verification states
   const [isEmailVerified, setIsEmailVerified] = useState(false);
   const [isEmailLoading, setIsEmailLoading] = useState(false);
   const [showEmailOTPModal, setShowEmailOTPModal] = useState(false);
   const [emailVerificationSuccess, setEmailVerificationSuccess] = useState(false);
   const [emailVerificationError, setEmailVerificationError] = useState('');
+  
   const isValidEmail = (email: string) =>
-  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  
   const handleEmailVerification = async () => {
     if (!currentValue || !isValidEmail(currentValue.trim())) {
       setAlertMessage("Please enter a valid email address");
@@ -86,62 +91,63 @@ export default function MyProfileScreen({ navigation, route })  {
       setIsEmailLoading(false);
     }
   };
+  
   const handleEmailOTPVerification = async (otp: string) => {
-  if (!otp || otp.length !== 6) {
-    setEmailVerificationError("Enter valid 6-digit OTP");
-    return;
-  }
-
-  setIsEmailLoading(true);
-  setEmailVerificationError('');
-
-  try {
-    const res = await createDatabaseService.verifyEmailOTP(currentValue, otp);
-
-    if (res?.success) {
-      setIsEmailVerified(true);
-      setEmailVerificationSuccess(true);
-
-      // Save verified email
-      DatabaseService.updateUserProfile({
-        phone_number: phoneFromRoute,
-        email: currentValue.trim(),
-        email_verified: true,
-      });
-
-      setProfileData(prev => ({
-        ...prev,
-        emailID: currentValue.trim(),
-      }));
-
-      setShowEmailOTPModal(false);
-      setCenterEditModalVisible(false);
-      showProfileUpdateSuccess();
-    } else {
-      setEmailVerificationError(res?.message || "Invalid OTP");
+    if (!otp || otp.length !== 6) {
+      setEmailVerificationError("Enter valid 6-digit OTP");
+      return;
     }
-  } catch {
-    setEmailVerificationError("Verification failed");
-  } finally {
-    setIsEmailLoading(false);
-  }
-};
 
-    // Profile data
+    setIsEmailLoading(true);
+    setEmailVerificationError('');
+
+    try {
+      const res = await createDatabaseService.verifyEmailOTP(currentValue, otp);
+
+      if (res?.success) {
+        setIsEmailVerified(true);
+        setEmailVerificationSuccess(true);
+
+        // Save verified email
+        DatabaseService.updateUserProfile({
+          phone_number: phoneFromRoute,
+          email: currentValue.trim(),
+          email_verified: true,
+        });
+
+        setProfileData(prev => ({
+          ...prev,
+          emailID: currentValue.trim(),
+        }));
+
+        setShowEmailOTPModal(false);
+        setCenterEditModalVisible(false);
+        showProfileUpdateSuccess();
+      } else {
+        setEmailVerificationError(res?.message || "Invalid OTP");
+      }
+    } catch {
+      setEmailVerificationError("Verification failed");
+    } finally {
+      setIsEmailLoading(false);
+    }
+  };
+
+  // Profile data
   const [profileData, setProfileData] = useState({
-    name: "Aman Jain",
-    phone: "+91 99999 99889",
+    name: "",
+    phone: "",
     email: "",
-    joinDate: "January 2022",
-    image: "https://cdn-icons-png.flaticon.com/512/3011/3011270.png",
-    firstName: "Aman",
-    lastName: "Jain",
-    mobileNumber: "+91 99999 99889",
+    joinDate: "",
+    image: "",
+    firstName: "",
+    lastName: "",
+    mobileNumber: "",
     emailID: "",
-    gender: "Male",
-    dateOfBirth: "1995-11-03",
-    state: "Uttar Pradesh",
-    city: "Lucknow",
+    gender: "",
+    dateOfBirth: "",
+    state: "",
+    city: "",
     bio: "",
   });
 
@@ -196,13 +202,16 @@ export default function MyProfileScreen({ navigation, route })  {
 
   /* ================= FETCH PROFILE FROM DB ================= */
   useEffect(() => {
-    if (!phoneFromRoute) {
-      console.log("❌ No phone number passed to MyProfileScreen");
-      return;
-    }
+    const fetchProfile = async () => {
+      if (!phoneFromRoute) {
+        console.log("❌ No phone number passed to MyProfileScreen");
+        setIsLoading(false);
+        return;
+      }
 
-    DatabaseService.getUserProfile(phoneFromRoute)
-      .then((res) => {
+      try {
+        const res = await DatabaseService.getUserProfile(phoneFromRoute);
+        
         if (res?.success && res.user) {
           const u = res.user;
 
@@ -232,14 +241,21 @@ export default function MyProfileScreen({ navigation, route })  {
             setFormattedDOB(new Date(u.date_of_birth));
           }
         }
-      })
-      .catch((err) => {
+      } catch (err) {
         console.log("❌ Profile fetch error:", err);
-      });
+        setAlertMessage("Failed to load profile data");
+        setShowErrorAlert(true);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchProfile();
   }, [phoneFromRoute]);
 
   // Age from DOB
   const calculateAge = (dob: string) => {
+    if (!dob) return "N/A";
     const birthDate = new Date(dob);
     const today = new Date();
     let age = today.getFullYear() - birthDate.getFullYear();
@@ -255,6 +271,7 @@ export default function MyProfileScreen({ navigation, route })  {
   };
 
   const formatDateOfBirth = (dateStr: string) => {
+    if (!dateStr) return "Not set";
     const date = new Date(dateStr);
     return date.toLocaleDateString("en-US", {
       month: "short",
@@ -263,374 +280,357 @@ export default function MyProfileScreen({ navigation, route })  {
     });
   };
 
-const openEditModal = (field: string, value: string, label: string) => {
-  if (field === "mobileNumber") return;
+  const openEditModal = (field: string, value: string, label: string) => {
+    if (field === "mobileNumber") return;
 
-  // ---- SPECIAL MODALS (UNCHANGED) ----
-  if (field === "gender") {
-    setShowGenderModal(true);
-    return;
-  }
+    // ---- SPECIAL MODALS (UNCHANGED) ----
+    if (field === "gender") {
+      setShowGenderModal(true);
+      return;
+    }
 
-  if (field === "state") {
-    setShowStateModal(true);
-    return;
-  }
+    if (field === "state") {
+      setShowStateModal(true);
+      return;
+    }
 
-  if (field === "city") {
-    if (!profileData.state) {
-      setAlertMessage("Please select a state first");
+    if (field === "city") {
+      if (!profileData.state) {
+        setAlertMessage("Please select a state first");
+        setShowErrorAlert(true);
+        return;
+      }
+      setShowCityModal(true);
+      return;
+    }
+
+    if (field === "dateOfBirth") {
+      setShowDatePicker(true);
+      return;
+    }
+
+    if (field === "profileImage") {
+      setShowImagePickerAlert(true);
+      return;
+    }
+
+    // ---- CENTER MODAL ONLY FOR THESE ----
+    const centerModalFields = ["firstName", "lastName", "bio", "emailID"];
+
+    // Email editable ONLY if empty
+    if (field === "emailID" && !isEmpty(profileData.emailID)) {
+      return;
+    }
+
+    setCurrentField(field);
+    setEditLabel(label);
+    setCurrentValue(value ?? "");
+
+    if (field === "emailID") {
+      setCenterEditModalVisible(true);
+      return;
+    }
+
+    if (centerModalFields.includes(field)) {
+      setCenterEditModalVisible(true);
+    } else {
+      setEditModalVisible(true);
+    }
+  };
+
+  const isEmpty = (value?: string) => !value || value.trim() === "";
+
+  const handleSaveEdit = () => {
+    // ---------- REQUIRED FIELD VALIDATION ----------
+    if (
+      (currentField === "firstName" || currentField === "lastName") &&
+      isEmpty(currentValue)
+    ) {
+      setAlertMessage(`${editLabel} cannot be empty`);
       setShowErrorAlert(true);
       return;
     }
-    setShowCityModal(true);
-    return;
-  }
 
-  if (field === "dateOfBirth") {
-    setShowDatePicker(true);
-    return;
-  }
+    // ---------- UPDATE LOCAL STATE ----------
+    setProfileData((prev) => ({
+      ...prev,
+      [currentField]: currentValue.trim(),
+      ...(currentField === "firstName" && {
+        name: `${currentValue.trim()} ${prev.lastName}`,
+      }),
+      ...(currentField === "lastName" && {
+        name: `${prev.firstName} ${currentValue.trim()}`,
+      }),
+    }));
 
-  if (field === "profileImage") {
-    setShowImagePickerAlert(true);
-    return;
-  }
+    // ---------- BACKEND PAYLOAD ----------
+    const payload = {
+      phone_number: phoneFromRoute,
+      ...(currentField === "firstName" && { first_name: currentValue.trim() }),
+      ...(currentField === "lastName" && { last_name: currentValue.trim() }),
+      ...(currentField === "emailID" && { email: currentValue.trim() }),
+      ...(currentField === "bio" && { bio: currentValue.trim() }),
+    };
 
-  // ---- CENTER MODAL ONLY FOR THESE ----
-  const centerModalFields = ["firstName", "lastName", "bio", "emailID"];
-
-  // Email editable ONLY if empty
-  if (field === "emailID" && !isEmpty(profileData.emailID)) {
-    return;
-  }
-
-  setCurrentField(field);
-  setEditLabel(label);
-  setCurrentValue(value ?? "");
-
- if (field === "emailID") {
-  setCenterEditModalVisible(true);
-  return;
-}
-
-if (centerModalFields.includes(field)) {
-  setCenterEditModalVisible(true);
-} else {
-  setEditModalVisible(true);
-}
-
-};
-
-const isEmpty = (value?: string) => !value || value.trim() === "";
-
- const handleSaveEdit = () => {
-  // ---------- REQUIRED FIELD VALIDATION ----------
-  if (
-    (currentField === "firstName" || currentField === "lastName") &&
-    isEmpty(currentValue)
-  ) {
-    setAlertMessage(`${editLabel} cannot be empty`);
-    setShowErrorAlert(true);
-    return;
-  }
-
- 
-  // ---------- UPDATE LOCAL STATE ----------
-  setProfileData((prev) => ({
-    ...prev,
-    [currentField]: currentValue.trim(),
-    ...(currentField === "firstName" && {
-      name: `${currentValue.trim()} ${prev.lastName}`,
-    }),
-    ...(currentField === "lastName" && {
-      name: `${prev.firstName} ${currentValue.trim()}`,
-    }),
-  }));
-
-  // ---------- BACKEND PAYLOAD ----------
-  const payload = {
-    phone_number: phoneFromRoute,
-    ...(currentField === "firstName" && { first_name: currentValue.trim() }),
-    ...(currentField === "lastName" && { last_name: currentValue.trim() }),
-    ...(currentField === "emailID" && { email: currentValue.trim() }),
-    ...(currentField === "bio" && { bio: currentValue.trim() }),
-  };
-
-  DatabaseService.updateUserProfile(payload)
-    .then((res) => {
-      if (!res?.success) {
+    DatabaseService.updateUserProfile(payload)
+      .then((res) => {
+        if (!res?.success) {
+          setAlertMessage("Failed to update profile");
+          setShowErrorAlert(true);
+        } else {
+          setAlertMessage("Profile updated successfully!");
+          setShowSuccessAlert(true);
+        }
+      })
+      .catch(() => {
         setAlertMessage("Failed to update profile");
         setShowErrorAlert(true);
-      } else {
-        setAlertMessage("Profile updated successfully!");
-        setShowSuccessAlert(true);
-      }
-    })
-    .catch(() => {
-      setAlertMessage("Failed to update profile");
-      setShowErrorAlert(true);
-    });
+      });
 
-  setEditModalVisible(false);
-  
-};
+    setEditModalVisible(false);
+  };
 
   const handleCancelEdit = () => {
     setEditModalVisible(false);
   };
-const showProfileUpdateSuccess = () => {
-  setAlertMessage("Profile updated successfully!");
-  setShowSuccessAlert(true);
-};
+  
+  const showProfileUpdateSuccess = () => {
+    setAlertMessage("Profile updated successfully!");
+    setShowSuccessAlert(true);
+  };
 
-const handleGenderSelect = (gender: string) => {
-  setProfileData((prev) => ({ ...prev, gender }));
-  setShowGenderModal(false);
+  const handleGenderSelect = (gender: string) => {
+    setProfileData((prev) => ({ ...prev, gender }));
+    setShowGenderModal(false);
 
-  DatabaseService.updateUserProfile({
-    phone_number: phoneFromRoute,
-    gender,
-  })
-    .then(() => showProfileUpdateSuccess())
-    .catch(() => {
-      setAlertMessage("Failed to update profile");
-      setShowErrorAlert(true);
-    });
-
-  if (Platform.OS !== "web") {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }
-};
-
-const handleStateSelect = (state: string) => {
-  setProfileData((prev) => ({
-    ...prev,
-    state,
-    city: "",
-  }));
-  setShowStateModal(false);
-
-  DatabaseService.updateUserProfile({
-    phone_number: phoneFromRoute,
-    state,
-    city: "",
-  })
-    .then(() => showProfileUpdateSuccess())
-    .catch(() => {
-      setAlertMessage("Failed to update profile");
-      setShowErrorAlert(true);
-    });
-
-  if (Platform.OS !== "web") {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }
-};
-
-const handleCitySelect = (city: string) => {
-  setProfileData((prev) => ({ ...prev, city }));
-  setShowCityModal(false);
-
-  DatabaseService.updateUserProfile({
-    phone_number: phoneFromRoute,
-    city,
-  })
-    .then(() => showProfileUpdateSuccess())
-    .catch(() => {
-      setAlertMessage("Failed to update profile");
-      setShowErrorAlert(true);
-    });
-
-  if (Platform.OS !== "web") {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }
-};
-
-const calculateAgeFromDate = (date: Date) => {
-  const today = new Date();
-  let age = today.getFullYear() - date.getFullYear();
-  const m = today.getMonth() - date.getMonth();
-
-  if (m < 0 || (m === 0 && today.getDate() < date.getDate())) {
-    age--;
-  }
-
-  return age;
-};
-
-
-const handleDateConfirm = (date: Date) => {
-  const age = calculateAgeFromDate(date);
-
-  // ❌ BLOCK UNDER 18 (same as CreateProfileScreen)
-  if (age < 18) {
-    setAlertMessage("You must be at least 18 years old to use this app");
-    setShowErrorAlert(true);
-    return;
-  }
-
-  // ✅ Save only valid DOB
-  const formatted = date.toISOString().split("T")[0];
-
-  setProfileData((prev) => ({
-    ...prev,
-    dateOfBirth: formatted,
-  }));
-
-  DatabaseService.updateUserProfile({
-    phone_number: phoneFromRoute,
-    date_of_birth: formatted,
-  })
-    .then(() => {
-      setAlertMessage("Profile updated successfully!");
-      setShowSuccessAlert(true);
+    DatabaseService.updateUserProfile({
+      phone_number: phoneFromRoute,
+      gender,
     })
-    .catch(() => {
-      setAlertMessage("Failed to update profile");
-      setShowErrorAlert(true);
-    });
+      .then(() => showProfileUpdateSuccess())
+      .catch(() => {
+        setAlertMessage("Failed to update profile");
+        setShowErrorAlert(true);
+      });
 
-  setShowDatePicker(false);
+    if (Platform.OS !== "web") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+  };
 
-  if (Platform.OS !== "web") {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  }
-};
+  const handleStateSelect = (state: string) => {
+    setProfileData((prev) => ({
+      ...prev,
+      state,
+      city: "",
+    }));
+    setShowStateModal(false);
 
+    DatabaseService.updateUserProfile({
+      phone_number: phoneFromRoute,
+      state,
+      city: "",
+    })
+      .then(() => showProfileUpdateSuccess())
+      .catch(() => {
+        setAlertMessage("Failed to update profile");
+        setShowErrorAlert(true);
+      });
 
-const takePhoto = async () => {
-  try {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (Platform.OS !== "web") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+  };
 
-    if (status !== "granted") {
-      setAlertMessage("Please grant camera permission in your device settings");
+  const handleCitySelect = (city: string) => {
+    setProfileData((prev) => ({ ...prev, city }));
+    setShowCityModal(false);
+
+    DatabaseService.updateUserProfile({
+      phone_number: phoneFromRoute,
+      city,
+    })
+      .then(() => showProfileUpdateSuccess())
+      .catch(() => {
+        setAlertMessage("Failed to update profile");
+        setShowErrorAlert(true);
+      });
+
+    if (Platform.OS !== "web") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+  };
+
+  const calculateAgeFromDate = (date: Date) => {
+    const today = new Date();
+    let age = today.getFullYear() - date.getFullYear();
+    const m = today.getMonth() - date.getMonth();
+
+    if (m < 0 || (m === 0 && today.getDate() < date.getDate())) {
+      age--;
+    }
+
+    return age;
+  };
+
+  const handleDateConfirm = (date: Date) => {
+    const age = calculateAgeFromDate(date);
+
+    // ❌ BLOCK UNDER 18 (same as CreateProfileScreen)
+    if (age < 18) {
+      setAlertMessage("You must be at least 18 years old to use this app");
       setShowErrorAlert(true);
       return;
     }
 
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
-if (!result.canceled && result.assets[0]) {
+    // ✅ Save only valid DOB
+    const formatted = date.toISOString().split("T")[0];
 
-   const image = result.assets[0];
+    setProfileData((prev) => ({
+      ...prev,
+      dateOfBirth: formatted,
+    }));
 
-   setProfileImage(image);
-   setSelectedAvatar(null);
+    DatabaseService.updateUserProfile({
+      phone_number: phoneFromRoute,
+      date_of_birth: formatted,
+    })
+      .then(() => {
+        setAlertMessage("Profile updated successfully!");
+        setShowSuccessAlert(true);
+      })
+      .catch(() => {
+        setAlertMessage("Failed to update profile");
+        setShowErrorAlert(true);
+      });
 
-   const res = await DatabaseService.updateProfilePicture(
-       phoneFromRoute,
-       image.uri
-   );
+    setShowDatePicker(false);
 
-   if(res?.success){
+    if (Platform.OS !== "web") {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
+  };
 
-      setProfileData(prev => ({
-        ...prev,
-        image: res.profile_picture
-      }));
+  const takePhoto = async () => {
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
 
-      showProfileUpdateSuccess();
+      if (status !== "granted") {
+        setAlertMessage("Please grant camera permission in your device settings");
+        setShowErrorAlert(true);
+        return;
+      }
 
-   } else {
-      setAlertMessage("Failed to update profile picture");
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+      
+      if (!result.canceled && result.assets[0]) {
+        const image = result.assets[0];
+        setProfileImage(image);
+        setSelectedAvatar(null);
+
+        const res = await DatabaseService.updateProfilePicture(
+          phoneFromRoute,
+          image.uri
+        );
+
+        if(res?.success) {
+          setProfileData(prev => ({
+            ...prev,
+            image: res.profile_picture
+          }));
+          showProfileUpdateSuccess();
+        } else {
+          setAlertMessage("Failed to update profile picture");
+          setShowErrorAlert(true);
+        }
+      }
+    } catch {
+      setAlertMessage("Failed to open camera");
       setShowErrorAlert(true);
-   }
-}
-
-  } catch {
-    setAlertMessage("Failed to open camera");
-    setShowErrorAlert(true);
-  }
-};
-
+    }
+  };
 
   const selectFromGallery = async () => {
-  try {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
 
-    if (status !== "granted") {
-      setAlertMessage("Please grant gallery permission in your device settings");
+      if (status !== "granted") {
+        setAlertMessage("Please grant gallery permission in your device settings");
+        setShowErrorAlert(true);
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        const image = result.assets[0];
+        setProfileImage(image);
+        setSelectedAvatar(null);
+
+        const res = await DatabaseService.updateProfilePicture(
+          phoneFromRoute,
+          image.uri
+        );
+
+        if(res?.success) {
+          setProfileData(prev => ({
+            ...prev,
+            image: res.profile_picture
+          }));
+          showProfileUpdateSuccess();
+        } else {
+          setAlertMessage("Failed to update profile picture");
+          setShowErrorAlert(true);
+        }
+      }
+    } catch {
+      setAlertMessage("Failed to open gallery");
       setShowErrorAlert(true);
-      return;
     }
+  };
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
-
-   if (!result.canceled && result.assets[0]) {
-
-   const image = result.assets[0];
-
-   setProfileImage(image);
-   setSelectedAvatar(null);
-
-   const res = await DatabaseService.updateProfilePicture(
-       phoneFromRoute,
-       image.uri
-   );
-
-   if(res?.success){
-
-      setProfileData(prev => ({
-        ...prev,
-        image: res.profile_picture
-      }));
-
-      showProfileUpdateSuccess();
-
-   } else {
-      setAlertMessage("Failed to update profile picture");
-      setShowErrorAlert(true);
-   }
-}
-
-  } catch {
-    setAlertMessage("Failed to open gallery");
-    setShowErrorAlert(true);
-  }
-};
-
-const renderProfileImage = () => {
-  // Priority 1: Newly selected image from camera/gallery
-  if (profileImage) {
-    return <Image source={{ uri: profileImage.uri }} style={styles.profileImage as ImageStyle} />;
-  } 
-  // Priority 2: Selected avatar from picker (local SVG component)
-  else if (selectedAvatar) {
-    const Icon = selectedAvatar.component;
-    if (Icon) {
-      return <Icon width={140} height={140} style={styles.avatarSvg} />;
+  const renderProfileImage = () => {
+    // Priority 1: Newly selected image from camera/gallery
+    if (profileImage) {
+      return <Image source={{ uri: profileImage.uri }} style={styles.profileImage as ImageStyle} />;
+    } 
+    // Priority 2: Selected avatar from picker (local SVG component)
+    else if (selectedAvatar) {
+      const Icon = selectedAvatar.component;
+      if (Icon) {
+        return <Icon width={140} height={140} style={styles.avatarSvg} />;
+      }
+      return <Text style={styles.avatarPreview}>{selectedAvatar.emoji || selectedAvatar.name}</Text>;
+    } 
+    // Priority 3: Saved avatar URL from database (SVG from Supabase)
+    else if (profileData.image && profileData.image.includes('/avatars/')) {
+      return (
+        <SvgCssUri
+          uri={profileData.image}
+          width={140}
+          height={140}
+        />
+      );
+    } 
+    // Priority 4: Regular profile image (JPG/PNG)
+    else if (profileData.image) {
+      return <Image source={{ uri: profileData.image }} style={styles.profileImage as ImageStyle} />;
+    } 
+    // Priority 5: Default
+    else {
+      return <MaterialIcons name="add-a-photo" size={45} color={Colors.white} />;
     }
-    return <Text style={styles.avatarPreview}>{selectedAvatar.emoji || selectedAvatar.name}</Text>;
-  } 
-  // Priority 3: Saved avatar URL from database (SVG from Supabase)
- else if (profileData.image && profileData.image.includes('/avatars/')) {
-  return (
-    <SvgCssUri
-      uri={profileData.image}
-      width={140}
-      height={140}
-    />
-  );
-
-  } 
-  // Priority 4: Regular profile image (JPG/PNG)
-  else if (profileData.image) {
-    return <Image source={{ uri: profileData.image }} style={styles.profileImage as ImageStyle} />;
-  } 
-  // Priority 5: Default
-  else {
-    return <MaterialIcons name="add-a-photo" size={45} color={Colors.white} />;
-  }
-};
+  };
 
   const InfoField = ({
     label,
@@ -653,9 +653,9 @@ const renderProfileImage = () => {
         <Text style={styles.infoLabel}>{label}</Text>
         {field === "dateOfBirth" ? (
           <View style={styles.dobRow}>
-            <Text style={styles.infoValue}>{formatDateOfBirth(value)}</Text>
+            <Text style={styles.infoValue}>{value ? formatDateOfBirth(value) : "Not set"}</Text>
             <View style={styles.ageBadge}>
-              <Text style={styles.ageBadgeText}>Age {calculateAge(value)}</Text>
+              <Text style={styles.ageBadgeText}>Age {value ? calculateAge(value) : "N/A"}</Text>
             </View>
           </View>
         ) : (
@@ -730,25 +730,25 @@ const renderProfileImage = () => {
           </ScrollView>
         </Animated.View>
       </View>
-   <EmailOTPModal
-  visible={showEmailOTPModal}
-  email={currentValue}
-  onClose={() => {
-    setShowEmailOTPModal(false);
-    setEmailVerificationError('');
-    setEmailVerificationSuccess(false);
-  }}
-  onVerify={handleEmailOTPVerification}
-  isLoading={isEmailLoading}
-  verificationSuccess={emailVerificationSuccess}
-  verificationError={emailVerificationError}
-/>
-
-
-
     </Modal>
-    
   );
+
+  // Show loader while fetching data
+  if (isLoading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
+        <View style={styles.loaderContainer}>
+          <LottieView
+            source={require("../assets/loading.json")}
+            autoPlay
+            loop
+            style={{ width: 300, height: 300 }}
+          />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -778,31 +778,30 @@ const renderProfileImage = () => {
           }}
         >
           {/* Profile Image Section */}
-        <TouchableOpacity
-  style={styles.profileCard}
-  onPress={() => openEditModal("profileImage", "", "Profile Photo")}
-  activeOpacity={0.85}
->
-  <View style={styles.profileImageWrapper}>
-  {renderProfileImage()}
+          <TouchableOpacity
+            style={styles.profileCard}
+            onPress={() => openEditModal("profileImage", "", "Profile Photo")}
+            activeOpacity={0.85}
+          >
+            <View style={styles.profileImageWrapper}>
+              {renderProfileImage()}
 
-  {/* Transparent Overlay */}
-  <View style={styles.imageOverlay} />
+              {/* Transparent Overlay */}
+              <View style={styles.imageOverlay} />
 
-  {/* Center Pencil Icon */}
-  <View style={styles.editIconContainer}>
-    <MaterialIcons name="edit" size={22} color={Colors.white} />
-  </View>
-</View>
+              {/* Center Pencil Icon */}
+              <View style={styles.editIconContainer}>
+                <MaterialIcons name="edit" size={22} color={Colors.white} />
+              </View>
+            </View>
 
-  <View style={styles.profileInfo}>
-    <Text style={styles.profileName}>{profileData.name}</Text>
-    <Text style={styles.profileMember}>
-      Member Since {profileData.joinDate}
-    </Text>
-  </View>
-</TouchableOpacity>
-
+            <View style={styles.profileInfo}>
+              <Text style={styles.profileName}>{profileData.name || "User"}</Text>
+              <Text style={styles.profileMember}>
+                Member Since {profileData.joinDate || "Recently"}
+              </Text>
+            </View>
+          </TouchableOpacity>
 
           {/* Personal Information Section */}
           <Text style={styles.sectionTitle}>Personal Information</Text>
@@ -815,12 +814,12 @@ const renderProfileImage = () => {
             field="mobileNumber"
             editable={false}
           />
-<InfoField
-  label="Email ID"
-  value={profileData.emailID}
-  field="emailID"
-  editable={isEmpty(profileData.emailID)}
-/>
+          <InfoField
+            label="Email ID"
+            value={profileData.emailID}
+            field="emailID"
+            editable={isEmpty(profileData.emailID)}
+          />
           <InfoField label="Gender" value={profileData.gender} field="gender" />
           <InfoField
             label="Date of Birth"
@@ -860,6 +859,21 @@ const renderProfileImage = () => {
       </KeyboardAvoidingView>
 
       {/* ====================== MODALS ======================= */}
+
+      {/* Email OTP Modal */}
+      <EmailOTPModal
+        visible={showEmailOTPModal}
+        email={currentValue}
+        onClose={() => {
+          setShowEmailOTPModal(false);
+          setEmailVerificationError('');
+          setEmailVerificationSuccess(false);
+        }}
+        onVerify={handleEmailOTPVerification}
+        isLoading={isEmailLoading}
+        verificationSuccess={emailVerificationSuccess}
+        verificationError={emailVerificationError}
+      />
 
       {/* Gender Modal */}
       <ModernModal
@@ -983,102 +997,100 @@ const renderProfileImage = () => {
           </View>
         </View>
       </Modal>
+      
       <Modal
-  visible={centerEditModalVisible}
-  transparent
-  animationType="fade"
-  onRequestClose={() => setCenterEditModalVisible(false)}
->
-  <View style={styles.centerModalOverlay}>
-    <View style={styles.centerModalBox}>
-      <View style={styles.centerModalHeader}>
-  <Text style={styles.centerModalTitle}>
-    {currentField === "bio" && profileData.bio === ""
-      ? "Add About Me"
-      : `Edit ${editLabel}`}
-  </Text>
+        visible={centerEditModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setCenterEditModalVisible(false)}
+      >
+        <View style={styles.centerModalOverlay}>
+          <View style={styles.centerModalBox}>
+            <View style={styles.centerModalHeader}>
+              <Text style={styles.centerModalTitle}>
+                {currentField === "bio" && profileData.bio === ""
+                  ? "Add About Me"
+                  : `Edit ${editLabel}`}
+              </Text>
 
-  <TouchableOpacity
-    onPress={() => setCenterEditModalVisible(false)}
-    style={styles.centerCloseButton}
-    activeOpacity={0.7}
-  >
-    <MaterialIcons name="close" size={24} color={Colors.primary} />
-  </TouchableOpacity>
-</View>
+              <TouchableOpacity
+                onPress={() => setCenterEditModalVisible(false)}
+                style={styles.centerCloseButton}
+                activeOpacity={0.7}
+              >
+                <MaterialIcons name="close" size={24} color={Colors.primary} />
+              </TouchableOpacity>
+            </View>
 
+            {currentField === "emailID" ? (
+              <View style={styles.modernInputContainer}>
+                <MaterialIcons name="mail" size={20} color={Colors.gray} />
 
-     {currentField === "emailID" ? (
-  <View style={styles.modernInputContainer}>
-    <MaterialIcons name="mail" size={20} color={Colors.gray} />
+                <TextInput
+                  style={styles.modernInput}
+                  value={currentValue}
+                  onChangeText={setCurrentValue}
+                  placeholder="your@email.com"
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
 
-    <TextInput
-      style={styles.modernInput}
-      value={currentValue}
-      onChangeText={setCurrentValue}
-      placeholder="your@email.com"
-      keyboardType="email-address"
-      autoCapitalize="none"
-    />
+                {!isEmailVerified && isValidEmail(currentValue.trim()) && (
+                  <TouchableOpacity onPress={handleEmailVerification}>
+                    <Text style={styles.verifyButtonInlineText}>Verify</Text>
+                  </TouchableOpacity>
+                )}
 
-    {!isEmailVerified && isValidEmail(currentValue.trim()) && (
-      <TouchableOpacity onPress={handleEmailVerification}>
-        <Text style={styles.verifyButtonInlineText}>Verify</Text>
-      </TouchableOpacity>
-    )}
+                {isEmailVerified && (
+                  <MaterialIcons name="check-circle" size={22} color="#10B981" />
+                )}
+              </View>
+            ) : (
+              <>
+                <TextInput
+                  style={[
+                    styles.centerModalInput,
+                    currentField === "bio" && styles.centerTextArea,
+                  ]}
+                  value={currentValue}
+                  onChangeText={setCurrentValue}
+                  placeholder={`Enter ${editLabel.toLowerCase()}...`}
+                  multiline={currentField === "bio"}
+                  numberOfLines={currentField === "bio" ? 5 : 1}
+                  maxLength={currentField === "bio" ? 300 : undefined}
+                />
 
-    {isEmailVerified && (
-      <MaterialIcons name="check-circle" size={22} color="#10B981" />
-    )}
-  </View>
-) : (
-  <>
-    <TextInput
-      style={[
-        styles.centerModalInput,
-        currentField === "bio" && styles.centerTextArea,
-      ]}
-      value={currentValue}
-      onChangeText={setCurrentValue}
-      placeholder={`Enter ${editLabel.toLowerCase()}...`}
-      multiline={currentField === "bio"}
-      numberOfLines={currentField === "bio" ? 5 : 1}
-      maxLength={currentField === "bio" ? 300 : undefined}
-    />
+                {currentField === "bio" && (
+                  <Text style={styles.charCount}>
+                    {currentValue.length}/300
+                  </Text>
+                )}
+              </>
+            )}
+        
+            <View style={styles.centerModalActions}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => setCenterEditModalVisible(false)}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
 
-    {currentField === "bio" && (
-      <Text style={styles.charCount}>
-        {currentValue.length}/300
-      </Text>
-    )}
-  </>
-)}
-
-  
-      <View style={styles.centerModalActions}>
-        <TouchableOpacity
-          style={[styles.modalButton, styles.cancelButton]}
-          onPress={() => setCenterEditModalVisible(false)}
-        >
-          <Text style={styles.cancelButtonText}>Cancel</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.modalButton, styles.saveButton]}
-          onPress={() => {
-            handleSaveEdit();
-            setCenterEditModalVisible(false);
-          }}
-        >
-          <Text style={styles.saveButtonText}>
-            {currentField === "bio" && profileData.bio === "" ? "Add" : "Save"}
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  </View>
-</Modal>
-
+              <TouchableOpacity
+                style={[styles.modalButton, styles.saveButton]}
+                onPress={() => {
+                  handleSaveEdit();
+                  setCenterEditModalVisible(false);
+                }}
+              >
+                <Text style={styles.saveButtonText}>
+                  {currentField === "bio" && profileData.bio === "" ? "Add" : "Save"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Profile Picture Modal */}
       <ProfilePictureModal
@@ -1088,35 +1100,35 @@ const renderProfileImage = () => {
         onGallery={selectFromGallery}
         onAvatar={() => setShowAvatarPicker(true)}
       />
-<AvatarPicker
-  visible={showAvatarPicker}
-  onClose={() => setShowAvatarPicker(false)}
-  onSelect={async (avatar) => {
-    setSelectedAvatar(avatar);
-    setProfileImage(null);
-    
-    try {
-      // Use the dedicated avatar endpoint instead of updateUserProfile
-      const response = await DatabaseService.updateAvatar(phoneFromRoute, avatar.id);
       
-      if (response?.success) {
-        setProfileData(prev => ({
-          ...prev,
-          image: response.profile_picture
-        }));
-        showProfileUpdateSuccess();
-      } else {
-        setAlertMessage("Failed to update avatar");
-        setShowErrorAlert(true);
-      }
-    } catch (error) {
-      setAlertMessage("Failed to update avatar");
-      setShowErrorAlert(true);
-    }
-  }}
-  selectedAvatar={selectedAvatar}
-/>
-
+      <AvatarPicker
+        visible={showAvatarPicker}
+        onClose={() => setShowAvatarPicker(false)}
+        onSelect={async (avatar) => {
+          setSelectedAvatar(avatar);
+          setProfileImage(null);
+          
+          try {
+            // Use the dedicated avatar endpoint instead of updateUserProfile
+            const response = await DatabaseService.updateAvatar(phoneFromRoute, avatar.id);
+            
+            if (response?.success) {
+              setProfileData(prev => ({
+                ...prev,
+                image: response.profile_picture
+              }));
+              showProfileUpdateSuccess();
+            } else {
+              setAlertMessage("Failed to update avatar");
+              setShowErrorAlert(true);
+            }
+          } catch (error) {
+            setAlertMessage("Failed to update avatar");
+            setShowErrorAlert(true);
+          }
+        }}
+        selectedAvatar={selectedAvatar}
+      />
 
       {/* Custom Alerts */}
       <CustomAlert
@@ -1156,7 +1168,12 @@ const styles = StyleSheet.create({
   keyboardAvoidingView: {
     flex: 1,
   },
-   header: {
+  loaderContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
@@ -1193,21 +1210,20 @@ const styles = StyleSheet.create({
     marginBottom: 40,
   },
   imageOverlay: {
-  ...StyleSheet.absoluteFillObject,
-  backgroundColor: "rgba(0,0,0,0.3)", // transparent dark layer
-  borderRadius: 40,
-},
-
-editIconContainer: {
-  position: "absolute",
-  top: "50%",
-  left: "50%",
-  transform: [{ translateX: -18 }, { translateY: -18 }],
-  padding: 8,
-  borderRadius: 20,
-  justifyContent: "center",
-  alignItems: "center",
-},
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.3)",
+    borderRadius: 40,
+  },
+  editIconContainer: {
+    position: "absolute",
+    top: "50%",
+    left: "50%",
+    transform: [{ translateX: -18 }, { translateY: -18 }],
+    padding: 8,
+    borderRadius: 20,
+    justifyContent: "center",
+    alignItems: "center",
+  },
   profileImageContainer: {
     width: 140,
     height: 140,
@@ -1282,15 +1298,15 @@ editIconContainer: {
   },
   infoLabel: {
     ...Typography.label,
-    fontSize: 18,        // ⬆ increased
-  fontWeight: "700",   // ⬆ bol
+    fontSize: 18,
+    fontWeight: "700",
     color: Colors.primary,
     marginBottom: 6,
   },
   infoValue: {
     ...Typography.body1,
     color: Colors.dark,
-     fontSize: 18,     
+    fontSize: 18,
   },
   dobRow: {
     flexDirection: 'row',
@@ -1506,126 +1522,113 @@ editIconContainer: {
     fontWeight: '700',
   },
   profileCard: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  backgroundColor: Colors.white,
-  padding: 16,
-  borderRadius: 20,
-  marginBottom: 15,
-  borderWidth: 1.5,
-  borderColor: '#E5E7EB',
-  shadowColor: '#000',
-  shadowOffset: { width: 0, height: 6 },
-  shadowOpacity: 0.08,
-  shadowRadius: 10,
-  elevation: 4,
-},
-
-profileImageWrapper: {
-  width: 70,
-  height: 70,
-  borderRadius: 35,
-  overflow: 'hidden',
-  marginRight: 16,
-  backgroundColor: '#F3F4F6',
-  justifyContent: 'center',
-  alignItems: 'center',
-},
-
-profileInfo: {
-  flex: 1,
-},
-
-profileName: {
-  fontSize: 24,
-  fontWeight: '700',
-  color: Colors.primary,
-},
-
-profileMember: {
-  marginTop: 4,
-  fontSize: 16,
-  color: Colors.gray,
-},
-centerModalOverlay: {
-  flex: 1,
-  backgroundColor: "rgba(0,0,0,0.5)",
-  justifyContent: "center",
-  alignItems: "center",
-},
-
-centerModalBox: {
-  width: "90%",
-  backgroundColor: Colors.white,
-  borderRadius: 20,
-  padding: 20,
-},
-
-centerModalTitle: {
-  ...Typography.h4,
-  color: Colors.primary,
-  marginBottom: 12,
-},
-
-centerModalInput: {
-  borderWidth: 1.5,
-  borderColor: "#E5E7EB",
-  borderRadius: 14,
-  padding: 14,
-  backgroundColor: "#F9FAFB",
-  ...Typography.input,
-},
-centerModalHeader: {
-  flexDirection: "row",
-  alignItems: "center",
-  justifyContent: "space-between",
-  marginBottom: 12,
-},
-
-centerCloseButton: {
-  width: 36,
-  height: 36,
-  borderRadius: 18,
-  backgroundColor: "rgba(24, 64, 128, 0.12)",
-  justifyContent: "center",
-  alignItems: "center",
-},
-
-centerTextArea: {
-  minHeight: 120,
-  textAlignVertical: "top",
-},
-
-centerModalActions: {
-  flexDirection: "row",
-  gap: 12,
-  marginTop: 20,
-},
-modernInputContainer: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  borderWidth: 1.5,
-  borderColor: '#E5E7EB',
-  borderRadius: 14,
-  paddingHorizontal: 14,
-  backgroundColor: '#F9FAFB',
-  height: 52,
-},
-
-modernInput: {
-  flex: 1,
-  fontSize: 16,
-  color: Colors.dark,
-  fontWeight: '500',
-  paddingVertical: 0,
-},
-
-verifyButtonInlineText: {
-  color: Colors.primary,
-  fontSize: 14,
-  fontWeight: '700',
-  textDecorationLine: 'underline',
-  marginLeft: 8,
-},
-
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.white,
+    padding: 16,
+    borderRadius: 20,
+    marginBottom: 15,
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  profileImageWrapper: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    overflow: 'hidden',
+    marginRight: 16,
+    backgroundColor: '#F3F4F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  profileInfo: {
+    flex: 1,
+  },
+  profileName: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: Colors.primary,
+  },
+  profileMember: {
+    marginTop: 4,
+    fontSize: 16,
+    color: Colors.gray,
+  },
+  centerModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  centerModalBox: {
+    width: "90%",
+    backgroundColor: Colors.white,
+    borderRadius: 20,
+    padding: 20,
+  },
+  centerModalTitle: {
+    ...Typography.h4,
+    color: Colors.primary,
+    marginBottom: 12,
+  },
+  centerModalInput: {
+    borderWidth: 1.5,
+    borderColor: "#E5E7EB",
+    borderRadius: 14,
+    padding: 14,
+    backgroundColor: "#F9FAFB",
+    ...Typography.input,
+  },
+  centerModalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  centerCloseButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(24, 64, 128, 0.12)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  centerTextArea: {
+    minHeight: 120,
+    textAlignVertical: "top",
+  },
+  centerModalActions: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 20,
+  },
+  modernInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    backgroundColor: '#F9FAFB',
+    height: 52,
+  },
+  modernInput: {
+    flex: 1,
+    fontSize: 16,
+    color: Colors.dark,
+    fontWeight: '500',
+    paddingVertical: 0,
+  },
+  verifyButtonInlineText: {
+    color: Colors.primary,
+    fontSize: 14,
+    fontWeight: '700',
+    textDecorationLine: 'underline',
+    marginLeft: 8,
+  },
 });

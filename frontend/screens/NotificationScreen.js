@@ -7,21 +7,21 @@ import {
   ScrollView,
   StatusBar,
   Switch,
-    KeyboardAvoidingView,
+  KeyboardAvoidingView,
   Platform,
+  ActivityIndicator
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
+import LottieView from "lottie-react-native";
 import { Colors, Typography } from '../constants/Colors';
 import DatabaseService from '../services/notificationscreen_ds';
 import GETDatabaseService from '../services/usernotification_ds';
-
 import { useAuth } from '../context/AuthContext';
 
 export default function NotificationSettingsScreen({ navigation, route }) {
-   const { user } = useAuth();
+  const { user } = useAuth();
   const phoneNumber = user?.phone_number;
-
 
   const [notifications, setNotifications] = useState({
     rideUpdates: true,
@@ -30,15 +30,27 @@ export default function NotificationSettingsScreen({ navigation, route }) {
     newsletters: false,
     smsAlerts: true,
   });
+  const [loading, setLoading] = useState(true);
+  const [updatingKey, setUpdatingKey] = useState(null);
 
   /* ================= LOAD FROM BACKEND ================= */
   useEffect(() => {
-    if (!phoneNumber) return;
+    if (!phoneNumber) {
+      setLoading(false);
+      return;
+    }
 
     const loadSettings = async () => {
-      const res = await GETDatabaseService.getNotifications(phoneNumber);
-      if (res?.notifications) {
-        setNotifications(res.notifications);
+      try {
+        setLoading(true);
+        const res = await GETDatabaseService.getNotifications(phoneNumber);
+        if (res?.notifications) {
+          setNotifications(res.notifications);
+        }
+      } catch (error) {
+        console.error("Error loading notification settings:", error);
+      } finally {
+        setLoading(false);
       }
     };
 
@@ -53,89 +65,127 @@ export default function NotificationSettingsScreen({ navigation, route }) {
     };
 
     setNotifications(updated);
+    setUpdatingKey(key);
 
-    await DatabaseService.updateNotificationSettings(phoneNumber, updated);
+    try {
+      await DatabaseService.updateNotificationSettings(phoneNumber, updated);
+    } catch (error) {
+      console.error("Error updating notification settings:", error);
+      // Rollback on error
+      setNotifications({
+        ...notifications,
+        [key]: notifications[key],
+      });
+    } finally {
+      setUpdatingKey(null);
+    }
   };
-const handleBack = () => {
+  
+  const handleBack = () => {
     navigation.goBack();
   };
+
+  // Show loader while fetching data
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
+        <View style={styles.loaderContainer}>
+          <LottieView
+            source={require("../assets/loading.json")}
+            autoPlay
+            loop
+            style={{ width: 300, height: 300 }}
+          />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
-                                 <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
-                                 
-                                 <KeyboardAvoidingView
-                                   style={styles.keyboardAvoidingView}
-                                   behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
-                                 >
-                                   {/* Header */}
-                                   <View style={styles.header}>
-                                     <TouchableOpacity style={styles.modernBackButton} onPress={handleBack}>
-                                       <MaterialIcons name="arrow-back-ios" size={28} color={Colors.secondary} />
-                                     </TouchableOpacity>
-                                     <Text style={styles.headerTitle}>Notification</Text>
-                                     <View style={styles.headerSpacer} />
-                                   </View>
-
-      {/* CONTENT */}
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-
-        {/* PUSH */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Push Notifications</Text>
-
-          {[
-            { id: 'rideUpdates', title: 'Ride Updates', subtitle: 'Ride status updates', icon: 'car-outline' },
-            { id: 'chatMessages', title: 'Chat Messages', subtitle: 'New messages', icon: 'chatbubble-ellipses-outline' },
-            { id: 'promotions', title: 'Promotions', subtitle: 'Offers & referrals', icon: 'pricetag-outline' },
-          ].map((item, index, arr) => (
-            <View key={item.id} style={[styles.row, index === arr.length - 1 && styles.lastRow]}>
-              <View style={styles.iconWrapper}>
-                <Ionicons name={item.icon} size={22} color={Colors.primary} />
-              </View>
-
-              <View style={styles.rowText}>
-                <Text style={styles.rowTitle}>{item.title}</Text>
-                <Text style={styles.rowSubtitle}>{item.subtitle}</Text>
-              </View>
-
-              <Switch
-                value={notifications[item.id]}
-                onValueChange={() => toggleNotification(item.id)}
-                trackColor={{ false: '#E5E7EB', true: Colors.primary }}
-                thumbColor={Colors.white}
-              />
-            </View>
-          ))}
+      <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
+      
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoidingView}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+      >
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.modernBackButton} onPress={handleBack}>
+            <MaterialIcons name="arrow-back-ios" size={28} color={Colors.secondary} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Notification</Text>
+          <View style={styles.headerSpacer} />
         </View>
 
-        {/* EMAIL & SMS */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Email & SMS</Text>
+        {/* CONTENT */}
+        <ScrollView contentContainerStyle={styles.scrollContent}>
+          {/* PUSH */}
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Push Notifications</Text>
 
-          {[
-            { id: 'newsletters', title: 'Email Subscriptions', subtitle: 'Newsletters', icon: 'mail-outline' },
-            { id: 'smsAlerts', title: 'SMS Alerts', subtitle: 'Critical alerts only', icon: 'chatbox-outline' },
-          ].map((item, index, arr) => (
-            <View key={item.id} style={[styles.row, index === arr.length - 1 && styles.lastRow]}>
-              <View style={styles.iconWrapper}>
-                <Ionicons name={item.icon} size={22} color={Colors.primary} />
+            {[
+              { id: 'rideUpdates', title: 'Ride Updates', subtitle: 'Ride status updates', icon: 'car-outline' },
+              { id: 'chatMessages', title: 'Chat Messages', subtitle: 'New messages', icon: 'chatbubble-ellipses-outline' },
+              { id: 'promotions', title: 'Promotions', subtitle: 'Offers & referrals', icon: 'pricetag-outline' },
+            ].map((item, index, arr) => (
+              <View key={item.id} style={[styles.row, index === arr.length - 1 && styles.lastRow]}>
+                <View style={styles.iconWrapper}>
+                  <Ionicons name={item.icon} size={22} color={Colors.primary} />
+                </View>
+
+                <View style={styles.rowText}>
+                  <Text style={styles.rowTitle}>{item.title}</Text>
+                  <Text style={styles.rowSubtitle}>{item.subtitle}</Text>
+                </View>
+
+                {updatingKey === item.id ? (
+                  <ActivityIndicator size="small" color={Colors.primary} />
+                ) : (
+                  <Switch
+                    value={notifications[item.id]}
+                    onValueChange={() => toggleNotification(item.id)}
+                    trackColor={{ false: '#E5E7EB', true: Colors.primary }}
+                    thumbColor={Colors.white}
+                  />
+                )}
               </View>
+            ))}
+          </View>
 
-              <View style={styles.rowText}>
-                <Text style={styles.rowTitle}>{item.title}</Text>
-                <Text style={styles.rowSubtitle}>{item.subtitle}</Text>
+          {/* EMAIL & SMS */}
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Email & SMS</Text>
+
+            {[
+              { id: 'newsletters', title: 'Email Subscriptions', subtitle: 'Newsletters', icon: 'mail-outline' },
+              { id: 'smsAlerts', title: 'SMS Alerts', subtitle: 'Critical alerts only', icon: 'chatbox-outline' },
+            ].map((item, index, arr) => (
+              <View key={item.id} style={[styles.row, index === arr.length - 1 && styles.lastRow]}>
+                <View style={styles.iconWrapper}>
+                  <Ionicons name={item.icon} size={22} color={Colors.primary} />
+                </View>
+
+                <View style={styles.rowText}>
+                  <Text style={styles.rowTitle}>{item.title}</Text>
+                  <Text style={styles.rowSubtitle}>{item.subtitle}</Text>
+                </View>
+
+                {updatingKey === item.id ? (
+                  <ActivityIndicator size="small" color={Colors.primary} />
+                ) : (
+                  <Switch
+                    value={notifications[item.id]}
+                    onValueChange={() => toggleNotification(item.id)}
+                    trackColor={{ false: '#E5E7EB', true: Colors.primary }}
+                    thumbColor={Colors.white}
+                  />
+                )}
               </View>
-
-              <Switch
-                value={notifications[item.id]}
-                onValueChange={() => toggleNotification(item.id)}
-                trackColor={{ false: '#E5E7EB', true: Colors.primary }}
-                thumbColor={Colors.white}
-              />
-            </View>
-          ))}
-        </View>
-      </ScrollView>
+            ))}
+          </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -150,35 +200,46 @@ const styles = StyleSheet.create({
   },
 
   keyboardAvoidingView: {
-     flex: 1,
-   },
-   header: {
-     flexDirection: 'row',
-     alignItems: 'center',
-     paddingHorizontal: 16,
-     paddingVertical: 12,
-     borderBottomWidth: 0.5,
-     borderBottomColor: '#F3F4F6',
-   },
-   modernBackButton: {
-     width: 44,
-     height: 44,
-     borderRadius: 22,
-     justifyContent: 'center',
-     alignItems: 'center',
-   },
-   headerTitle: {
-     ...Typography.h2,
-     fontSize: 28,
-     fontWeight: '700',
-     color: Colors.primary,
-     flex: 1,
-     textAlign: 'center',
-   },
-   headerSpacer: {
-     width: 44,
-   },
+    flex: 1,
+  },
+  
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#F3F4F6',
+  },
+  
+  modernBackButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  
+  headerTitle: {
+    ...Typography.h2,
+    fontSize: 28,
+    fontWeight: '700',
+    color: Colors.primary,
+    flex: 1,
+    textAlign: 'center',
+  },
+  
+  headerSpacer: {
+    width: 44,
+  },
 
+  // Loader styles
+  loaderContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: Colors.white,
+  },
 
   scrollContent: {
     paddingHorizontal: 20,
@@ -194,6 +255,11 @@ const styles = StyleSheet.create({
     borderColor: '#F3F4F6',
     marginBottom: 20,
     overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 4,
   },
 
   cardTitle: {
@@ -213,6 +279,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#F3F4F6',
   },
+  
   lastRow: {
     borderBottomWidth: 0,
   },
@@ -231,12 +298,14 @@ const styles = StyleSheet.create({
     flex: 1,
     marginRight: 12,
   },
+  
   rowTitle: {
     fontSize: 16,
     fontWeight: '600',
     color: Colors.dark,
     marginBottom: 4,
   },
+  
   rowSubtitle: {
     fontSize: 14,
     color: Colors.dark,

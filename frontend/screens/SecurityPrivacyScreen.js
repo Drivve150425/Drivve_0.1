@@ -8,11 +8,12 @@ import {
   StatusBar,
   Switch,
   Alert,
-    KeyboardAvoidingView,
+  KeyboardAvoidingView,
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import LottieView from "lottie-react-native";
 import { Colors, Typography } from '../constants/Colors';
 import DatabaseService from '../services/securityprivacy_ds';
 import devicesDatabaseService from '../services/loginactivity_ds';
@@ -29,15 +30,15 @@ export default function SecurityPrivacyScreen({ navigation, route }) {
   /* ================= LOAD DATA ================= */
 
   useEffect(() => {
-  if (!phoneNumber) {
-    console.warn('❌ SecurityPrivacyScreen: phoneNumber missing');
-    return;
-  }
+    if (!phoneNumber) {
+      console.warn('❌ SecurityPrivacyScreen: phoneNumber missing');
+      setLoading(false);
+      return;
+    }
 
-  loadSecuritySettings();
-  loadDevices();
-}, [phoneNumber]);
-
+    loadSecuritySettings();
+    loadDevices();
+  }, [phoneNumber]);
 
   const loadSecuritySettings = async () => {
     try {
@@ -47,8 +48,7 @@ export default function SecurityPrivacyScreen({ navigation, route }) {
       }
     } catch (e) {
       console.error('❌ Security settings error', e);
-    } finally {
-      setLoading(false);
+      Alert.alert('Error', 'Failed to load security settings');
     }
   };
 
@@ -60,6 +60,8 @@ export default function SecurityPrivacyScreen({ navigation, route }) {
       }
     } catch (e) {
       console.error('❌ Device load error', e);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -75,7 +77,6 @@ export default function SecurityPrivacyScreen({ navigation, route }) {
       setContactVisibility(!value); // rollback
     }
   };
-
 
   /* ================= UI ITEMS ================= */
 
@@ -107,94 +108,103 @@ export default function SecurityPrivacyScreen({ navigation, route }) {
     },
   ];
 
+  // Show loader while fetching data
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
-        <Text style={{ textAlign: 'center', marginTop: 40 }}>
-          Loading security settings...
-        </Text>
+        <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
+        <View style={styles.loaderContainer}>
+          <LottieView
+            source={require("../assets/loading.json")}
+            autoPlay
+            loop
+            style={{ width: 300, height: 300 }}
+          />
+        </View>
       </SafeAreaView>
     );
   }
- const handleBack = () => {
+
+  const handleBack = () => {
     navigation.goBack();
   };
+
   return (
     <SafeAreaView style={styles.container}>
-                             <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
-                             
-                             <KeyboardAvoidingView
-                               style={styles.keyboardAvoidingView}
-                               behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
-                             >
-                               {/* Header */}
-                               <View style={styles.header}>
-                                 <TouchableOpacity style={styles.modernBackButton} onPress={handleBack}>
-                                   <MaterialIcons name="arrow-back-ios" size={28} color={Colors.secondary} />
-                                 </TouchableOpacity>
-                                 <Text style={styles.headerTitle}>Security & Privacy</Text>
-                                 <View style={styles.headerSpacer} />
-                               </View>
-
-      {/* ===== CONTENT ===== */}
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
+      <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
+      
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoidingView}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
       >
-        <View style={styles.mainCard}>
-          <Text style={styles.sectionTitle}>Privacy Settings</Text>
-          <Text style={styles.sectionSubtitle}>
-            Control how your information is shared
-          </Text>
-
-          {settingsItems.map((item, index) => (
-            <TouchableOpacity
-              key={item.id}
-              style={[
-                styles.settingItem,
-                index === settingsItems.length - 1 && styles.lastItem,
-              ]}
-              activeOpacity={item.type === 'toggle' ? 1 : 0.7}
-              onPress={() => {
-                if (item.type === 'action') {
-                  navigation.navigate(item.screen, { phoneNumber });
-                }
-              }}
-            >
-              <View style={styles.settingLeft}>
-                <View style={styles.iconContainer}>
-                  <MaterialIcons
-                    name={item.icon}
-                    size={22}
-                    color={Colors.primary}
-                  />
-                </View>
-
-                <View style={styles.settingInfo}>
-                  <Text style={styles.settingTitle}>{item.title}</Text>
-                  <Text style={styles.settingSubtitle}>{item.subtitle}</Text>
-                </View>
-              </View>
-
-              {item.type === 'toggle' ? (
-                <Switch
-                  value={item.value}
-                  onValueChange={item.onValueChange}
-                  trackColor={{ false: '#E5E7EB', true: Colors.primary }}
-                  thumbColor={Colors.white}
-                />
-              ) : (
-                <MaterialIcons
-                  name="chevron-right"
-                  size={26}
-                  color={Colors.orange1}
-                  style={{ opacity: 0.4 }}
-                />
-              )}
-            </TouchableOpacity>
-          ))}
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.modernBackButton} onPress={handleBack}>
+            <MaterialIcons name="arrow-back-ios" size={28} color={Colors.secondary} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Security & Privacy</Text>
+          <View style={styles.headerSpacer} />
         </View>
-      </ScrollView>
+
+        {/* ===== CONTENT ===== */}
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+        >
+          <View style={styles.mainCard}>
+            <Text style={styles.sectionTitle}>Privacy Settings</Text>
+            <Text style={styles.sectionSubtitle}>
+              Control how your information is shared
+            </Text>
+
+            {settingsItems.map((item, index) => (
+              <TouchableOpacity
+                key={item.id}
+                style={[
+                  styles.settingItem,
+                  index === settingsItems.length - 1 && styles.lastItem,
+                ]}
+                activeOpacity={item.type === 'toggle' ? 1 : 0.7}
+                onPress={() => {
+                  if (item.type === 'action') {
+                    navigation.navigate(item.screen, { phoneNumber });
+                  }
+                }}
+              >
+                <View style={styles.settingLeft}>
+                  <View style={styles.iconContainer}>
+                    <MaterialIcons
+                      name={item.icon}
+                      size={22}
+                      color={Colors.primary}
+                    />
+                  </View>
+
+                  <View style={styles.settingInfo}>
+                    <Text style={styles.settingTitle}>{item.title}</Text>
+                    <Text style={styles.settingSubtitle}>{item.subtitle}</Text>
+                  </View>
+                </View>
+
+                {item.type === 'toggle' ? (
+                  <Switch
+                    value={item.value}
+                    onValueChange={item.onValueChange}
+                    trackColor={{ false: '#E5E7EB', true: Colors.primary }}
+                    thumbColor={Colors.white}
+                  />
+                ) : (
+                  <MaterialIcons
+                    name="chevron-right"
+                    size={26}
+                    color={Colors.orange1}
+                    style={{ opacity: 0.4 }}
+                  />
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -203,38 +213,52 @@ export default function SecurityPrivacyScreen({ navigation, route }) {
 /* ================= STYLES ================= */
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.white },
+  container: { 
+    flex: 1, 
+    backgroundColor: Colors.white 
+  },
 
   keyboardAvoidingView: {
-     flex: 1,
-   },
-   header: {
-     flexDirection: 'row',
-     alignItems: 'center',
-     paddingHorizontal: 16,
-     paddingVertical: 12,
-     borderBottomWidth: 0.5,
-     borderBottomColor: '#F3F4F6',
-   },
-   modernBackButton: {
-     width: 44,
-     height: 44,
-     borderRadius: 22,
-     justifyContent: 'center',
-     alignItems: 'center',
-   },
-   headerTitle: {
-     ...Typography.h2,
-     fontSize: 28,
-     fontWeight: '700',
-     color: Colors.primary,
-     flex: 1,
-     textAlign: 'center',
-   },
-   headerSpacer: {
-     width: 44,
-   },
+    flex: 1,
+  },
+  
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#F3F4F6',
+  },
+  
+  modernBackButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  
+  headerTitle: {
+    ...Typography.h2,
+    fontSize: 28,
+    fontWeight: '700',
+    color: Colors.primary,
+    flex: 1,
+    textAlign: 'center',
+  },
+  
+  headerSpacer: {
+    width: 44,
+  },
 
+  // Loader styles
+  loaderContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: Colors.white,
+  },
 
   scrollContent: {
     paddingHorizontal: 20,
@@ -279,7 +303,9 @@ const styles = StyleSheet.create({
     borderBottomColor: '#F3F4F6',
   },
 
-  lastItem: { borderBottomWidth: 0 },
+  lastItem: { 
+    borderBottomWidth: 0 
+  },
 
   settingLeft: {
     flexDirection: 'row',
@@ -297,7 +323,9 @@ const styles = StyleSheet.create({
     marginRight: 14,
   },
 
-  settingInfo: { flex: 1 },
+  settingInfo: { 
+    flex: 1 
+  },
 
   settingTitle: {
     fontSize: 16.5,

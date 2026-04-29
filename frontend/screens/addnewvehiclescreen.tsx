@@ -9,9 +9,10 @@ import {
   Modal,
   TextInput,
   Image,
-  Alert,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
+  ActionSheetIOS
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
@@ -20,6 +21,8 @@ import * as ImageManipulator from "expo-image-manipulator";
 import { Colors, Typography } from "../constants/Colors";
 import DatabaseService from "../services/addvehicle_ds";
 import { useAuth } from "../context/AuthContext";
+import CustomAlert from '../components/CustomAlert';
+import LottieView from "lottie-react-native";
 
 /* ================= DATA ================= */
 const VEHICLE_TYPES = ["Car", "Bike"];
@@ -98,9 +101,63 @@ export default function AddNewVehicleScreen({ navigation, route }) {
   const [search, setSearch] = useState("");
   const [yearSearch, setYearSearch] = useState("");
   const [showYearDropdown, setShowYearDropdown] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [showPhotoOptions, setShowPhotoOptions] = useState(false);
   
   // Flag to track if initial load is done for edit mode
   const [isInitialLoad, setIsInitialLoad] = useState(true);
+  
+  // Custom Alert states
+  const [alertVisible, setAlertVisible] = useState(false);
+  const [alertConfig, setAlertConfig] = useState({
+    title: "",
+    message: "",
+    icon: "check-circle",
+    iconColor: "#10B981",
+    buttons: []
+  });
+
+  const showCustomAlert = (title, message, type = 'success') => {
+    let icon = "check-circle";
+    let iconColor = "#10B981";
+    
+    if (type === 'error') {
+      icon = "error";
+      iconColor = "#EF4444";
+    } else if (type === 'warning') {
+      icon = "warning";
+      iconColor = "#F59E0B";
+    } else if (type === 'info') {
+      icon = "info";
+      iconColor = Colors.primary;
+    }
+    
+    setAlertConfig({
+      title,
+      message,
+      icon,
+      iconColor,
+      buttons: [{ text: 'OK', onPress: () => setAlertVisible(false) }]
+    });
+    setAlertVisible(true);
+  };
+
+  const showConfirmationAlert = (title, message, onConfirm) => {
+    setAlertConfig({
+      title,
+      message,
+      icon: "warning",
+      iconColor: "#F59E0B",
+      buttons: [
+        { text: 'Cancel', onPress: () => setAlertVisible(false), style: 'cancel' },
+        { text: 'Remove', onPress: () => {
+          setAlertVisible(false);
+          onConfirm();
+        }, style: 'destructive' }
+      ]
+    });
+    setAlertVisible(true);
+  };
 
   // Get current year
   const currentYear = new Date().getFullYear();
@@ -134,7 +191,6 @@ export default function AddNewVehicleScreen({ navigation, route }) {
 
   // Reset dependent fields when vehicle type changes (only for new entries)
   useEffect(() => {
-    // Don't reset during initial load in edit mode
     if (!isInitialLoad && !isEdit) {
       setBodyType("");
       setMake("");
@@ -166,7 +222,6 @@ export default function AddNewVehicleScreen({ navigation, route }) {
     setColor(editingVehicle.color || "");
     setMaxSeats(String(editingVehicle.max_seats || ""));
     
-    // Handle notes and photos
     if (editingVehicle.notes && editingVehicle.notes.startsWith('{"photos":')) {
       try {
         const parsedNotes = JSON.parse(editingVehicle.notes);
@@ -181,7 +236,6 @@ export default function AddNewVehicleScreen({ navigation, route }) {
       setPhotos(editingVehicle.photos || (editingVehicle.photo_url ? [editingVehicle.photo_url] : []));
     }
     
-    // Mark initial load as complete after setting all values
     setTimeout(() => {
       setIsInitialLoad(false);
     }, 100);
@@ -191,7 +245,7 @@ export default function AddNewVehicleScreen({ navigation, route }) {
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== "granted") {
-      Alert.alert("Permission Denied", "Need camera roll permissions to upload photos.");
+      showCustomAlert("Permission Denied", "Need camera roll permissions to upload photos.", "warning");
       return;
     }
 
@@ -216,17 +270,18 @@ export default function AddNewVehicleScreen({ navigation, route }) {
       }
       setPhotos(newPhotos);
     }
+    setShowPhotoOptions(false);
   };
 
   const takePhoto = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== "granted") {
-      Alert.alert("Permission Denied", "Need camera permissions to take photos.");
+      showCustomAlert("Permission Denied", "Need camera permissions to take photos.", "warning");
       return;
     }
 
     if (photos.length >= 5) {
-      Alert.alert("Limit Reached", "You can upload maximum 5 photos.");
+      showCustomAlert("Limit Reached", "You can upload maximum 5 photos.", "warning");
       return;
     }
 
@@ -242,38 +297,39 @@ export default function AddNewVehicleScreen({ navigation, route }) {
       );
       setPhotos([...photos, manipulated.uri]);
     }
+    setShowPhotoOptions(false);
   };
 
-const removePhoto = (index: number) => {
-  Alert.alert(
-    "Remove Photo",
-    "Are you sure you want to remove this photo?",
-    [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Remove",
-        style: "destructive",
-        onPress: () => {
-          const newPhotos = [...photos];
-          newPhotos.splice(index, 1);
-          setPhotos(newPhotos);
-        },
-      },
-    ]
-  );
-};
+  const removePhoto = (index: number) => {
+    showConfirmationAlert(
+      "Remove Photo",
+      "Are you sure you want to remove this photo?",
+      () => {
+        const newPhotos = [...photos];
+        newPhotos.splice(index, 1);
+        setPhotos(newPhotos);
+      }
+    );
+  };
 
   const showImageOptions = () => {
-    Alert.alert(
-      "Add Photo",
-      "Choose an option",
-      [
-        { text: "Take Photo", onPress: takePhoto },
-        { text: "Choose from Gallery", onPress: pickImage },
-        { text: "Cancel", style: "cancel" },
-      ],
-      { cancelable: true }
-    );
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: ['Cancel', 'Take Photo', 'Choose from Gallery'],
+          cancelButtonIndex: 0,
+        },
+        (buttonIndex) => {
+          if (buttonIndex === 1) {
+            takePhoto();
+          } else if (buttonIndex === 2) {
+            pickImage();
+          }
+        }
+      );
+    } else {
+      setShowPhotoOptions(true);
+    }
   };
 
   /* ================= VALIDATION ================= */
@@ -303,49 +359,49 @@ const removePhoto = (index: number) => {
   /* ================= SAVE ================= */
   const handleSave = async () => {
     if (!phoneNumber) {
-      Alert.alert("Session Error", "User session not found. Please login again.");
+      showCustomAlert("Session Error", "User session not found. Please login again.", "error");
       return;
     }
 
-    // Validate at least one photo
     if (photos.length === 0) {
-      Alert.alert("Photo Required", "Please upload at least one vehicle photo");
+      showCustomAlert("Photo Required", "Please upload at least one vehicle photo", "warning");
       return;
     }
 
     if (!vehicleType) {
-      Alert.alert("Error", "Please select Vehicle Type");
+      showCustomAlert("Error", "Please select Vehicle Type", "error");
       return;
     }
     if (!bodyType) {
-      Alert.alert("Error", "Please select Body Type");
+      showCustomAlert("Error", "Please select Body Type", "error");
       return;
     }
     if (!make) {
-      Alert.alert("Error", "Please select Make");
+      showCustomAlert("Error", "Please select Make", "error");
       return;
     }
     if (!model) {
-      Alert.alert("Error", "Please select Model");
+      showCustomAlert("Error", "Please select Model", "error");
       return;
     }
     if (!fuelType) {
-      Alert.alert("Error", "Please select Fuel Type");
+      showCustomAlert("Error", "Please select Fuel Type", "error");
       return;
     }
     if (!year) {
-      Alert.alert("Error", "Year is required");
+      showCustomAlert("Error", "Year is required", "error");
       return;
     }
     if (!registration.trim()) {
-      Alert.alert("Error", "Registration Number is required");
+      showCustomAlert("Error", "Registration Number is required", "error");
       return;
     }
     if (!validateRegistrationNumber(registration.replace(/\s/g, ""))) {
-      Alert.alert("Error", "Please enter a valid Registration Number (e.g., MH12AB1234)");
+      showCustomAlert("Error", "Please enter a valid Registration Number (e.g., MH12AB1234)", "error");
       return;
     }
 
+    setSaving(true);
     const formData = new FormData();
     formData.append("phone_number", phoneNumber);
     formData.append("vehicle_type", vehicleType);
@@ -359,7 +415,6 @@ const removePhoto = (index: number) => {
     formData.append("max_seats", maxSeats);
     formData.append("notes", notes);
 
-    // Append only new photos (ones that are not existing URLs)
     const newPhotos = photos.filter(photo => !photo.startsWith("http"));
     newPhotos.forEach((photo, index) => {
       formData.append("photos", {
@@ -369,7 +424,6 @@ const removePhoto = (index: number) => {
       } as any);
     });
 
-    // Append existing photo URLs to keep them
     const existingPhotoUrls = photos.filter(photo => photo.startsWith("http"));
     if (existingPhotoUrls.length > 0) {
       formData.append("existing_photo_urls", JSON.stringify(existingPhotoUrls));
@@ -378,14 +432,18 @@ const removePhoto = (index: number) => {
     try {
       if (isEdit) {
         await DatabaseService.updateVehicle(editingVehicle.id, formData);
-        Alert.alert("Success", "Vehicle updated successfully");
+        showCustomAlert("Success", "Vehicle updated successfully", "success");
       } else {
         await DatabaseService.addVehicle(formData);
-        Alert.alert("Success", "Vehicle added successfully");
+        showCustomAlert("Success", "Vehicle added successfully", "success");
       }
-      navigation.goBack();
+      setTimeout(() => {
+        navigation.goBack();
+      }, 1500);
     } catch (e: any) {
-      Alert.alert("Error", e?.message || "Failed to save vehicle");
+      showCustomAlert("Error", e?.message || "Failed to save vehicle", "error");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -529,6 +587,47 @@ const removePhoto = (index: number) => {
     </Modal>
   );
 
+  const renderPhotoOptionsModal = () => (
+    <Modal
+      transparent
+      animationType="slide"
+      visible={showPhotoOptions}
+      onRequestClose={() => setShowPhotoOptions(false)}
+    >
+      <TouchableOpacity
+        style={styles.modalOverlay}
+        activeOpacity={1}
+        onPress={() => setShowPhotoOptions(false)}
+      >
+        <View style={styles.bottomSheet}>
+          <View style={styles.bottomSheetHandle} />
+          <Text style={styles.bottomSheetTitle}>Add Photo</Text>
+          
+          <TouchableOpacity style={styles.bottomSheetOption} onPress={takePhoto}>
+            <View style={styles.bottomSheetOptionIcon}>
+              <Ionicons name="camera-outline" size={24} color={Colors.primary} />
+            </View>
+            <Text style={styles.bottomSheetOptionText}>Take Photo</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity style={styles.bottomSheetOption} onPress={pickImage}>
+            <View style={styles.bottomSheetOptionIcon}>
+              <Ionicons name="images-outline" size={24} color={Colors.primary} />
+            </View>
+            <Text style={styles.bottomSheetOptionText}>Choose from Gallery</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={[styles.bottomSheetOption, styles.bottomSheetCancelOption]} 
+            onPress={() => setShowPhotoOptions(false)}
+          >
+            <Text style={styles.bottomSheetCancelText}>Cancel</Text>
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+    </Modal>
+  );
+
   const getBodyTypes = () => {
     if (!vehicleType) return [];
     return BODY_TYPES[vehicleType] || [];
@@ -591,9 +690,6 @@ const removePhoto = (index: number) => {
                 </TouchableOpacity>
               )}
             </ScrollView>
-            {/* {photos.length === 0 && (
-              <Text style={styles.warningText}>⚠️ At least one photo is required</Text>
-            )} */}
           </View>
 
           {/* SELECTORS */}
@@ -698,11 +794,10 @@ const removePhoto = (index: number) => {
                 placeholder="Auto-detected"
                 placeholderTextColor="#9CA3AF"
               />
-             
             </View>
-             {bodyType && maxSeats && (
-                <Text style={styles.seatsHint}>Based on {bodyType}</Text>
-              )}
+            {bodyType && maxSeats && (
+              <Text style={styles.seatsHint}>Based on {bodyType}</Text>
+            )}
           </View>
             
           {/* Notes */}
@@ -721,8 +816,12 @@ const removePhoto = (index: number) => {
           </View>
 
           {/* Save Button */}
-          <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
-            <Text style={styles.saveText}>{isEdit ? "Update Vehicle" : "Save Vehicle"}</Text>
+          <TouchableOpacity style={[styles.saveBtn, saving && styles.disabledButton]} onPress={handleSave} disabled={saving}>
+            {saving ? (
+              <ActivityIndicator color={Colors.white} />
+            ) : (
+              <Text style={styles.saveText}>{isEdit ? "Update Vehicle" : "Save Vehicle"}</Text>
+            )}
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -739,6 +838,18 @@ const removePhoto = (index: number) => {
       {activeModal === "fuel" &&
         renderModal("Fuel Type", FUEL_TYPES, fuelType, setFuelType)}
       {renderYearModal()}
+      {renderPhotoOptionsModal()}
+
+      {/* Custom Alert */}
+      <CustomAlert
+        visible={alertVisible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        icon={alertConfig.icon}
+        iconColor={alertConfig.iconColor}
+        buttons={alertConfig.buttons}
+        onBackdropPress={() => setAlertVisible(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -811,18 +922,18 @@ const styles = StyleSheet.create({
     position: "relative",
   },
   vehicleImage: { width: "100%", height: "100%", borderRadius: 12 },
- deletePhotoBtn: {
-  position: "absolute",
-  top: 4,       // 👈 change from -8
-  right: 4,     // 👈 change from -8
-  backgroundColor: "rgba(0,0,0,0.6)",
-  borderRadius: 12,
-  width: 24,
-  height: 24,
-  justifyContent: "center",
-  alignItems: "center",
-  zIndex: 10,   // 👈 add this
-},
+  deletePhotoBtn: {
+    position: "absolute",
+    top: 4,
+    right: 4,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    borderRadius: 12,
+    width: 24,
+    height: 24,
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 10,
+  },
   addPhotoCard: {
     width: 100,
     height: 100,
@@ -835,12 +946,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#F9FAFB",
   },
   addPhotoText: { fontSize: 11, color: Colors.primary, marginTop: 4 },
-  warningText: {
-    fontSize: 12,
-    color: "#EF4444",
-    marginTop: 8,
-    textAlign: "center",
-  },
 
   inputBox: { marginBottom: 16 },
   label: {
@@ -920,6 +1025,7 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   saveText: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  disabledButton: { opacity: 0.6 },
 
   modalOverlay: {
     flex: 1,
@@ -961,4 +1067,61 @@ const styles = StyleSheet.create({
   modalItemText: { fontSize: 16, color: "#374151" },
   modalItemTextSelected: { fontWeight: "700", color: Colors.primary },
   noResultsText: { textAlign: "center", paddingVertical: 20, color: "#9CA3AF" },
+
+  // Bottom Sheet Styles
+  bottomSheet: {
+    backgroundColor: Colors.white,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingBottom: 30,
+  },
+  bottomSheetHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: "#E5E7EB",
+    borderRadius: 2,
+    alignSelf: "center",
+    marginTop: 12,
+    marginBottom: 20,
+  },
+  bottomSheetTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: Colors.primary,
+    textAlign: "center",
+    marginBottom: 20,
+  },
+  bottomSheetOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F3F4F6",
+  },
+  bottomSheetOptionIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#F3F4F6",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 16,
+  },
+  bottomSheetOptionText: {
+    fontSize: 16,
+    fontWeight: "500",
+    color: Colors.dark,
+  },
+  bottomSheetCancelOption: {
+    justifyContent: "center",
+    borderBottomWidth: 0,
+    marginTop: 8,
+  },
+  bottomSheetCancelText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#EF4444",
+    textAlign: "center",
+  },
 });

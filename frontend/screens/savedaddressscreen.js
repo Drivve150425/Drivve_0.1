@@ -12,8 +12,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   TextInput,
-  Alert,
-  ActivityIndicator
+  ActivityIndicator,
+  FlatList
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
@@ -23,19 +23,24 @@ import LottieView from "lottie-react-native";
 
 let MapView = null;
 let Marker = null;
-
+let PROVIDER_GOOGLE = null;
 if (Platform.OS !== 'web') {
   const Maps = require('react-native-maps');
   MapView = Maps.default;
   Marker = Maps.Marker;
+  PROVIDER_GOOGLE = Maps.PROVIDER_GOOGLE;
 }
 
 import * as Haptics from 'expo-haptics';
 
 import DatabaseService from '../services/savedaddress_ds';
 import { useAuth } from "../context/AuthContext";
+import CustomAlert from '../components/CustomAlert';
 
 const { width, height } = Dimensions.get('window');
+
+// Google Places API Key - Replace with your actual API key
+const GOOGLE_PLACES_API_KEY = 'YOUR_GOOGLE_PLACES_API_KEY';
 
 // Type icons mapping with your color scheme
 const TYPE_ICONS = {
@@ -75,6 +80,9 @@ export default function SavedAddressesScreen({ navigation, route }) {
   });
   const [selectedAddress, setSelectedAddress] = useState('');
   const [searchText, setSearchText] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [showSearchResults, setShowSearchResults] = useState(false);
   const [activeType, setActiveType] = useState('Home');
   const [otherLabel, setOtherLabel] = useState('');
   const [house, setHouse] = useState('');
@@ -88,10 +96,64 @@ export default function SavedAddressesScreen({ navigation, route }) {
   const [modalType, setModalType] = useState(null); // 'edit', 'delete', 'success'
   const [selectedModalItem, setSelectedModalItem] = useState(null);
   
+  // Custom Alert states
+  const [alertVisible, setAlertVisible] = useState(false);
+  const [alertConfig, setAlertConfig] = useState({
+    title: "",
+    message: "",
+    icon: "check-circle",
+    iconColor: "#10B981",
+    buttons: []
+  });
+  
   // Animation refs
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
+  const searchRef = useRef(null);
 
+  const showCustomAlert = (title, message, type = 'success') => {
+    let icon = "check-circle";
+    let iconColor = "#10B981";
+    
+    if (type === 'error') {
+      icon = "error";
+      iconColor = "#EF4444";
+    } else if (type === 'warning') {
+      icon = "warning";
+      iconColor = "#F59E0B";
+    } else if (type === 'info') {
+      icon = "info";
+      iconColor = Colors.primary;
+    }
+    
+    setAlertConfig({
+      title,
+      message,
+      icon,
+      iconColor,
+      buttons: [{ text: 'OK', onPress: () => setAlertVisible(false) }]
+    });
+    setAlertVisible(true);
+  };
+
+  const showConfirmationAlert = (title, message, onConfirm, confirmText = 'Delete') => {
+    setAlertConfig({
+      title,
+      message,
+      icon: "warning",
+      iconColor: "#F59E0B",
+      buttons: [
+        { text: 'Cancel', onPress: () => setAlertVisible(false), style: 'cancel' },
+        { text: confirmText, onPress: () => {
+          setAlertVisible(false);
+          onConfirm();
+        }, style: 'destructive' }
+      ]
+    });
+    setAlertVisible(true);
+  };
+
+  // Initial load
   useEffect(() => {
     loadAddresses();
     
@@ -119,20 +181,144 @@ export default function SavedAddressesScreen({ navigation, route }) {
         phoneNumber.replace(/\s/g, '')
       );
 
-    if (Array.isArray(res)) {
-  const sorted = res
-    .map(normalizeAddress)
-    .sort((a, b) => b.id - a.id); // DESC order (latest first)
+      if (Array.isArray(res)) {
+        const sorted = res
+          .map(normalizeAddress)
+          .sort((a, b) => b.id - a.id); // DESC order (latest first)
 
-  setAddresses(sorted);
-}
-
+        setAddresses(sorted);
+      }
     } catch (error) {
       console.error('Error loading addresses:', error);
-      Alert.alert('Error', 'Failed to load addresses');
+      showCustomAlert('Error', 'Failed to load addresses', 'error');
     } finally {
       setLoading(false);
     }
+  };
+
+  // Search location using Google Places API
+  const searchLocation = async (text) => {
+    if (!text.trim()) {
+      setSearchResults([]);
+      setShowSearchResults(false);
+      return;
+    }
+
+    setSearching(true);
+    try {
+      // Using Google Places API
+      const response = await fetch(
+        `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(
+          text
+        )}&key=${GOOGLE_PLACES_API_KEY}&components=country:in`
+      );
+      const data = await response.json();
+      
+      if (data.predictions) {
+        setSearchResults(data.predictions);
+        setShowSearchResults(true);
+      }
+    } catch (error) {
+      console.error('Search error:', error);
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  // Get place details and update map
+  const selectPlace = async (placeId, description) => {
+    setSearching(true);
+    try {
+      const response = await fetch(
+        `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&key=${GOOGLE_PLACES_API_KEY}`
+      );
+      const data = await response.json();
+      
+      if (data.result && data.result.geometry) {
+        const { lat, lng } = data.result.geometry.location;
+        const newRegion = {
+          latitude: lat,
+          longitude: lng,
+          latitudeDelta: 0.01,
+          longitudeDelta: 0.01,
+        };
+        
+        setMapRegion(newRegion);
+        setSelectedAddress(description);
+        setSearchText(description);
+        setShowSearchResults(false);
+        
+        // Update marker position
+        if (MapView && mapRef.current) {
+          mapRef.current.animateToRegion(newRegion, 1000);
+        }
+      }
+    } catch (error) {
+      console.error('Place details error:', error);
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const updateAddressFromMap = async (region) => {
+    try {
+      const { status } = await Location.getForegroundPermissionsAsync();
+      if (status !== 'granted') return;
+
+      const [geo] = await Location.reverseGeocodeAsync({
+        latitude: region.latitude,
+        longitude: region.longitude,
+      });
+
+      if (!geo) return;
+
+      const full = `
+${geo.name || ''} ${geo.street || ''},
+${geo.subregion || geo.district || ''},
+${geo.city || ''} ${geo.region || ''} ${geo.postalCode || ''},
+${geo.country || ''}
+`.replace(/\s+/g, ' ').trim();
+
+      setSelectedAddress(full);
+      setSearchText(full);
+    } catch (e) {
+      console.log('Reverse geocode error:', e);
+    }
+  };
+
+  const handleLocateMe = async () => {
+    let { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== 'granted') {
+      showCustomAlert('Permission Required', 'Enable location permission to find your current location', 'warning');
+      return;
+    }
+
+    const loc = await Location.getCurrentPositionAsync({
+      accuracy: Location.Accuracy.High,
+    });
+
+    const newRegion = {
+      ...mapRegion,
+      latitude: loc.coords.latitude,
+      longitude: loc.coords.longitude,
+    };
+
+    setMapRegion(newRegion);
+    updateAddressFromMap(newRegion);
+    
+    if (MapView && mapRef.current) {
+      mapRef.current.animateToRegion(newRegion, 1000);
+    }
+  };
+
+  const handleConfirm = () => {
+    const final = searchText.trim() || selectedAddress.trim();
+    if (!final) {
+      showCustomAlert('Pick Location', 'Please choose a location.', 'warning');
+      return;
+    }
+    setSelectedAddress(final);
+    setStep(3);
   };
 
   const handleAddAddress = () => {
@@ -142,6 +328,8 @@ export default function SavedAddressesScreen({ navigation, route }) {
     resetForm();
     setSelectedAddress('');
     setSearchText('');
+    setSearchResults([]);
+    setShowSearchResults(false);
     setStep(2);
   };
 
@@ -191,13 +379,13 @@ export default function SavedAddressesScreen({ navigation, route }) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
       
-      Alert.alert('Success', 'Address deleted successfully');
+      showCustomAlert('Success', 'Address deleted successfully', 'success');
       setModalVisible(false);
       setSelectedModalItem(null);
       setModalType(null);
     } catch (error) {
       console.error('Error deleting address:', error);
-      Alert.alert('Error', 'Failed to delete address. Please try again.');
+      showCustomAlert('Error', 'Failed to delete address. Please try again.', 'error');
     } finally {
       setDeleting(false);
       setDeletingId(null);
@@ -208,81 +396,19 @@ export default function SavedAddressesScreen({ navigation, route }) {
     setModalType('success');
     setModalVisible(true);
   };
-  
-const updateAddressFromMap = async (region) => {
-  try {
-
-    // ✅ CHECK PERMISSION FIRST
-    const { status } = await Location.getForegroundPermissionsAsync();
-
-    if (status !== 'granted') {
-      console.log("Location permission not granted");
-      return;
-    }
-
-    const [geo] = await Location.reverseGeocodeAsync({
-      latitude: region.latitude,
-      longitude: region.longitude,
-    });
-
-    if (!geo) return;
-
-    const full = `
-${geo.name || ''} ${geo.street || ''},
-${geo.subregion || geo.district || ''},
-${geo.city || ''} ${geo.region || ''} ${geo.postalCode || ''},
-${geo.country || ''}
-`.replace(/\s+/g, ' ').trim();
-
-    setSelectedAddress(full);
-    setSearchText(full);
-
-  } catch (e) {
-    console.log('Reverse geocode error:', e);
-  }
-};
-
-  const handleLocateMe = async () => {
-    let { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission Required', 'Enable location permission.');
-      return;
-    }
-
-    const loc = await Location.getCurrentPositionAsync({
-      accuracy: Location.Accuracy.High,
-    });
-
-    const newRegion = {
-      ...mapRegion,
-      latitude: loc.coords.latitude,
-      longitude: loc.coords.longitude,
-    };
-
-    setMapRegion(newRegion);
-    updateAddressFromMap(newRegion);
-  };
-
-  const handleConfirm = () => {
-    const final = searchText.trim() || selectedAddress.trim();
-    if (!final) return Alert.alert('Pick Location', 'Please choose a location.');
-    setSelectedAddress(final);
-    setStep(3);
-  };
 
   const handleSave = async () => {
     if (!phoneNumber || !selectedAddress) {
-      Alert.alert('Error', 'Missing phone number or address');
+      showCustomAlert('Error', 'Missing phone number or address', 'error');
       return;
     }
 
-    // Validation for mandatory fields
     if (!house.trim()) {
-      Alert.alert('Required', 'House / Flat / Floor No. is required');
+      showCustomAlert('Required', 'House / Flat / Floor No. is required', 'warning');
       return;
     }
     if (!area.trim()) {
-      Alert.alert('Required', 'Apartment / Road / Area is required');
+      showCustomAlert('Required', 'Apartment / Road / Area is required', 'warning');
       return;
     }
 
@@ -301,21 +427,19 @@ ${geo.country || ''}
     
     try {
       if (editingId) {
-        // EDIT
         await DatabaseService.updateAddress(editingId, payload);
-        Alert.alert('Success', 'Address updated successfully');
+        showCustomAlert('Success', 'Address updated successfully', 'success');
       } else {
-        // ADD
         await DatabaseService.saveAddress(payload);
-        Alert.alert('Success', 'Address saved successfully');
+        showCustomAlert('Success', 'Address saved successfully', 'success');
       }
 
       await loadAddresses();
       resetForm();
-      showSuccessModal(); // Show success modal
+      showSuccessModal();
     } catch (e) {
       console.error('❌ Save failed', e);
-      Alert.alert('Error', 'Failed to save address');
+      showCustomAlert('Error', 'Failed to save address', 'error');
     } finally {
       setSaving(false);
     }
@@ -339,10 +463,8 @@ ${geo.country || ''}
 
   const toggleDefaultAddress = async (addressId) => {
     try {
-      // Update in database first
       const result = await DatabaseService.setDefaultAddress(addressId);
       if (result?.success) {
-        // Update local state
         setAddresses(prev => 
           prev.map(addr => ({
             ...addr,
@@ -356,17 +478,22 @@ ${geo.country || ''}
       }
     } catch (error) {
       console.error('Error setting default address:', error);
-      Alert.alert('Error', 'Failed to set default address');
+      showCustomAlert('Error', 'Failed to set default address', 'error');
     }
   };
 
-  // Handle back button from map screen - navigate to saved addresses screen (step 1)
   const handleBackFromMap = () => {
     setStep(1);
+    setSearchText('');
+    setSearchResults([]);
+    setShowSearchResults(false);
   };
+
+  const mapRef = useRef(null);
 
   const renderAddressCard = (address) => (
     <View key={address.id} style={styles.addressCard}>
+      {/* ... existing card rendering code ... */}
       <View style={styles.addressHeader}>
         <View style={styles.addressTypeContainer}>
           {getTypeIcon(address.type)}
@@ -404,29 +531,28 @@ ${geo.country || ''}
       <View style={styles.addressDetails}>
         <Text style={styles.addressText}>{address.fullAddress}</Text>
         
-       {address.house ? (
-  <View style={styles.row}>
-    <MaterialIcons name="home" size={16} color="#184080" />
-    <Text style={styles.addressSub}> {address.house}</Text>
-  </View>
-) : null}
+        {address.house ? (
+          <View style={styles.row}>
+            <MaterialIcons name="home" size={16} color="#184080" />
+            <Text style={styles.addressSub}> {address.house}</Text>
+          </View>
+        ) : null}
 
-{address.area ? (
-  <View style={styles.row}>
-    <Ionicons name="location-outline" size={16} color="#184080" />
-    <Text style={styles.addressSub}> {address.area}</Text>
-  </View>
-) : null}
+        {address.area ? (
+          <View style={styles.row}>
+            <Ionicons name="location-outline" size={16} color="#184080" />
+            <Text style={styles.addressSub}> {address.area}</Text>
+          </View>
+        ) : null}
 
-{address.instructions ? (
-  <View style={styles.row}>
-    <MaterialIcons name="info-outline" size={16} color="#184080" />
-    <Text style={styles.addressNote}> {address.instructions}</Text>
-  </View>
-) : null}
+        {address.instructions ? (
+          <View style={styles.row}>
+            <MaterialIcons name="info-outline" size={16} color="#184080" />
+            <Text style={styles.addressNote}> {address.instructions}</Text>
+          </View>
+        ) : null}
       </View>
       
-      {/* Set as default address option inside card */}
       {!address.isDefault && (
         <TouchableOpacity 
           style={styles.setDefaultButton}
@@ -452,7 +578,6 @@ ${geo.country || ''}
     </View>
   );
 
-  // Central Modal Component
   const CentralModal = ({ visible, onClose, title, message, type, onConfirm }) => (
     <Modal
       visible={visible}
@@ -461,27 +586,14 @@ ${geo.country || ''}
       onRequestClose={onClose}
     >
       <View style={styles.modalOverlay}>
-        <Animated.View 
-          style={[
-            styles.centralModalContent, 
-            { opacity: fadeAnim }
-          ]}
-        >
-          {/* Modal Icon based on type */}
+        <Animated.View style={[styles.centralModalContent, { opacity: fadeAnim }]}>
           <View style={styles.modalIconContainer}>
-            {type === 'edit' && (
-              <MaterialIcons name="edit" size={40} color="#ED7117" />
-            )}
-            {type === 'delete' && (
-              <MaterialIcons name="warning" size={40} color="#EF4444" />
-            )}
-            {type === 'success' && (
-              <MaterialIcons name="check-circle" size={40} color="#10B981" />
-            )}
+            {type === 'edit' && <MaterialIcons name="edit" size={40} color="#ED7117" />}
+            {type === 'delete' && <MaterialIcons name="warning" size={40} color="#EF4444" />}
+            {type === 'success' && <MaterialIcons name="check-circle" size={40} color="#10B981" />}
           </View>
           
           <Text style={styles.modalTitle}>{title}</Text>
-          
           <Text style={styles.modalMessage}>{message}</Text>
           
           <View style={styles.modalButtons}>
@@ -529,7 +641,6 @@ ${geo.country || ''}
     </Modal>
   );
 
-  // Get modal content based on type
   const getModalContent = () => {
     switch (modalType) {
       case 'edit':
@@ -570,6 +681,23 @@ ${geo.country || ''}
   const modalContent = getModalContent();
   const handleBack = () => navigation.goBack();
 
+  // Show loader while fetching data (initial load only)
+  if (loading && step === 1 && addresses.length === 0) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
+        <View style={styles.loaderContainer}>
+          <LottieView
+            source={require("../assets/loading.json")}
+            autoPlay
+            loop
+            style={{ width: 300, height: 300 }}
+          />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
@@ -578,15 +706,15 @@ ${geo.country || ''}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <View style={styles.header}>
-          {/* Left Back Button */}
           <TouchableOpacity onPress={step === 2 ? handleBackFromMap : handleBack}>
             <MaterialIcons name="arrow-back-ios" size={24} color="#ED7117" />
           </TouchableOpacity>
 
-          {/* Title */}
           <Text style={styles.headerTitle}>
             {step === 1 ? "Saved Addresses" : step === 2 ? "Select Location" : "Save Address"}
           </Text>
+
+          <View style={styles.headerSpacer} />
         </View>
 
         {/* Step 1: List Addresses */}
@@ -602,28 +730,12 @@ ${geo.country || ''}
               transform: [{ translateY: slideAnim }],
             }}
           >
-            {loading ? (
-              <View style={styles.loaderContainer}>
-                <LottieView
-                  source={require("../assets/loading.json")}
-                  autoPlay
-                  loop
-                  style={{ width: 300, height: 300 }}
-                />
-              </View>
-            ) : addresses.length === 0 ? (
-              renderEmptyState()
-            ) : (
-              addresses.map(renderAddressCard)
-            )}
+            {addresses.length === 0 ? renderEmptyState() : addresses.map(renderAddressCard)}
           </Animated.ScrollView>
         )}
 
         {step === 1 && !loading && (
-          <TouchableOpacity
-            style={styles.fab}
-            onPress={handleAddAddress}
-          >
+          <TouchableOpacity style={styles.fab} onPress={handleAddAddress}>
             <MaterialIcons name="add" size={30} color={Colors.white} />
           </TouchableOpacity>
         )}
@@ -631,30 +743,48 @@ ${geo.country || ''}
         {/* Step 2: Map View */}
         {step === 2 && (
           <View style={{ flex: 1 }}>
-            {/* Mobile Map */}
             {Platform.OS !== 'web' && MapView ? (
-              <MapView
-                style={{ flex: 1 }}
-                region={mapRegion}
-                onRegionChangeComplete={(reg) => {
-                  setMapRegion(reg);
-                  updateAddressFromMap(reg);
-                }}
-              >
-                <Marker coordinate={mapRegion} />
-              </MapView>
+              <>
+                <MapView
+                  ref={mapRef}
+                  provider={PROVIDER_GOOGLE}
+                  style={{ flex: 1 }}
+                  region={mapRegion}
+                  onRegionChangeComplete={(reg) => {
+                    setMapRegion(reg);
+                    updateAddressFromMap(reg);
+                  }}
+                >
+                  <Marker coordinate={mapRegion} />
+                </MapView>
+
+                {/* Search Results Dropdown */}
+                {showSearchResults && searchResults.length > 0 && (
+                  <View style={styles.searchResultsContainer}>
+                    <FlatList
+                      data={searchResults}
+                      keyExtractor={(item) => item.place_id}
+                      renderItem={({ item }) => (
+                        <TouchableOpacity
+                          style={styles.searchResultItem}
+                          onPress={() => selectPlace(item.place_id, item.description)}
+                        >
+                          <Ionicons name="location-outline" size={20} color={Colors.primary} />
+                          <Text style={styles.searchResultText} numberOfLines={2}>
+                            {item.description}
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                      keyboardShouldPersistTaps="always"
+                    />
+                  </View>
+                )}
+              </>
             ) : (
-              /* Web Fallback - Fixed inline styles with numbers */
-              <View
-                style={styles.webFallbackContainer}
-              >
+              <View style={styles.webFallbackContainer}>
                 <MaterialIcons name="map" size={70} color="#9CA3AF" />
-                <Text style={styles.webFallbackTitle}>
-                  Map not available on Web
-                </Text>
-                <Text style={styles.webFallbackSubtitle}>
-                  Please use the mobile app to select location 📱
-                </Text>
+                <Text style={styles.webFallbackTitle}>Map not available on Web</Text>
+                <Text style={styles.webFallbackSubtitle}>Please use the mobile app to select location 📱</Text>
               </View>
             )}
 
@@ -663,29 +793,57 @@ ${geo.country || ''}
               <Text style={styles.sheetTitle}>Set location</Text>
 
               <View style={styles.searchRow}>
-                <TextInput
-                  style={styles.searchBox}
-                  placeholder="Search location"
-                  placeholderTextColor={Colors.gray}
-                  value={searchText}
-                  onChangeText={setSearchText}
-                />
+                <View style={styles.searchInputContainer}>
+                  <Ionicons name="search-outline" size={20} color={Colors.gray} style={styles.searchIcon} />
+                  <TextInput
+                    ref={searchRef}
+                    style={styles.searchBox}
+                    placeholder="Search location"
+                    placeholderTextColor={Colors.gray}
+                    value={searchText}
+                    onChangeText={(text) => {
+                      setSearchText(text);
+                      searchLocation(text);
+                    }}
+                  />
+                  {searchText.length > 0 && (
+                    <TouchableOpacity onPress={() => {
+                      setSearchText('');
+                      setSearchResults([]);
+                      setShowSearchResults(false);
+                    }}>
+                      <Ionicons name="close-circle" size={20} color={Colors.gray} />
+                    </TouchableOpacity>
+                  )}
+                </View>
 
                 <TouchableOpacity
                   style={styles.searchButton}
-                  onPress={() => setSelectedAddress(searchText)}
+                  onPress={() => {
+                    if (searchText.trim()) {
+                      setSelectedAddress(searchText);
+                      setShowSearchResults(false);
+                    }
+                  }}
                 >
-                  <Text style={styles.searchButtonText}>Search</Text>
+                  <Text style={styles.searchButtonText}>Go</Text>
                 </TouchableOpacity>
               </View>
 
+              {searching && (
+                <View style={styles.searchingContainer}>
+                  <ActivityIndicator size="small" color={Colors.primary} />
+                  <Text style={styles.searchingText}>Searching...</Text>
+                </View>
+              )}
+
               <TouchableOpacity style={styles.locateRow} onPress={handleLocateMe}>
                 <MaterialIcons name="my-location" size={18} color="#ED7117" />
-                <Text style={styles.locateText}>Locate Me</Text>
+                <Text style={styles.locateText}>Use my current location</Text>
               </TouchableOpacity>
 
               {selectedAddress ? (
-                <Text style={styles.selectedAddressText}>
+                <Text style={styles.selectedAddressText} numberOfLines={2}>
                   {selectedAddress}
                 </Text>
               ) : null}
@@ -717,7 +875,6 @@ ${geo.country || ''}
               <Text style={styles.locationHeader}>Your Location</Text>
               <Text style={styles.locationText}>{selectedAddress}</Text>
 
-              {/* Mandatory fields - House and Apartment/Area */}
               <View style={styles.modernInputContainer}>
                 <TextInput
                   style={styles.modernInput}
@@ -754,7 +911,6 @@ ${geo.country || ''}
               </View>
 
               <Text style={styles.sectionLabel}>Save As</Text>
-
               <View style={styles.typeRow}>
                 {['Home', 'Work', 'Others'].map((t) => {
                   const active = activeType === t;
@@ -793,9 +949,7 @@ ${geo.country || ''}
                 disabled={saving}
               >
                 <View style={[styles.defaultCircle, makeDefault && styles.defaultCircleActive]}>
-                  {makeDefault && (
-                    <MaterialIcons name="check" size={12} color="#fff" />
-                  )}
+                  {makeDefault && <MaterialIcons name="check" size={12} color="#fff" />}
                 </View>
                 <Text style={styles.defaultText}>Set as default address</Text>
               </TouchableOpacity>
@@ -818,7 +972,6 @@ ${geo.country || ''}
           </KeyboardAvoidingView>
         )}
 
-        {/* Central Modal for Edit/Delete/Success */}
         <CentralModal
           visible={modalVisible}
           onClose={() => {
@@ -832,6 +985,16 @@ ${geo.country || ''}
           onConfirm={modalContent.onConfirm}
         />
       </KeyboardAvoidingView>
+
+      <CustomAlert
+        visible={alertVisible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        icon={alertConfig.icon}
+        iconColor={alertConfig.iconColor}
+        buttons={alertConfig.buttons}
+        onBackdropPress={() => setAlertVisible(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -853,40 +1016,27 @@ const styles = StyleSheet.create({
     borderBottomColor: '#F3F4F6',
   },
   headerTitle: {
-      ...Typography.h2,
-      fontSize: 28,
-      fontWeight: '700',
-      color: Colors.primary,
-      flex: 1,
-      textAlign: 'center',
-    },
-    headerSpacer: {
-      width: 44,
-    },
-  rightContainer: {
-    width: 40,
-    alignItems: 'flex-end',
+    ...Typography.h2,
+    fontSize: 28,
+    fontWeight: '700',
+    color: Colors.primary,
+    flex: 1,
+    textAlign: 'center',
+  },
+  headerSpacer: {
+    width: 44,
   },
   scrollContent: {
     paddingHorizontal: 16,
     paddingBottom: 30,
     paddingTop: 16,
   },
-  
-  // Loader styles
   loaderContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    minHeight: 700,
+    backgroundColor: Colors.white,
   },
-  loaderText: {
-    marginTop: 20,
-    fontSize: 16,
-    color: Colors.primary,
-    fontWeight: '500',
-  },
-  
   addressCard: {
     backgroundColor: Colors.white,
     borderRadius: 16,
@@ -965,11 +1115,12 @@ const styles = StyleSheet.create({
     color: '#184080',
     fontWeight: '500',
   },
-emptyStateContainer: {
-  flex: 1,
-  justifyContent: 'center',
-  alignItems: 'center',
-},
+  emptyStateContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
   emptyStateIcon: {
     marginBottom: 24,
   },
@@ -986,35 +1137,6 @@ emptyStateContainer: {
     lineHeight: 22,
     marginBottom: 32,
   },
-  addFirstAddressButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: '#184080',
-    paddingHorizontal: 24,
-    paddingVertical: 14,
-    borderRadius: 12,
-    shadowColor: '#184080',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  addFirstAddressText: {
-    color: Colors.white,
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  loadingContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 60,
-  },
-  loadingText: {
-    fontSize: 14,
-    color: '#6B7280',
-  },
-  // Map View Styles
   mapSheet: {
     backgroundColor: '#fff',
     padding: 16,
@@ -1035,22 +1157,31 @@ emptyStateContainer: {
     flexDirection: 'row',
     marginTop: 8,
     gap: 10,
+    alignItems: 'center',
   },
-  searchBox: {
+  searchInputContainer: {
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#F9FAFB',
-    paddingHorizontal: 14,
-    paddingVertical: 12,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#E5E7EB',
+    paddingHorizontal: 12,
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchBox: {
+    flex: 1,
+    paddingVertical: 12,
     fontSize: 14,
     color: Colors.dark,
   },
   searchButton: {
     backgroundColor: '#184080',
     paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     borderRadius: 12,
     justifyContent: 'center',
   },
@@ -1059,10 +1190,50 @@ emptyStateContainer: {
     fontSize: 14,
     fontWeight: '600',
   },
+  searchResultsContainer: {
+    position: 'absolute',
+    top: 120,
+    left: 16,
+    right: 16,
+    backgroundColor: Colors.white,
+    borderRadius: 12,
+    maxHeight: 250,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
+    zIndex: 1000,
+  },
+  searchResultItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#E5E7EB',
+  },
+  searchResultText: {
+    flex: 1,
+    fontSize: 14,
+    color: Colors.dark,
+    marginLeft: 12,
+  },
+  searchingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+  },
+  searchingText: {
+    marginLeft: 8,
+    fontSize: 12,
+    color: Colors.gray,
+  },
   locateRow: {
     flexDirection: 'row',
     marginTop: 12,
     alignItems: 'center',
+    paddingVertical: 8,
   },
   locateText: {
     marginLeft: 8,
@@ -1076,7 +1247,6 @@ emptyStateContainer: {
     fontSize: 12,
     lineHeight: 18,
   },
-  // Web Fallback Styles
   webFallbackContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -1094,7 +1264,6 @@ emptyStateContainer: {
     marginTop: 6,
     color: '#6B7280',
   },
-  // Form Styles
   formScrollContent: {
     paddingHorizontal: 20,
     paddingBottom: 20,
@@ -1203,7 +1372,6 @@ emptyStateContainer: {
     fontWeight: '500',
     fontSize: 14,
   },
-  // Standardized Bottom Bar and Button
   bottomBar: {
     padding: 16,
     backgroundColor: Colors.white,
@@ -1230,7 +1398,6 @@ emptyStateContainer: {
   disabledButton: {
     opacity: 0.6,
   },
-  // Central Modal Styles
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.6)',

@@ -7,84 +7,172 @@ import {
   Image,
   TouchableOpacity,
   StatusBar,
-  Alert,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
+import LottieView from "lottie-react-native";
 import DatabaseService from "../services/promotion_ds";
 import { Colors, Typography } from "../constants/Colors";
 import { useAuth } from "../context/AuthContext";
+import CustomAlert from '../components/CustomAlert';
 
 export default function PromotionsScreen({ navigation, route }) {
   const { user } = useAuth();
   const phoneNumber = user?.phone_number;
 
   const [promotions, setPromotions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [redeemingId, setRedeemingId] = useState(null);
+  
+  // Custom Alert states
+  const [alertVisible, setAlertVisible] = useState(false);
+  const [alertConfig, setAlertConfig] = useState({
+    title: "",
+    message: "",
+    icon: "check-circle",
+    iconColor: "#10B981",
+    buttons: []
+  });
+
+  const showCustomAlert = (title, message, type = 'success') => {
+    let icon = "check-circle";
+    let iconColor = "#10B981";
+    
+    if (type === 'error') {
+      icon = "error";
+      iconColor = "#EF4444";
+    } else if (type === 'warning') {
+      icon = "warning";
+      iconColor = "#F59E0B";
+    } else if (type === 'info') {
+      icon = "info";
+      iconColor = Colors.primary;
+    }
+    
+    setAlertConfig({
+      title,
+      message,
+      icon,
+      iconColor,
+      buttons: [{ text: 'OK', onPress: () => setAlertVisible(false) }]
+    });
+    setAlertVisible(true);
+  };
+
+  const showConfirmationAlert = (title, message, onConfirm) => {
+    setAlertConfig({
+      title,
+      message,
+      icon: "warning",
+      iconColor: "#F59E0B",
+      buttons: [
+        { text: 'Cancel', onPress: () => setAlertVisible(false), style: 'cancel' },
+        { text: 'Redeem', onPress: () => {
+          setAlertVisible(false);
+          onConfirm();
+        }, style: 'destructive' }
+      ]
+    });
+    setAlertVisible(true);
+  };
 
   useEffect(() => {
     loadPromotions();
   }, []);
 
   const loadPromotions = async () => {
-    const data = await DatabaseService.getPromotions(phoneNumber);
+    if (!phoneNumber) {
+      setLoading(false);
+      return;
+    }
 
-    // 🔥 HIDE redeemed offers completely
-    const filtered = data.filter(item => {
-      if (!item.is_active) return false;
-      if (item.is_redeemed) return false;
+    try {
+      setLoading(true);
+      const data = await DatabaseService.getPromotions(phoneNumber);
 
-      if (item.valid_till) {
-        const d = new Date(item.valid_till);
-        d.setHours(23, 59, 59, 999);
-        if (d < new Date()) return false;
-      }
-      return true;
-    });
+      // 🔥 HIDE redeemed offers completely
+      const filtered = data.filter(item => {
+        if (!item.is_active) return false;
+        if (item.is_redeemed) return false;
 
-    setPromotions(filtered);
+        if (item.valid_till) {
+          const d = new Date(item.valid_till);
+          d.setHours(23, 59, 59, 999);
+          if (d < new Date()) return false;
+        }
+        return true;
+      });
+
+      setPromotions(filtered);
+    } catch (error) {
+      console.error("Error loading promotions:", error);
+      showCustomAlert("Error", "Failed to load promotions", "error");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const copyCode = async code => {
     await Clipboard.setStringAsync(code);
-    Alert.alert("Copied 🎉", "Promo code copied");
+    showCustomAlert("Copied 🎉", "Promo code copied to clipboard", "success");
   };
 
   const redeemOffer = async item => {
-    Alert.alert(
+    showConfirmationAlert(
       "Redeem Offer 🎁",
       "This offer can be redeemed only once",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Redeem",
-          onPress: async () => {
-            const res = await DatabaseService.redeemPromotion(
-              item.id,
-              phoneNumber   // ✅ SEND PHONE NUMBER
+      async () => {
+        setRedeemingId(item.id);
+        try {
+          const res = await DatabaseService.redeemPromotion(
+            item.id,
+            phoneNumber
+          );
+
+          if (res?.alreadyRedeemed) {
+            showCustomAlert("Already Redeemed", "This offer has already been redeemed", "warning");
+          } else {
+            showCustomAlert("Success 🎉", "Offer redeemed successfully", "success");
+
+            // 🔥 REMOVE FROM LIST
+            setPromotions(prev =>
+              prev.filter(p => p.id !== item.id)
             );
-
-            if (res?.alreadyRedeemed) {
-              Alert.alert("Already Redeemed");
-            } else {
-              Alert.alert("Success 🎉", "Offer redeemed successfully");
-
-              // 🔥 REMOVE FROM LIST
-              setPromotions(prev =>
-                prev.filter(p => p.id !== item.id)
-              );
-            }
-          },
-        },
-      ]
+          }
+        } catch (error) {
+          console.error("Error redeeming offer:", error);
+          showCustomAlert("Error", "Failed to redeem offer", "error");
+        } finally {
+          setRedeemingId(null);
+        }
+      }
     );
   };
   
   const handleBack = () => {
     navigation.goBack();
   };
+
+  // Show loader while fetching data
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
+        <View style={styles.loaderContainer}>
+          <LottieView
+            source={require("../assets/loading.json")}
+            autoPlay
+            loop
+            style={{ width: 300, height: 300 }}
+          />
+        </View>
+      </SafeAreaView>
+    );
+  }
   
   return (
     <SafeAreaView style={styles.container}>
@@ -106,8 +194,11 @@ export default function PromotionsScreen({ navigation, route }) {
         <ScrollView contentContainerStyle={styles.scroll}>
           {promotions.length === 0 && (
             <View style={styles.emptyContainer}>
-              <Ionicons name="pricetags-outline" size={60} />
+              <Ionicons name="pricetags-outline" size={60} color={Colors.primary} />
               <Text style={styles.emptyTitle}>No Offers Available</Text>
+              <Text style={styles.emptySubtitle}>
+                Check back later for exciting offers!
+              </Text>
             </View>
           )}
 
@@ -143,26 +234,53 @@ export default function PromotionsScreen({ navigation, route }) {
                 )}
 
                 <TouchableOpacity
-                  style={styles.redeemBtn}
+                  style={[styles.redeemBtn, redeemingId === item.id && styles.disabledButton]}
                   onPress={() => redeemOffer(item)}
                   activeOpacity={0.8}
+                  disabled={redeemingId === item.id}
                 >
-                  <Text style={styles.redeemText}>Redeem Now</Text>
+                  {redeemingId === item.id ? (
+                    <ActivityIndicator color={Colors.white} />
+                  ) : (
+                    <Text style={styles.redeemText}>Redeem Now</Text>
+                  )}
                 </TouchableOpacity>
               </View>
             </View>
           ))}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Custom Alert */}
+      <CustomAlert
+        visible={alertVisible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        icon={alertConfig.icon}
+        iconColor={alertConfig.iconColor}
+        buttons={alertConfig.buttons}
+        onBackdropPress={() => setAlertVisible(false)}
+      />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fff" },
+  container: { 
+    flex: 1, 
+    backgroundColor: "#fff" 
+  },
 
   keyboardAvoidingView: {
     flex: 1,
+  },
+  
+  // Loader styles
+  loaderContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: Colors.white,
   },
   
   header: {
@@ -195,7 +313,10 @@ const styles = StyleSheet.create({
     width: 44,
   },
   
-  scroll: { padding: 16 },
+  scroll: { 
+    padding: 16,
+    paddingBottom: 40,
+  },
 
   card: {
     borderRadius: 20,
@@ -214,9 +335,15 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
 
-  image: { width: "100%", height: 160 },
+  image: { 
+    width: "100%", 
+    height: 160,
+    backgroundColor: "#F3F4F6",
+  },
 
-  content: { padding: 20 },
+  content: { 
+    padding: 20 
+  },
 
   company: {
     fontSize: 12,
@@ -325,10 +452,15 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     fontSize: 16,
   },
+  
+  disabledButton: {
+    opacity: 0.6,
+  },
 
   emptyContainer: {
     marginTop: 200,
     alignItems: "center",
+    paddingHorizontal: 40,
   },
 
   emptyTitle: {
@@ -336,5 +468,12 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: Colors.primary,
     marginTop: 16,
+  },
+  
+  emptySubtitle: {
+    fontSize: 14,
+    color: Colors.gray,
+    marginTop: 8,
+    textAlign: "center",
   },
 });

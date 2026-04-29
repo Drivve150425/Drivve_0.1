@@ -41,13 +41,13 @@ async def send_otp(phone_data: dict, db: Session = Depends(get_db)):
         otp_code = generate_otp()
         expires_at = datetime.now(UTC) + timedelta(minutes=10)
 
-        create_notification(
-            db=db,
-            phone_number=phone_number,
-            title="OTP Sent",
-            message="An OTP has been sent to your registered mobile number.",
-            ntype=NotificationType.SYSTEM
-        )
+        # create_notification(
+        #     db=db,
+        #     phone_number=phone_number,
+        #     title="OTP Sent",
+        #     message="An OTP has been sent to your registered mobile number.",
+        #     ntype=NotificationType.SYSTEM
+        # )
 
         otp_entry = OTPVerification(
             phone_number=phone_number,

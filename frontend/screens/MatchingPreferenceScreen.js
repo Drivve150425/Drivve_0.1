@@ -8,14 +8,17 @@ import {
   TouchableOpacity,
   TextInput,
   StatusBar,
-    KeyboardAvoidingView,
-    Platform
+  KeyboardAvoidingView,
+  Platform,
+  ActivityIndicator
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialIcons, Ionicons } from "@expo/vector-icons";
 import DatabaseService from "../services/matchingpreference_ds";
 import { Colors, Typography } from "../constants/Colors";
 import { useAuth } from "../context/AuthContext";
+import LottieView from "lottie-react-native";
+import CustomAlert from '../components/CustomAlert';
 
 /* =========================================================
    HELPERS
@@ -24,7 +27,6 @@ import { useAuth } from "../context/AuthContext";
 const groupByCategory = (list = []) =>
   list.reduce((acc, i) => {
     let category = i.category;
-
     
     acc[category] = acc[category] || [];
     acc[category].push(i);
@@ -56,7 +58,7 @@ const ICON_MAP = {
 ========================================================= */
 
 export default function MatchingPreferenceScreen({ route, navigation }) {
- const { user } = useAuth();
+  const { user } = useAuth();
   const phoneNumber = user?.phone_number;
   
   // Get callback from route params (passed from Step3)
@@ -64,6 +66,43 @@ export default function MatchingPreferenceScreen({ route, navigation }) {
 
   const [master, setMaster] = useState([]);
   const [values, setValues] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  
+  // Custom Alert states
+  const [alertVisible, setAlertVisible] = useState(false);
+  const [alertConfig, setAlertConfig] = useState({
+    title: "",
+    message: "",
+    icon: "check-circle",
+    iconColor: "#10B981",
+    buttons: []
+  });
+
+  const showCustomAlert = (title, message, type = 'success') => {
+    let icon = "check-circle";
+    let iconColor = "#10B981";
+    
+    if (type === 'error') {
+      icon = "error";
+      iconColor = "#EF4444";
+    } else if (type === 'warning') {
+      icon = "warning";
+      iconColor = "#F59E0B";
+    } else if (type === 'info') {
+      icon = "info";
+      iconColor = Colors.primary;
+    }
+    
+    setAlertConfig({
+      title,
+      message,
+      icon,
+      iconColor,
+      buttons: [{ text: 'OK', onPress: () => setAlertVisible(false) }]
+    });
+    setAlertVisible(true);
+  };
 
   useEffect(() => {
     if (phoneNumber) {
@@ -72,12 +111,23 @@ export default function MatchingPreferenceScreen({ route, navigation }) {
   }, [phoneNumber]);
 
   const load = async () => {
-    if (!phoneNumber) return;
+    if (!phoneNumber) {
+      setLoading(false);
+      return;
+    }
 
-    const defs = await DatabaseService.getMatchingPreferenceMaster();
-    const userVals = await DatabaseService.getUserMatchingPreferences(phoneNumber);
-    setMaster(defs || []);
-    setValues(userVals || {});
+    try {
+      setLoading(true);
+      const defs = await DatabaseService.getMatchingPreferenceMaster();
+      const userVals = await DatabaseService.getUserMatchingPreferences(phoneNumber);
+      setMaster(defs || []);
+      setValues(userVals || {});
+    } catch (error) {
+      console.error("Error loading preferences:", error);
+      showCustomAlert("Error", "Failed to load preferences", "error");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const grouped = useMemo(() => groupByCategory(master), [master]);
@@ -86,15 +136,25 @@ export default function MatchingPreferenceScreen({ route, navigation }) {
     setValues(prev => ({ ...prev, [key]: value }));
     DatabaseService.saveMatchingPreference(phoneNumber, key, value);
   };
+  
   // Handle save and navigate back
-  const handleSave = () => {
-    // Call the callback if provided (from Step3)
-    if (onSaveCallback) {
-      onSaveCallback(values);
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      // Call the callback if provided (from Step3)
+      if (onSaveCallback) {
+        onSaveCallback(values);
+      }
+      // Navigate back to Step3
+      navigation.goBack();
+    } catch (error) {
+      console.error("Error saving preferences:", error);
+      showCustomAlert("Error", "Failed to save preferences", "error");
+    } finally {
+      setSaving(false);
     }
-    // Navigate back to Step3
-    navigation.goBack();
   };
+  
   /* =========================================================
      RENDERERS
   ========================================================= */
@@ -188,40 +248,55 @@ export default function MatchingPreferenceScreen({ route, navigation }) {
   const handleBack = () => {
     navigation.goBack();
   };
+
+  // Show loader while fetching data
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
+        <View style={styles.loaderContainer}>
+          <LottieView
+            source={require("../assets/loading.json")}
+            autoPlay
+            loop
+            style={{ width: 300, height: 300 }}
+          />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   /* =========================================================
      EMPTY STATE
   ========================================================= */
 
   if (!master.length) {
     return (
-     <SafeAreaView style={styles.container}>
-          <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
-          
-          <KeyboardAvoidingView
-            style={styles.keyboardAvoidingView}
-            behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
-          >
-            {/* Header */}
-            <View style={styles.header}>
-              <TouchableOpacity style={styles.modernBackButton} onPress={handleBack }>
-                <MaterialIcons name="arrow-back-ios" size={28} color={Colors.secondary} />
-              </TouchableOpacity>
-              <Text style={styles.headerTitle}>Matching Preferences</Text>
-              <View style={styles.headerSpacer} />
-            </View>
-    
-
-        <View style={styles.emptyWrap}>
-          <Ionicons name="options-outline" size={64} color={Colors.borderGray} />
-          <Text style={styles.emptyTitle}>No Preferences Available</Text>
-          <Text style={styles.emptyText}>
-            Preferences will appear here once configured.
-          </Text>
-        </View>
-              </KeyboardAvoidingView>
+      <SafeAreaView style={styles.container}>
+        <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
         
-      </SafeAreaView>
+        <KeyboardAvoidingView
+          style={styles.keyboardAvoidingView}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+        >
+          {/* Header */}
+          <View style={styles.header}>
+            <TouchableOpacity style={styles.modernBackButton} onPress={handleBack}>
+              <MaterialIcons name="arrow-back-ios" size={28} color={Colors.secondary} />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>Matching Preferences</Text>
+            <View style={styles.headerSpacer} />
+          </View>
       
+          <View style={styles.emptyWrap}>
+            <Ionicons name="options-outline" size={64} color={Colors.borderGray} />
+            <Text style={styles.emptyTitle}>No Preferences Available</Text>
+            <Text style={styles.emptyText}>
+              Preferences will appear here once configured.
+            </Text>
+          </View>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
     );
   }
 
@@ -231,49 +306,75 @@ export default function MatchingPreferenceScreen({ route, navigation }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle="dark-content" backgroundColor={Colors.white} />
 
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <MaterialIcons name="arrow-back-ios" size={26} color={Colors.orange1} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Matching Preferences</Text>
-        <View style={{ width: 44 }} />
-      </View>
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoidingView}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+      >
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.modernBackButton} onPress={() => navigation.goBack()}>
+            <MaterialIcons name="arrow-back-ios" size={28} color={Colors.secondary} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Matching Preferences</Text>
+          <View style={styles.headerSpacer} />
+        </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        {Object.entries(grouped).map(([category, prefs]) => (
-          <View key={category} style={styles.card}>
-            <Text style={styles.cardTitle}>{category}</Text>
+        <ScrollView contentContainerStyle={styles.scrollContent}>
+          {Object.entries(grouped).map(([category, prefs]) => (
+            <View key={category} style={styles.card}>
+              <Text style={styles.cardTitle}>{category}</Text>
 
-            {prefs.map(pref => (
-              <View key={pref.key} style={styles.prefBlock}>
-                <View style={styles.prefHeader}>
-                  <View style={styles.labelRow}>
-                    <MaterialIcons
-                      name={ICON_MAP[pref.key] || "tune"}
-                      size={20}
-                      color={Colors.primary}
-                    />
-                    <Text style={styles.label}>{pref.label}</Text>
+              {prefs.map(pref => (
+                <View key={pref.key} style={styles.prefBlock}>
+                  <View style={styles.prefHeader}>
+                    <View style={styles.labelRow}>
+                      <MaterialIcons
+                        name={ICON_MAP[pref.key] || "tune"}
+                        size={20}
+                        color={Colors.primary}
+                      />
+                      <Text style={styles.label}>{pref.label}</Text>
+                    </View>
+
+                    {pref.input_type === "toggle" && renderToggle(pref)}
                   </View>
 
-                  {pref.input_type === "toggle" && renderToggle(pref)}
+                  {pref.input_type === "single_select" && renderSingle(pref)}
+                  {pref.input_type === "multi_select" && renderMulti(pref)}
                 </View>
+              ))}
+            </View>
+          ))}
+        </ScrollView>
+        
+        {/* Save Button */}
+        <View style={styles.footer}>
+          <TouchableOpacity 
+            style={[styles.saveButton, saving && styles.disabledButton]} 
+            onPress={handleSave}
+            disabled={saving}
+          >
+            {saving ? (
+              <ActivityIndicator color={Colors.white} />
+            ) : (
+              <Text style={styles.saveButtonText}>Save Preferences</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
 
-                {pref.input_type === "single_select" && renderSingle(pref)}
-                {pref.input_type === "multi_select" && renderMulti(pref)}
-              </View>
-            ))}
-          </View>
-        ))}
-      </ScrollView>
-         {/* Save Button */}
-      <View style={styles.footer}>
-        <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-          <Text style={styles.saveButtonText}>Save Preferences</Text>
-        </TouchableOpacity>
-      </View>
+      {/* Custom Alert */}
+      <CustomAlert
+        visible={alertVisible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        icon={alertConfig.icon}
+        iconColor={alertConfig.iconColor}
+        buttons={alertConfig.buttons}
+        onBackdropPress={() => setAlertVisible(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -287,7 +388,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.white
   },
- keyboardAvoidingView: {
+  keyboardAvoidingView: {
     flex: 1,
   },
   header: {
@@ -315,6 +416,14 @@ const styles = StyleSheet.create({
   },
   headerSpacer: {
     width: 44,
+  },
+  
+  // Loader styles
+  loaderContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: Colors.white,
   },
 
   scrollContent: {
@@ -434,7 +543,8 @@ const styles = StyleSheet.create({
     borderColor: Colors.borderGray,
     borderRadius: 12,
     padding: 12,
-    fontSize: 14
+    fontSize: 14,
+    backgroundColor: Colors.white
   },
 
   emptyWrap: {
@@ -478,5 +588,9 @@ const styles = StyleSheet.create({
     color: Colors.white,
     fontSize: 18,
     fontWeight: "700",
+  },
+  
+  disabledButton: {
+    opacity: 0.6,
   },
 });

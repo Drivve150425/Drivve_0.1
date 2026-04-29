@@ -8,7 +8,6 @@ import {
   ScrollView,
   Modal,
   TextInput,
-  Alert,
   StatusBar,
   Linking,
   KeyboardAvoidingView,
@@ -22,6 +21,7 @@ import * as Contacts from "expo-contacts";
 import EmergencyContactService from "../services/emergencycontact_ds";
 import { Colors, Typography } from "../constants/Colors";
 import { useAuth } from "../context/AuthContext";
+import CustomAlert from '../components/CustomAlert';
 
 export default function EmergencyContactsScreen({ navigation, route }) {
   const { user } = useAuth();
@@ -42,6 +42,58 @@ export default function EmergencyContactsScreen({ navigation, route }) {
   const [number, setNumber] = useState("");
   const [editingId, setEditingId] = useState(null);
   
+  // Custom Alert states
+  const [alertVisible, setAlertVisible] = useState(false);
+  const [alertConfig, setAlertConfig] = useState({
+    title: "",
+    message: "",
+    icon: "check-circle",
+    iconColor: "#10B981",
+    buttons: []
+  });
+
+  const showCustomAlert = (title, message, type = 'success') => {
+    let icon = "check-circle";
+    let iconColor = "#10B981";
+    
+    if (type === 'error') {
+      icon = "error";
+      iconColor = "#EF4444";
+    } else if (type === 'warning') {
+      icon = "warning";
+      iconColor = "#F59E0B";
+    } else if (type === 'info') {
+      icon = "info";
+      iconColor = Colors.primary;
+    }
+    
+    setAlertConfig({
+      title,
+      message,
+      icon,
+      iconColor,
+      buttons: [{ text: 'OK', onPress: () => setAlertVisible(false) }]
+    });
+    setAlertVisible(true);
+  };
+
+  const showConfirmationAlert = (title, message, onConfirm) => {
+    setAlertConfig({
+      title,
+      message,
+      icon: "warning",
+      iconColor: "#F59E0B",
+      buttons: [
+        { text: 'Cancel', onPress: () => setAlertVisible(false), style: 'cancel' },
+        { text: 'Delete', onPress: () => {
+          setAlertVisible(false);
+          onConfirm();
+        }, style: 'destructive' }
+      ]
+    });
+    setAlertVisible(true);
+  };
+
   /* ================= HELPERS ================= */
 
   const callNumber = (num) => {
@@ -78,7 +130,7 @@ export default function EmergencyContactsScreen({ navigation, route }) {
       setUserContacts(res.user || []);
     } catch (error) {
       console.error("Error loading contacts:", error);
-      Alert.alert("Error", "Failed to load contacts");
+      showCustomAlert("Error", "Failed to load contacts", "error");
     } finally {
       setLoading(false);
     }
@@ -93,7 +145,7 @@ export default function EmergencyContactsScreen({ navigation, route }) {
   const openContactPicker = async () => {
     const { status } = await Contacts.requestPermissionsAsync();
     if (status !== "granted") {
-      Alert.alert("Permission Required");
+      showCustomAlert("Permission Required", "Allow access to contacts to add emergency contacts", "warning");
       return;
     }
 
@@ -109,7 +161,7 @@ export default function EmergencyContactsScreen({ navigation, route }) {
     const phone = formatPhone(c.phoneNumbers[0].number);
 
     if (isDuplicate(phone)) {
-      Alert.alert("Duplicate contact");
+      showCustomAlert("Duplicate Contact", "This contact is already in your trusted circle", "warning");
       return;
     }
 
@@ -121,13 +173,13 @@ export default function EmergencyContactsScreen({ navigation, route }) {
 
   const addContact = async () => {
     if (!name || !number) {
-      Alert.alert("Enter name & number");
+      showCustomAlert("Missing Info", "Please enter name and phone number", "warning");
       return;
     }
     
     // 🚫 BLOCK numbers in name (FINAL CHECK)
     if (/[^a-zA-Z\s]/.test(name)) {
-      Alert.alert("Invalid Name", "Only letters allowed in name");
+      showCustomAlert("Invalid Name", "Only letters allowed in name", "warning");
       return;
     }
     
@@ -145,18 +197,18 @@ export default function EmergencyContactsScreen({ navigation, route }) {
           phoneNumber
         );
 
-        Alert.alert("Success", "Contact updated successfully");
+        showCustomAlert("Success", "Contact updated successfully", "success");
       } else {
         // 🚫 LIMIT CHECK
         if (userContacts.length >= 3) {
-          Alert.alert("Limit reached", "You can only add up to 3 contacts");
+          showCustomAlert("Limit Reached", "You can only add up to 3 trusted contacts", "warning");
           setSaving(false);
           return;
         }
 
         // ➕ ADD
         if (isDuplicate(number)) {
-          Alert.alert("Already exists");
+          showCustomAlert("Already Exists", "This contact is already in your trusted circle", "warning");
           setSaving(false);
           return;
         }
@@ -167,7 +219,7 @@ export default function EmergencyContactsScreen({ navigation, route }) {
           contact_number: formatPhone(number),
         });
         
-        Alert.alert("Success", "Contact added successfully");
+        showCustomAlert("Success", "Contact added successfully", "success");
       }
 
       // RESET
@@ -180,32 +232,30 @@ export default function EmergencyContactsScreen({ navigation, route }) {
 
     } catch (e) {
       console.log(e);
-      Alert.alert("Error", "An error occurred while saving contact");
+      showCustomAlert("Error", "An error occurred while saving contact", "error");
     } finally {
       setSaving(false);
     }
   };
   
-  const deleteContact = async (id) => {
-    Alert.alert("Delete?", "Remove this contact", [
-      { text: "Cancel" },
-      {
-        text: "Delete",
-        onPress: async () => {
-          setDeleting(true);
-          try {
-            await EmergencyContactService.deleteContact(id, phoneNumber);
-            Alert.alert("Success", "Contact deleted successfully");
-            await loadContacts();
-          } catch (error) {
-            console.error("Error deleting contact:", error);
-            Alert.alert("Error", "Failed to delete contact");
-          } finally {
-            setDeleting(false);
-          }
-        },
-      },
-    ]);
+  const deleteContact = async (id, contactName) => {
+    showConfirmationAlert(
+      "Delete Contact",
+      `Remove ${contactName} from your trusted circle?`,
+      async () => {
+        setDeleting(true);
+        try {
+          await EmergencyContactService.deleteContact(id, phoneNumber);
+          showCustomAlert("Success", "Contact deleted successfully", "success");
+          await loadContacts();
+        } catch (error) {
+          console.error("Error deleting contact:", error);
+          showCustomAlert("Error", "Failed to delete contact", "error");
+        } finally {
+          setDeleting(false);
+        }
+      }
+    );
   };
 
   /* ================= FILTER ================= */
@@ -264,7 +314,7 @@ export default function EmergencyContactsScreen({ navigation, route }) {
               <MaterialIcons name="edit" size={22} color={Colors.primary} />
             </TouchableOpacity>
             <TouchableOpacity 
-              onPress={() => deleteContact(c.id)}
+              onPress={() => deleteContact(c.id, c.contact_name)}
               disabled={deleting}
             >
               {deleting ? (
@@ -287,7 +337,7 @@ export default function EmergencyContactsScreen({ navigation, route }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
@@ -304,9 +354,10 @@ export default function EmergencyContactsScreen({ navigation, route }) {
           <TouchableOpacity 
             style={styles.infoButton}
             onPress={() =>
-              Alert.alert(
+              showCustomAlert(
                 "About Trusted Circle",
-                "Your Trusted Circle contacts will be notified in case of emergency. You can add up to 3 trusted contacts."
+                "Your Trusted Circle contacts will be notified in case of emergency. You can add up to 3 trusted contacts.",
+                "info"
               )
             }
           >
@@ -326,7 +377,6 @@ export default function EmergencyContactsScreen({ navigation, route }) {
               loop
               style={{ width: 300, height: 300 }}
             />
-            {/* <Text style={styles.loaderText}>Loading contacts...</Text> */}
           </View>
         ) : (
           <ScrollView contentContainerStyle={styles.content}>
@@ -468,6 +518,17 @@ export default function EmergencyContactsScreen({ navigation, route }) {
           </View>
         </View>
       </Modal>
+
+      {/* Custom Alert */}
+      <CustomAlert
+        visible={alertVisible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        icon={alertConfig.icon}
+        iconColor={alertConfig.iconColor}
+        buttons={alertConfig.buttons}
+        onBackdropPress={() => setAlertVisible(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -475,13 +536,16 @@ export default function EmergencyContactsScreen({ navigation, route }) {
 /* ================= STYLES ================= */
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fff" },
+  container: { 
+    flex: 1, 
+    backgroundColor: "#fff" 
+  },
   
   loaderContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    minHeight:700
+    backgroundColor: Colors.white,
   },
   
   loaderText: {
@@ -562,6 +626,8 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.08,
     shadowRadius: 8,
+    borderWidth: 1,
+    borderColor: '#F3F4F6',
   },
   
   left: {
@@ -653,6 +719,7 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 12,
     fontSize: 16,
+    backgroundColor: Colors.white,
   },
 
   primaryBtn: {

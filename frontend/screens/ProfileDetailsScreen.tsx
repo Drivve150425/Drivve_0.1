@@ -10,26 +10,30 @@ import {
   TouchableOpacity,
   View,
   KeyboardAvoidingView,
-   Platform,
-  Dimensions} from "react-native";
+  Platform,
+  Dimensions,
+  ActivityIndicator
+} from "react-native";
 import DatabaseService from "../services/myprofile_ds";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Animatable from "react-native-animatable";
 import { ImageBackground } from "react-native";
 import { Colors, Typography } from '../constants/Colors';
 import { MaterialIcons } from '@expo/vector-icons';
-import React, {useCallback} from "react";
+import React, { useCallback } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { CommonActions } from "@react-navigation/native";
 import { Alert } from "react-native";
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from "../context/AuthContext";
-import { SvgCssUri  } from 'react-native-svg/css';
+import { SvgCssUri } from 'react-native-svg/css';
+import LottieView from "lottie-react-native";
 
 const { width, height } = Dimensions.get('window');
 
 import { Linking } from "react-native";
+
 type RootStackParamList = {
   MyVehicleScreen: { phoneNumber: string };
   SavedAddressScreen: { phoneNumber: string };
@@ -38,7 +42,6 @@ type RootStackParamList = {
   EmergencyContactsscreen: { phoneNumber: string };
   PaymentScreen: undefined;
   DCoinScreen: { phoneNumber: string };
-  // RewardsScreen: { phoneNumber: string };
   ReferEarn: undefined;
   ShareAppScreen: { phoneNumber: string };
   AboutUsScreen: undefined;
@@ -46,11 +49,11 @@ type RootStackParamList = {
   Settings: { phoneNumber: string };
   HelpSupportScreen: undefined;
   myprofilescreen: { phoneNumber: string };
-  // AdminDocumentApprovalScreen: undefined;
   FeedbackScreen: { phoneNumber: string };
-  // RideFeedbackScreen: { phoneNumber: string };
 };
+
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
+
 type Props = NativeStackScreenProps<RootStackParamList, "myprofilescreen">;
 type ScreensWithPhone =
   | "MyVehicleScreen"
@@ -59,21 +62,22 @@ type ScreensWithPhone =
   | "MatchingPreferenceScreen"
   | "EmergencyContactsscreen"
   | "DCoinScreen"
-  // | "RewardsScreen"
   | "ShareAppScreen"
   | "PromotionScreen"
   | "Settings"
-  | "FeedbackScreen"
-  // | "RideFeedbackScreen";
+  | "FeedbackScreen";
 
 type ScreensWithoutPhone =
   | "PaymentScreen"
   | "ReferEarn"
   | "AboutUsScreen"
-  | "HelpSupportScreen"
-  // | "AdminDocumentApprovalScreen";
+  | "HelpSupportScreen";
+
 export default function ProfileScreen({ navigation, route }: Props) {
-  const { user, isAuthenticated, isGuest } = useAuth();
+  const { user, isAuthenticated, isGuest, logout: authLogout, loading: authLoading } = useAuth();
+  
+  // Add loading state for profile data
+  const [isLoading, setIsLoading] = useState(true);
   
   /* ✅ Get phone from route params or AuthContext */
   const phoneFromRoute = route?.params?.phoneNumber || null;
@@ -88,49 +92,33 @@ export default function ProfileScreen({ navigation, route }: Props) {
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [isAvatar, setIsAvatar] = useState(false);
 
-  const {logout: authLogout, loading } = useAuth();
-
-    useEffect(() => {
-        if (isGuest) {
-          Alert.alert(
-            'Login Required',
-            'Please complete login/profile.',
-            [
-              { text: 'Cancel', style: 'cancel', onPress: () => navigation.goBack() },
-              { text: 'Login', onPress: () => navigation.navigate('Login') }
-            ]
-          );
-          return;
-        }
-      }, [isGuest, navigation]);
-
-  // // Guest mode guard
-  // useEffect(() => {
-  //   if (!loading && !isAuthenticated && !isGuest) {
-  //     Alert.alert(
-  //       'Login Required',
-  //       'Please login to view your profile.',
-  //       [
-  //         { text: 'Cancel', style: 'cancel' },
-  //         { text: 'Login', onPress: () => navigation.navigate('Login' as any) }
-  //       ]
-  //     );
-  //     navigation.goBack();
-  //     return;
-  //   }
-  // }, [loading, isAuthenticated, isGuest, navigation]);
+  useEffect(() => {
+    if (isGuest) {
+      Alert.alert(
+        'Login Required',
+        'Please complete login/profile.',
+        [
+          { text: 'Cancel', style: 'cancel', onPress: () => navigation.goBack() },
+          { text: 'Login', onPress: () => navigation.navigate('Login') }
+        ]
+      );
+      return;
+    }
+  }, [isGuest, navigation]);
 
   const loadProfile = async () => {
     try {
+      setIsLoading(true);
       const phoneToUse = phoneFromRouteOrAuth;
-      if (!phoneToUse) return;
+      if (!phoneToUse) {
+        setIsLoading(false);
+        return;
+      }
 
       const res = await DatabaseService.getUserProfile(phoneToUse);
 
       if (res?.success && res.user) {
-
         const u = res.user;
-        // setUser removed - local state only
         console.log("Profile updated locally:", { profile_picture: u.profile_picture, full_name: u.full_name });
         console.log("🔥 USER DATA:", u);
 
@@ -144,17 +132,17 @@ export default function ProfileScreen({ navigation, route }: Props) {
         // ✅ SET PHONE
         setPhoneNumber(u.phone_number || "");
 
-        // ✅ SET IMAGE (your existing logic)
+        // ✅ SET IMAGE
         const imageUrl = u.profile_picture;
-
         setProfileImage(null);
         setTimeout(() => {
           setProfileImage(imageUrl || null);
         }, 50);
       }
-
     } catch (err) {
       console.log("Profile fetch error:", err);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -172,7 +160,6 @@ export default function ProfileScreen({ navigation, route }: Props) {
     { title: "My Vehicle", icon: "car-outline", screen: "MyVehicleScreen" },
     { title: "Saved Address", icon: "location-outline", screen: "SavedAddressScreen" },
     { title: "My Documents", icon: "document-text-outline", screen: "DocumentVerificationScreen" },
-    // { title:"Admin Documents", icon:"folder-open-outline", screen:"AdminDocumentApprovalScreen"},
     { title: "Matching Preferences", icon: "settings-outline", screen: "MatchingPreferenceScreen" },
     { title: "Emergency Contact", icon: "alert-circle-outline", screen: "EmergencyContactsscreen" },
   ];
@@ -183,8 +170,6 @@ export default function ProfileScreen({ navigation, route }: Props) {
     screen: keyof RootStackParamList;
   }[] = [
     { title: "D-coins", icon: "diamond-outline", screen: "DCoinScreen" },
-    // { title: "Rewards", icon: "gift-outline", screen: "RewardsScreen" },
-    // {title:"Ride Feedback", icon:"chatbox-ellipses-outline", screen:"RideFeedbackScreen"},
   ];
 
   const otherItems: {
@@ -197,8 +182,7 @@ export default function ProfileScreen({ navigation, route }: Props) {
     { title: "Promotions & Offers", icon: "pricetags-outline", screen: "PromotionScreen" },
     { title: "Settings", icon: "cog-outline", screen: "Settings" },
     { title: "Help & Support", icon: "help-circle-outline", screen: "HelpSupportScreen" },
-        {title:"Feedback", icon:"chatbubbles-outline", screen:"FeedbackScreen"},
-
+    { title: "Feedback", icon: "chatbubbles-outline", screen: "FeedbackScreen" },
   ];
 
   const handleScroll = (event: any) => {
@@ -206,24 +190,26 @@ export default function ProfileScreen({ navigation, route }: Props) {
     setShowScrollTop(scrollY > 200);
   };
 
- const handleMenuItemPress = (screen: keyof RootStackParamList) => {
+  const scrollToTop = () => {
+    scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+  };
+
+  const handleMenuItemPress = (screen: keyof RootStackParamList) => {
     if (screen === "AboutUsScreen") {
-    Linking.openURL("https://drivve.netlify.app/about");
-    return;
-  }
-  const screensWithPhone: ScreensWithPhone[] = [
+      Linking.openURL("https://drivve.netlify.app/about");
+      return;
+    }
+    const screensWithPhone: ScreensWithPhone[] = [
       "MyVehicleScreen",
       "SavedAddressScreen",
       "DocumentVerificationScreen",
       "MatchingPreferenceScreen",
       "EmergencyContactsscreen",
       "DCoinScreen",
-      // "RewardsScreen",
       "ShareAppScreen",
       "PromotionScreen",
       "Settings",
       "FeedbackScreen",
-      // "RideFeedbackScreen",
     ];
 
     if (screensWithPhone.includes(screen as ScreensWithPhone)) {
@@ -253,7 +239,7 @@ export default function ProfileScreen({ navigation, route }: Props) {
           text: "Logout",
           style: "destructive",
           onPress: async () => {
-          await authLogout();
+            await authLogout();
             navigation.navigate("Login");
           },
         },
@@ -261,140 +247,156 @@ export default function ProfileScreen({ navigation, route }: Props) {
     );
   };
 
+  // Show loader while fetching profile data
+  if (isLoading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
+        <View style={styles.loaderContainer}>
+          <LottieView
+            source={require("../assets/loading.json")}
+            autoPlay
+            loop
+            style={{ width: 300, height: 300 }}
+          />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
-       <KeyboardAvoidingView
-              style={styles.keyboardAvoidingView}
-              behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
-            >
-      {/* Header - Moved down slightly */}
-      <View style={styles.header}>
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoidingView}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+      >
+        {/* Header */}
+        <View style={styles.header}>
           <TouchableOpacity style={styles.modernBackButton} onPress={handleBack}>
             <MaterialIcons name="arrow-back-ios" size={28} color={Colors.secondary} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Profile</Text>
           <View style={styles.headerSpacer} />
         </View>
-      <ScrollView
-        ref={scrollViewRef}
-        showsVerticalScrollIndicator={false}
-        style={styles.scrollView}
-        onScroll={handleScroll}
-        scrollEventThrottle={16}
-        contentContainerStyle={styles.scrollContent}
-      >
-        {/* === Profile Card - Now Responsive === */}
-        <View style={styles.profileCard}>
-          <LinearGradient
-            colors={[Colors.primary, '#0D3A6F']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.profileGradient}
-          />
 
-// In your component, update the image rendering section:
-// In your component, update the image rendering section:
-<View style={styles.profileImageContainer}>
-  <TouchableOpacity
-    style={styles.profileImageWrapper}
-    onPress={handleEditProfile}
-    activeOpacity={0.8}
-  >
-    <LinearGradient
-      colors={[Colors.white, '#F3F4F6']}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={styles.profileImageCircle}
-    >
-   {profileImage ? (
-  profileImage.endsWith(".svg") ? (
-    <SvgCssUri
-      uri={profileImage}
-      width={100}
-      height={100}
-    />
-  ) : (
-    <Image
-      source={{ uri: profileImage }}
-      style={styles.profileImage}
-    />
-  )
-) : (
-  <Image
-    source={require("../assets/icon.png")}
-    style={styles.profileImage}
-  />
-)}
-    </LinearGradient>
+        <ScrollView
+          ref={scrollViewRef}
+          showsVerticalScrollIndicator={false}
+          style={styles.scrollView}
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
+          contentContainerStyle={styles.scrollContent}
+        >
+          {/* === Profile Card === */}
+          <View style={styles.profileCard}>
+            <LinearGradient
+              colors={[Colors.primary, '#0D3A6F']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.profileGradient}
+            />
 
-    <View style={styles.editIconContainer}>
-      <MaterialCommunityIcons
-        name="account-box-edit-outline"
-        size={18}
-        color={Colors.primary}
-      />
-    </View>
-  </TouchableOpacity>
-</View>
+            <View style={styles.profileImageContainer}>
+              <TouchableOpacity
+                style={styles.profileImageWrapper}
+                onPress={handleEditProfile}
+                activeOpacity={0.8}
+              >
+                <LinearGradient
+                  colors={[Colors.white, '#F3F4F6']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.profileImageCircle}
+                >
+                  {profileImage ? (
+                    profileImage.endsWith(".svg") ? (
+                      <SvgCssUri
+                        uri={profileImage}
+                        width={100}
+                        height={100}
+                      />
+                    ) : (
+                      <Image
+                        source={{ uri: profileImage }}
+                        style={styles.profileImage}
+                      />
+                    )
+                  ) : (
+                    <Image
+                      source={require("../assets/icon.png")}
+                      style={styles.profileImage}
+                    />
+                  )}
+                </LinearGradient>
 
-          <Text style={styles.profileName}>
-            {userName || "User"}
-          </Text>
+                <View style={styles.editIconContainer}>
+                  <MaterialCommunityIcons
+                    name="account-box-edit-outline"
+                    size={18}
+                    color={Colors.primary}
+                  />
+                </View>
+              </TouchableOpacity>
+            </View>
 
-          <Text style={styles.profileNumber}>
-            {phoneNumber}
-          </Text>
+            <Text style={styles.profileName}>
+              {userName || "User"}
+            </Text>
 
-          {/* Rating - Removed background */}
-          <View style={styles.ratingContainer}>
-            <Ionicons name="star" size={20} color="#FFD700" />
-            <Text style={styles.ratingValue}>4.5</Text>
+            <Text style={styles.profileNumber}>
+              {phoneNumber}
+            </Text>
+
+            {/* Rating */}
+            <View style={styles.ratingContainer}>
+              <Ionicons name="star" size={20} color="#FFD700" />
+              <Text style={styles.ratingValue}>0.0</Text>
+            </View>
+
+            {/* Stats */}
+            <View style={styles.statsContainer}>
+              <View style={styles.statItem}>
+                <Text style={styles.statNumber}>0</Text>
+                <Text style={styles.statLabel}>Total Rides</Text>
+              </View>
+
+              <View style={styles.statDivider} />
+
+              <View style={styles.statItem}>
+                <Text style={styles.statNumber}>0</Text>
+                <Text style={styles.statLabel}>Total Drives</Text>
+              </View>
+
+              <View style={styles.statDivider} />
+
+              <View style={styles.statItem}>
+                <Text style={styles.statNumber}>0kg</Text>
+                <Text style={styles.statLabel}>CO₂ Reduced</Text>
+              </View>
+            </View>
+
+            <Animatable.View
+              animation="fadeIn"
+              duration={600}
+              style={styles.bgContainer}
+            >
+              <ImageBackground
+                source={require("../assets/s8.png")}
+                style={styles.bgImage}
+                resizeMode="contain"
+                imageStyle={styles.bgImageStyle}
+              />
+            </Animatable.View>
           </View>
 
-          {/* Stats - Removed background */}
-          <View style={styles.statsContainer}>
-            <View style={styles.statItem}>
-              <Text style={styles.statNumber}>0</Text>
-              <Text style={styles.statLabel}>Total Rides</Text>
-            </View>
-
-            <View style={styles.statDivider} />
-
-            <View style={styles.statItem}>
-              <Text style={styles.statNumber}>0</Text>
-              <Text style={styles.statLabel}>Total Drives</Text>
-            </View>
-
-            <View style={styles.statDivider} />
-
-            <View style={styles.statItem}>
-              <Text style={styles.statNumber}>20kg</Text>
-              <Text style={styles.statLabel}>CO₂ Reduced</Text>
-            </View>
-          </View>
-
-        <Animatable.View
-  animation="fadeIn"
-  duration={600}
-  style={styles.bgContainer}
->
-  <ImageBackground
-    source={require("../assets/s8.png")}
-    style={styles.bgImage}
-    resizeMode="contain"
-    imageStyle={styles.bgImageStyle}
-  />
-</Animatable.View>
-
-        </View>
-
-        {/* === Sections === */}
-        <View style={styles.sectionsContainer}>
-          {[["My Information", infoItems],
-            ["Payment Information", paymentItems],
-            ["Other Information", otherItems]].map(
-            ([title, items]: any, i) => (
+          {/* === Sections === */}
+          <View style={styles.sectionsContainer}>
+            {[
+              ["My Information", infoItems],
+              ["Payment Information", paymentItems],
+              ["Other Information", otherItems]
+            ].map(([title, items]: any, i) => (
               <View style={styles.section} key={i}>
                 <Text style={styles.sectionTitle}>{title}</Text>
                 <View style={styles.menuCard}>
@@ -415,8 +417,7 @@ export default function ProfileScreen({ navigation, route }: Props) {
                   ))}
                 </View>
               </View>
-            )
-          )}
+            ))}
 
             <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
               <LinearGradient
@@ -425,29 +426,34 @@ export default function ProfileScreen({ navigation, route }: Props) {
                 end={{ x: 1, y: 0 }}
                 style={styles.logoutGradient}
               >
-              <Ionicons name="log-out-outline" size={22} color="white" />
-              <Text style={styles.logoutText}>Log out</Text>
-            </LinearGradient>
-          </TouchableOpacity>
+                <Ionicons name="log-out-outline" size={22} color="white" />
+                <Text style={styles.logoutText}>Log out</Text>
+              </LinearGradient>
+            </TouchableOpacity>
 
-          <View style={styles.footer}>
-            <View style={styles.logoContainer}>
-              <Image
-                source={require("../assets/logogray.png")}
-                style={styles.logoImage}
-              />
+            <View style={styles.footer}>
+              <View style={styles.logoContainer}>
+                <Image
+                  source={require("../assets/logogray.png")}
+                  style={styles.logoImage}
+                />
+              </View>
+              <Text style={styles.versionText}>Version 1.0.0</Text>
+              <Text style={styles.copyrightText}>
+                © 2025 Drivve. All rights reserved.
+              </Text>
             </View>
-            <Text style={styles.versionText}>Version 1.0.0</Text>
-            <Text style={styles.copyrightText}>
-              © 2025 Drivve. All rights reserved.
-            </Text>
           </View>
-        </View>
-      </ScrollView>
-</KeyboardAvoidingView>
+        </ScrollView>
 
+        {/* Scroll to Top Button
+        {showScrollTop && (
+          <TouchableOpacity style={styles.scrollTopButton} onPress={scrollToTop}>
+            <Ionicons name="chevron-up" size={24} color={Colors.white} />
+          </TouchableOpacity>
+        )} */}
+      </KeyboardAvoidingView>
     </SafeAreaView>
-    
   );
 }
 
@@ -456,13 +462,19 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.white,
   },
-   keyboardAvoidingView: {
+  keyboardAvoidingView: {
     flex: 1,
   },
-  headerContainer: {
-    paddingTop: 30, // Added padding to move header down slightly
+  loaderContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: Colors.white,
   },
- header: {
+  headerContainer: {
+    paddingTop: 30,
+  },
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
@@ -498,7 +510,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 20,
     marginTop: 20,
     borderRadius: 25,
-    padding: width < 375 ? 20 : 25, // Responsive padding
+    padding: width < 375 ? 20 : 25,
     backgroundColor: Colors.primary,
     borderWidth: 0,
     shadowColor: Colors.primary,
@@ -509,38 +521,36 @@ const styles = StyleSheet.create({
     alignItems: "center",
     position: "relative",
     overflow: "hidden",
-    minHeight: width < 375 ? 320 : 350, // Responsive min height
+    minHeight: width < 375 ? 320 : 350,
   },
   profileGradient: {
     ...StyleSheet.absoluteFillObject,
     borderRadius: 25,
   },
-bgContainer: {
-  position: "absolute",
-  top: 0,
-  bottom: 0,
-  left: 10,
-  right: 10,
-  pointerEvents: "none",
-}
-
-,
+  bgContainer: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    left: 10,
+    right: 10,
+    pointerEvents: "none",
+  },
   bgImage: {
     width: "100%",
     height: "100%",
-      flex: 1,
+    flex: 1,
   },
   bgImageStyle: {
     opacity: 0.08,
   },
   profileImageContainer: {
-    marginBottom: width < 375 ? 10 : 15, // Responsive margin
+    marginBottom: width < 375 ? 10 : 15,
     position: "relative",
     zIndex: 2,
   },
   profileImageWrapper: {
-    width: width < 375 ? 100 : 120, // Responsive size
-    height: width < 375 ? 100 : 120, // Responsive size
+    width: width < 375 ? 100 : 120,
+    height: width < 375 ? 100 : 120,
     borderRadius: width < 375 ? 50 : 80,
     backgroundColor: Colors.white,
     justifyContent: "center",
@@ -561,8 +571,8 @@ bgContainer: {
     overflow: 'hidden',
   },
   profileImage: {
-    width: width < 375 ? 90 : 110, // Responsive size
-    height: width < 375 ? 90 : 110, // Responsive size
+    width: width < 375 ? 90 : 110,
+    height: width < 375 ? 90 : 110,
     borderRadius: width < 375 ? 45 : 55,
     borderWidth: 0,
   },
@@ -585,7 +595,7 @@ bgContainer: {
     borderColor: Colors.primary,
   },
   profileName: {
-    fontSize: width < 375 ? 22 : 26, // Responsive font size
+    fontSize: width < 375 ? 22 : 26,
     color: Colors.white,
     fontWeight: "700",
     fontFamily: "inter",
@@ -594,7 +604,7 @@ bgContainer: {
   },
   profileNumber: {
     color: "rgba(255,255,255,0.9)",
-    fontSize: width < 375 ? 16 : 20, // Responsive font size
+    fontSize: width < 375 ? 16 : 20,
     fontWeight: "500",
     fontFamily: "inter",
     marginBottom: 10,
@@ -607,11 +617,10 @@ bgContainer: {
     paddingVertical: 6,
     borderRadius: 15,
     marginBottom: 20,
-    // Background removed as requested
   },
   ratingValue: {
     color: Colors.white,
-    fontSize: width < 375 ? 18 : 20, // Responsive font size
+    fontSize: width < 375 ? 18 : 20,
     fontWeight: "600",
     marginLeft: 5,
     fontFamily: "inter",
@@ -619,10 +628,9 @@ bgContainer: {
   statsContainer: {
     flexDirection: "row",
     borderRadius: 20,
-    padding: width < 375 ? 12 : 15, // Responsive padding
+    padding: width < 375 ? 12 : 15,
     width: "100%",
     justifyContent: "space-between",
-    // Background removed as requested
   },
   statItem: {
     alignItems: "center",
@@ -630,14 +638,14 @@ bgContainer: {
   },
   statNumber: {
     color: Colors.white,
-    fontSize: width < 375 ? 18 : 20, // Responsive font size
+    fontSize: width < 375 ? 18 : 20,
     fontWeight: "700",
     fontFamily: "inter",
     marginBottom: 4,
   },
   statLabel: {
     color: "rgba(255,255,255,0.9)",
-    fontSize: width < 375 ? 14 : 16, // Responsive font size
+    fontSize: width < 375 ? 14 : 16,
     fontWeight: "500",
     fontFamily: "inter",
     textAlign: "center",
@@ -648,7 +656,7 @@ bgContainer: {
     marginHorizontal: 5,
   },
   sectionsContainer: {
-    paddingHorizontal: width < 375 ? 16 : 20, // Responsive padding
+    paddingHorizontal: width < 375 ? 16 : 20,
     paddingTop: 25,
     paddingBottom: 30,
   },
@@ -656,7 +664,7 @@ bgContainer: {
     marginBottom: 25,
   },
   sectionTitle: {
-    fontSize: width < 375 ? 20 : 24, // Responsive font size
+    fontSize: width < 375 ? 20 : 24,
     color: Colors.primary,
     fontWeight: "700",
     marginBottom: 20,
@@ -679,8 +687,8 @@ bgContainer: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: width < 375 ? 14 : 16, // Responsive padding
-    paddingHorizontal: width < 375 ? 16 : 20, // Responsive padding
+    paddingVertical: width < 375 ? 14 : 16,
+    paddingHorizontal: width < 375 ? 16 : 20,
     borderBottomWidth: 1.5,
     borderBottomColor: '#F3F4F6',
   },
@@ -690,16 +698,16 @@ bgContainer: {
     flex: 1,
   },
   iconContainer: {
-    width: width < 375 ? 40 : 44, // Responsive size
-    height: width < 375 ? 40 : 44, // Responsive size
+    width: width < 375 ? 40 : 44,
+    height: width < 375 ? 40 : 44,
     borderRadius: 12,
     backgroundColor: '#E0E7FF',
     justifyContent: "center",
     alignItems: "center",
-    marginRight: width < 375 ? 12 : 15, // Responsive margin
+    marginRight: width < 375 ? 12 : 15,
   },
   menuItemText: {
-    fontSize: width < 375 ? 16 : 18, // Responsive font size
+    fontSize: width < 375 ? 16 : 18,
     color: Colors.dark,
     fontWeight: "600",
     fontFamily: "inter",
@@ -715,7 +723,7 @@ bgContainer: {
     elevation: 8,
   },
   logoutGradient: {
-    paddingVertical: width < 375 ? 14 : 16, // Responsive padding
+    paddingVertical: width < 375 ? 14 : 16,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
@@ -723,7 +731,7 @@ bgContainer: {
   },
   logoutText: {
     color: Colors.white,
-    fontSize: width < 375 ? 16 : 18, // Responsive font size
+    fontSize: width < 375 ? 16 : 18,
     fontWeight: "700",
     marginLeft: 8,
     fontFamily: "inter",
@@ -739,20 +747,20 @@ bgContainer: {
     flexDirection: 'row',
   },
   logoImage: {
-    width: width < 375 ? 70 : 80, // Responsive size
-    height: width < 375 ? 70 : 80, // Responsive size
+    width: width < 375 ? 70 : 80,
+    height: width < 375 ? 70 : 80,
     resizeMode: 'contain',
     marginBottom: -10,
   },
   versionText: {
-    fontSize: width < 375 ? 12 : 14, // Responsive font size
+    fontSize: width < 375 ? 12 : 14,
     color: '#6B7280',
     marginBottom: 5,
     fontFamily: 'inter',
     fontWeight: '500',
   },
   copyrightText: {
-    fontSize: width < 375 ? 10 : 12, // Responsive font size
+    fontSize: width < 375 ? 10 : 12,
     color: '#9CA3AF',
     textAlign: 'center',
     fontFamily: 'inter',

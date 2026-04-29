@@ -7,7 +7,6 @@ import {
   ScrollView,
   StatusBar,
   TextInput,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   Animated,
@@ -15,18 +14,20 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, MaterialIcons, Feather } from "@expo/vector-icons";
+import LottieView from "lottie-react-native";
 import DatabaseService from "../services/feedback_ds";
 import { useAuth } from "../context/AuthContext";
+import CustomAlert from '../components/CustomAlert';
 
 /* ================= COLORS ================= */
 import { Colors, Typography } from "../constants/Colors";
 
 const REASONS = [
-  { id: "slow", label: "App is slow" },
-  { id: "bug", label: "Bug or crash" },
-  { id: "confusing", label: "UI is confusing"},
-  { id: "driver", label: "Driver issue" },
-  { id: "great", label: "Great experience" },
+  { id: "slow", label: "App is slow", icon: "speedometer-outline" },
+  { id: "bug", label: "Bug or crash", icon: "bug-outline" },
+  { id: "confusing", label: "UI is confusing", icon: "color-palette-outline" },
+  { id: "driver", label: "Driver issue", icon: "car-outline" },
+  { id: "great", label: "Great experience", icon: "happy-outline" },
 ];
 
 export default function FeedbackScreen({ navigation, route }) {
@@ -42,6 +43,38 @@ export default function FeedbackScreen({ navigation, route }) {
   const [comment, setComment] = useState("");
   const [loading, setLoading] = useState(false);
   const [animatedRating] = useState(new Animated.Value(0));
+  
+  // Custom Alert states
+  const [alertVisible, setAlertVisible] = useState(false);
+  const [alertConfig, setAlertConfig] = useState({
+    title: "",
+    message: "",
+    icon: "check-circle",
+    iconColor: "#10B981",
+    buttons: []
+  });
+
+  const showCustomAlert = (title, message, type = 'success') => {
+    let icon = "check-circle";
+    let iconColor = "#10B981";
+    
+    if (type === 'error') {
+      icon = "error";
+      iconColor = "#EF4444";
+    } else if (type === 'warning') {
+      icon = "warning";
+      iconColor = "#F59E0B";
+    }
+    
+    setAlertConfig({
+      title,
+      message,
+      icon,
+      iconColor,
+      buttons: [{ text: 'OK', onPress: () => setAlertVisible(false) }]
+    });
+    setAlertVisible(true);
+  };
 
   const handleRatingPress = (star) => {
     setRating(star);
@@ -57,7 +90,7 @@ export default function FeedbackScreen({ navigation, route }) {
   /* ================= SUBMIT FEEDBACK ================= */
   const submitFeedback = async () => {
     if (!rating) {
-      Alert.alert("Rating Required", "Please select a star rating");
+      showCustomAlert("Rating Required", "Please select a star rating", "warning");
       return;
     }
 
@@ -76,16 +109,19 @@ export default function FeedbackScreen({ navigation, route }) {
       );
 
       if (response?.success) {
-        Alert.alert("Thank you 🙏", "Your feedback has been submitted");
-        navigation.goBack();
+        setLoading(false);
+        showCustomAlert("Thank you", "Your feedback has been submitted", "success");
+        setTimeout(() => {
+          navigation.goBack();
+        }, 1500);
       } else {
-        Alert.alert("Error", "Unable to submit feedback");
+        setLoading(false);
+        showCustomAlert("Error", "Unable to submit feedback", "error");
       }
     } catch (e) {
       console.error("❌ Feedback error:", e);
-      Alert.alert("Error", "Unable to submit feedback");
-    } finally {
       setLoading(false);
+      showCustomAlert("Error", "Unable to submit feedback", "error");
     }
   };
 
@@ -120,8 +156,6 @@ export default function FeedbackScreen({ navigation, route }) {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.mainCard}>
-            
-
             {/* Title */}
             <Text style={styles.sectionTitle}>Rate your experience</Text>
             <Text style={styles.sectionSubtitle}>
@@ -228,19 +262,25 @@ export default function FeedbackScreen({ navigation, route }) {
                 disabled={loading}
                 activeOpacity={0.8}
               >
-                {loading ? (
-                  <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="small" color={Colors.white} />
-                    <Text style={styles.submitText}>Submitting...</Text>
-                  </View>
-                ) : (
-                  <Text style={styles.submitText}>Submit Feedback</Text>
-                )}
+                <Text style={styles.submitText}>
+                  {loading ? "Submit Feedback" : "Submit Feedback"}
+                </Text>
               </TouchableOpacity>
             )}
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Custom Alert */}
+      <CustomAlert
+        visible={alertVisible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        icon={alertConfig.icon}
+        iconColor={alertConfig.iconColor}
+        buttons={alertConfig.buttons}
+        onBackdropPress={() => setAlertVisible(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -350,12 +390,18 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: Colors.primary,
     fontWeight: "600",
-    marginBottom: 5,
+    marginBottom: 12,
+  },
+  additionallabel: {
+    ...Typography.h2,
+    fontSize: 15,
+    color: Colors.primary,
+    fontWeight: "600",
+    marginBottom: 12,
   },
   reasonWrap: {
     flexDirection: "row",
     flexWrap: "wrap",
-    
     gap: 12,
   },
   reasonChip: {
@@ -364,10 +410,10 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: Colors.primary,
     borderRadius: 24,
-    paddingVertical: 6,
-    paddingHorizontal: 5,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
     backgroundColor: "#fff",
-    gap: 4,
+    gap: 6,
   },
   reasonSelected: {
     backgroundColor: Colors.primary,
@@ -380,13 +426,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.primary,
     fontWeight: "600",
-    
   },
   reasonTextSelected: {
     color: Colors.white,
   },
   commentContainer: {
-    marginBottom: 5,
+    marginBottom: 24,
   },
   input: {
     borderWidth: 1.5,
@@ -395,9 +440,10 @@ const styles = StyleSheet.create({
     padding: 16,
     height: 110,
     textAlignVertical: "top",
-    backgroundColor: "#fff",
+    backgroundColor: "#F9FAFB",
     marginTop: 5,
     fontSize: 14,
+    color: Colors.dark,
   },
   submitBtn: {
     backgroundColor: Colors.primary,
@@ -419,12 +465,5 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-  },
-  additionallabel: {
-    ...Typography.h2,
-    fontSize: 15,
-    color: Colors.primary,
-    fontWeight: "600",
-    marginTop: -20,
   },
 });
