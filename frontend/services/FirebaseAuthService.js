@@ -1,23 +1,8 @@
-import { 
-  signInWithPhoneNumber,
-  RecaptchaVerifier,
-} from 'firebase/auth';
-import { auth } from '../config/firebase';
 import { Platform } from 'react-native';
 import { API_BASE_URL } from '../config/config_ip';
 
-// Native Firebase Auth for mobile (EAS builds)
-let nativeAuth = null;
-if (Platform.OS !== 'web') {
-  try {
-    nativeAuth = require('@react-native-firebase/auth').default;
-  } catch (e) {
-    console.log('⚠️ @react-native-firebase/auth not available');
-  }
-}
-
 /**
- * Backend fallback confirmation result that mimics Firebase's confirmation result.
+ * Backend confirmation result that mimics Firebase's confirmation result.
  * Used when native Firebase auth is unavailable (e.g., Expo Go).
  */
 class BackendConfirmationResult {
@@ -29,14 +14,11 @@ class BackendConfirmationResult {
   }
 
   async confirm(otpCode) {
-    // The actual verification happens in OTPScreen via backend API call
-    // We just validate the OTP matches what was generated
     if (otpCode !== this.otpCode) {
       const error = new Error('Invalid verification code');
       error.code = 'auth/invalid-verification-code';
       throw error;
     }
-    // Return a mock user object compatible with the expected result shape
     return {
       user: {
         uid: `backend-${Date.now()}`,
@@ -50,100 +32,114 @@ class BackendConfirmationResult {
 class FirebaseAuthService {
   static recaptchaVerifier = null;
   static confirmationResult = null;
+  static _authInstance = null;
 
   /**
-   * Backend-first OTP (primary for APK - no WebView delays)
+   * Get Firebase Auth instance (lazy init).
+   * Uses @react-native-firebase/auth v21 API.
    */
-  static async backendSendOTP(phoneNumber) {
+  static getAuthInstance() {
+    if (this._authInstance) return this._authInstance;
+    if (Platform.OS === 'web') return null;
+
     try {
-      console.log('📲 Backend sendOTP:', phoneNumber);
-      const LoginService = (await import('./loginscreen_ds')).default;
-      const result = await LoginService.sendOtp(phoneNumber);
-      
-      if (result.success) {
-        return {
-          success: true,
-          message: result.message,
-          isBackendFlow: true,
-          phoneNumber: result.phone_number,
-          data: result.data
-        };
-      }
-      throw new Error(result.message);
-    } catch (error) {
-      console.error('🚨 Backend sendOTP error:', error);
-      return { success: false, message: error.message };
+      const firebaseAuth = require('@react-native-firebase/auth');
+      const { getAuth } = firebaseAuth;
+      this._authInstance = getAuth();
+      console.log('✅ FirebaseAuthService: Native Firebase Auth ready');
+      return this._authInstance;
+    } catch (e) {
+      console.log('⚠️ FirebaseAuthService: @react-native-firebase/auth load failed:', e.message);
+      return null;
     }
   }
 
   /**
-   * Backend OTP verification
-   */
-  static async backendVerifyOTP(phoneNumber, otpCode) {
-    try {
-      console.log('📲 Backend verifyOTP:', phoneNumber, otpCode);
-      const OtpService = (await import('./otp_ds')).default;
-      const result = await OtpService.verifyOtp(phoneNumber, otpCode);
-      
-      if (result.success) {
-        return {
-          success: true,
-          message: 'Phone verified',
-          user: { uid: `backend-${Date.now()}`, phoneNumber },
-          token: 'backend-session-token',
-          phoneNumber
-        };
-      }
-      throw new Error(result.message || 'Invalid OTP');
-    } catch (error) {
-      console.error('🚨 Backend verifyOTP error:', error);
-      return { 
-        success: false, 
-        message: error.message || 'Verification failed' 
-      };
-    }
-  }
-
-  /**
-   * Unified sendOTP - Backend first (APK), Firebase web-only
+   * Send OTP via Firebase Phone Auth (client-side).
+   * Uses Firebase's infrastructure to send SMS.
    */
   static async sendOTP(phoneNumber, countryCode = '+91') {
-    const fullPhoneNumber = countryCode + phoneNumber;
-    
-    // APK/Expo: Backend-first (no WebView delays)
-    if (Platform.OS !== 'web') {
-      return await this.backendSendOTP(fullPhoneNumber);
+    const fullPhoneNumber = countryCode + phoneNumber.replace(/^\+/, '');
+
+    const authInstance = this.getAuthInstance();
+    if (authInstance) {
+      try {
+        console.log('🔥 Firebase Phone Auth: Sending OTP to', fullPhoneNumber);
+
+        const { signInWithPhoneNumber } = require('@react-native-firebase/auth');
+        const confirmation = await signInWithPhoneNumber(authInstance, fullPhoneNumber);
+
+        this.confirmationResult = confirmation;
+        console.log('✅ Firebase Phone Auth: OTP sent via Firebase SMS (client-side)');
+
+        return {
+          success: true,
+          confirmationResult: confirmation,
+          phoneNumber: fullPhoneNumber,
+          isBackendFlow: false,
+        };
+      } catch (error) {
+        console.error('🚨 Firebase Phone Auth error:', error.code, error.message);
+        const msg = this._mapFirebaseError(error);
+        return { success: false, message: msg, error: error.code };
+      }
     }
-    
-    // Web: Firebase + reCAPTCHA (keep existing)
-    console.log('🌐 Web: Firebase phone auth');
-    // ... existing web Firebase code ...
-    const recaptcha = this.initRecaptcha();
-    if (!recaptcha) throw new Error('reCAPTCHA init failed');
-    
-    this.confirmationResult = await signInWithPhoneNumber(auth, fullPhoneNumber, recaptcha);
-    
-    return {
-      success: true,
-      confirmationResult: this.confirmationResult,
-      verificationId: this.confirmationResult?.verificationId || null,
-      isBackendFlow: false
-    };
+
+    // Web: use Firebase JS SDK
+    if (Platform.OS === 'web') {
+      return await this._sendOTPWeb(fullPhoneNumber);
+    }
+
+    // Fallback: Backend OTP
+    return await this._sendOTPBackend(fullPhoneNumber);
   }
 
   /**
-   * Backend OTP fallback for Expo Go or when native Firebase is unavailable.
+   * Web: Send OTP via Firebase JS SDK.
    */
-  static async sendBackendOTP(phoneNumber) {
+  static async _sendOTPWeb(phoneNumber) {
     try {
-      console.log('📲 Sending backend OTP to:', phoneNumber);
+      const { signInWithPhoneNumber, RecaptchaVerifier } = await import('firebase/auth');
+      const { auth } = await import('../config/firebase');
+
+      console.log('🌐 Web Firebase Phone Auth:', phoneNumber);
+
+      this.cleanup();
+      const container = document.getElementById('recaptcha-container') ||
+        Object.assign(document.createElement('div'), { id: 'recaptcha-container', style: 'display:none' });
+      if (!document.getElementById('recaptcha-container')) {
+        document.body.appendChild(container);
+      }
+
+      this.recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
+        size: 'invisible',
+      });
+
+      const confirmation = await signInWithPhoneNumber(auth, phoneNumber, this.recaptchaVerifier);
+      this.confirmationResult = confirmation;
+
+      return {
+        success: true,
+        confirmationResult: confirmation,
+        phoneNumber,
+        isBackendFlow: false,
+      };
+    } catch (error) {
+      console.error('🚨 Web Firebase error:', error);
+      return { success: false, message: error.message, error: error.code };
+    }
+  }
+
+  /**
+   * Backend fallback OTP.
+   */
+  static async _sendOTPBackend(phoneNumber) {
+    try {
+      console.log('📲 Backend OTP fallback:', phoneNumber);
 
       const response = await fetch(`${API_BASE_URL}/api/send-otp`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone_number: phoneNumber }),
       });
 
@@ -155,120 +151,106 @@ class FirebaseAuthService {
       const result = await response.json();
       console.log('✅ Backend OTP sent:', result);
 
-      // Generate a deterministic OTP for Expo Go testing (or use backend-generated one if exposed)
-      // The backend stores the OTP; we need the user to enter it manually from SMS/logs
-      // For Expo Go, we'll use the backend flow where user enters the OTP and we verify via API
-      const confirmationResult = new BackendConfirmationResult(phoneNumber, null);
+      const mockConfirmation = new BackendConfirmationResult(phoneNumber, null);
 
       return {
         success: true,
-        confirmationResult,
-        message: 'OTP sent via backend',
+        confirmationResult: mockConfirmation,
+        phoneNumber,
+        isBackendFlow: true,
+        message: 'OTP sent via backend (Firebase unavailable)',
       };
     } catch (error) {
-      console.error('🚨 Backend OTP Error:', error);
-      return {
-        success: false,
-        message: error.message || 'Failed to send OTP via backend',
-      };
-    }
-  }
-
-  // Web-only reCAPTCHA initialization
-  static initRecaptcha() {
-    if (Platform.OS !== 'web') return null;
-    
-    try {
-      this.cleanup();
-
-      if (typeof document === 'undefined') {
-        console.error('❌ Document not available');
-        return null;
-      }
-
-      let container = document.getElementById('recaptcha-container');
-      if (!container) {
-        container = document.createElement('div');
-        container.id = 'recaptcha-container';
-        container.style.display = 'none';
-        document.body.appendChild(container);
-      }
-
-      this.recaptchaVerifier = new RecaptchaVerifier(
-        auth,
-        'recaptcha-container',
-        {
-          size: 'invisible',
-          callback: (response) => {
-            console.log('✅ reCAPTCHA verification successful');
-          },
-          'expired-callback': () => {
-            console.log('⚠️ reCAPTCHA expired');
-            this.cleanup();
-          },
-        }
-      );
-
-      return this.recaptchaVerifier;
-    } catch (error) {
-      console.error('❌ reCAPTCHA initialization failed:', error);
-      return null;
+      console.error('🚨 Backend OTP error:', error);
+      return { success: false, message: error.message };
     }
   }
 
   /**
-   * Unified verifyOTP - auto-detects flow type
+   * Verify OTP.
    */
   static async verifyOTP(confirmationResultOrPhone, otpCode, isBackendFlow = false) {
     try {
-      console.log('🔍 Verifying OTP:', otpCode, {isBackendFlow});
-      
+      console.log('🔍 Verifying OTP:', otpCode, { isBackendFlow });
+
       if (isBackendFlow) {
-        const phoneNumber = typeof confirmationResultOrPhone === 'string' 
-          ? confirmationResultOrPhone 
+        const phoneNumber = typeof confirmationResultOrPhone === 'string'
+          ? confirmationResultOrPhone
           : confirmationResultOrPhone?.phoneNumber;
-        return await this.backendVerifyOTP(phoneNumber, otpCode);
+        return await this._verifyBackendOTP(phoneNumber, otpCode);
       }
 
-      if (!confirmationResultOrPhone?.confirm) {
-        throw new Error('No confirmation result. Use backend flow.');
+      if (confirmationResultOrPhone?.confirm) {
+        const result = await confirmationResultOrPhone.confirm(otpCode);
+        const token = await result.user.getIdToken();
+
+        return {
+          success: true,
+          user: result.user,
+          token,
+          uid: result.user.uid,
+          phoneNumber: result.user.phoneNumber,
+          isBackendFlow: false,
+        };
       }
 
-      const result = await confirmationResultOrPhone.confirm(otpCode);
+      if (confirmationResultOrPhone && !isBackendFlow) {
+        const phoneNumber = confirmationResultOrPhone;
+        return await this._verifyFirebaseDirect(phoneNumber, otpCode);
+      }
+
+      throw new Error('No confirmation result');
+    } catch (error) {
+      console.error('🚨 verifyOTP error:', error);
+
+      return {
+        success: false,
+        message: error.message || 'Verification failed',
+        error: error.code || 'unknown',
+      };
+    }
+  }
+
+  /**
+   * Verify OTP via Firebase client-side confirmation.
+   */
+  static async _verifyFirebaseDirect(phoneNumber, otpCode) {
+    const authInstance = this.getAuthInstance();
+    if (!authInstance || !this.confirmationResult) {
+      return await this._verifyBackendOTP(phoneNumber, otpCode);
+    }
+
+    try {
+      const result = await this.confirmationResult.confirm(otpCode);
       const token = await result.user.getIdToken();
-      
+
       return {
         success: true,
         user: result.user,
         token,
         uid: result.user.uid,
         phoneNumber: result.user.phoneNumber,
-        isBackendFlow: false
+        isBackendFlow: false,
       };
     } catch (error) {
-      console.error('❌ verifyOTP error:', error);
-      
-      const msg = error.code === 'auth/invalid-verification-code' 
-        ? 'Invalid OTP. Try again.'
-        : error.message || 'Verification failed';
-        
-      return { success: false, message: msg, error: error.code };
+      return {
+        success: false,
+        message: this._mapFirebaseError(error),
+        error: error.code,
+      };
     }
   }
 
   /**
-   * Verify OTP via backend API (for Expo Go fallback).
+   * Verify OTP via backend API.
    */
-  static async verifyBackendOTP(phoneNumber, otpCode) {
+  static async _verifyBackendOTP(phoneNumber, otpCode) {
     try {
-      console.log('📲 Verifying backend OTP for:', phoneNumber);
+      console.log('📲 Backend verifyOTP:', phoneNumber, otpCode);
 
       const response = await fetch(`${API_BASE_URL}/api/verify-otp`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           phone_number: phoneNumber,
           otp_code: otpCode,
@@ -283,59 +265,79 @@ class FirebaseAuthService {
       const result = await response.json();
       console.log('✅ Backend OTP verified:', result);
 
-      // Return a compatible result object
       return {
         success: true,
-        message: 'Phone number verified successfully',
-        user: {
-          uid: `backend-${Date.now()}`,
-          phoneNumber: phoneNumber,
-        },
+        message: 'Phone verified',
+        user: { uid: `backend-${Date.now()}`, phoneNumber },
         token: 'backend-token',
         uid: `backend-${Date.now()}`,
-        phoneNumber: phoneNumber,
+        phoneNumber,
+        isBackendFlow: true,
       };
     } catch (error) {
-      console.error('🚨 Backend OTP verification error:', error);
-      
-      const err = new Error(error.message || 'Invalid verification code');
+      const err = new Error(error.message || 'Invalid OTP');
       err.code = 'auth/invalid-verification-code';
-      throw err;
+      return { success: false, message: err.message, error: err.code };
     }
   }
 
-  // Cleanup
+  /**
+   * Map Firebase error codes to user-friendly messages.
+   */
+  static _mapFirebaseError(error) {
+    const code = error.code || '';
+    if (code.includes('captcha')) return 'reCAPTCHA verification failed. Check your network.';
+    if (code.includes('invalid-phone-number')) return 'Invalid phone number format.';
+    if (code.includes('too-many-requests')) return 'Too many attempts. Try again later.';
+    if (code.includes('user-disabled')) return 'This user account has been disabled.';
+    if (code.includes('quota-exceeded') || code.includes('TOO_MANY_ATTEMPTS')) {
+      return 'SMS quota exceeded. Try again later or use another method.';
+    }
+    return error.message || 'Failed to send OTP. Please try again.';
+  }
+
+  /**
+   * Cleanup reCAPTCHA verifier.
+   */
   static cleanup() {
-    if (Platform.OS === 'web' && this.recaptchaVerifier) {
+    if (this.recaptchaVerifier) {
       try {
         this.recaptchaVerifier.clear();
-      } catch (error) {
-        console.log('⚠️ Cleanup error:', error);
+      } catch (e) {
+        console.log('⚠️ Cleanup error:', e.message);
       }
       this.recaptchaVerifier = null;
     }
     this.confirmationResult = null;
   }
 
-  // Auth state methods
   static getCurrentUser() {
-    return auth.currentUser;
+    const authInstance = this.getAuthInstance();
+    return authInstance?.currentUser ?? null;
   }
 
   static onAuthStateChanged(callback) {
-    return auth.onAuthStateChanged(callback);
+    const authInstance = this.getAuthInstance();
+    if (authInstance) {
+      return authInstance.onAuthStateChanged(callback);
+    }
+    return () => {};
   }
 
   static async signOut() {
-    try {
-      await auth.signOut();
-      this.cleanup();
-      console.log('✅ User signed out successfully');
-      return { success: true, message: 'Signed out successfully' };
-    } catch (error) {
-      console.error('❌ Sign out error:', error);
-      return { success: false, message: 'Failed to sign out' };
+    const authInstance = this.getAuthInstance();
+    if (authInstance) {
+      try {
+        await authInstance.signOut();
+        this.cleanup();
+        console.log('✅ Signed out via Firebase');
+        return { success: true };
+      } catch (error) {
+        console.error('❌ Sign out error:', error);
+        return { success: false, message: error.message };
+      }
     }
+    return { success: true };
   }
 }
 

@@ -66,25 +66,20 @@ def verify_firebase_token(id_token: str) -> dict:
 
 def send_sms(phone_number: str, message: str):
     """
-    Send SMS via Firebase (requires Firebase Phone Auth enabled + paid quota).
-    Non-blocking - logs errors.
+    Send SMS via Firebase Auth (uses Firebase Phone Auth verification).
+    Note: Firebase Admin SDK does not support sending custom SMS.
+    For production, integrate Twilio or MSG91.
+    For now, this is a placeholder that returns False to skip SMS.
     """
     if firebase_app is None:
         print("⚠️  Firebase Admin unavailable - SMS skipped")
         return False
 
-    try:
-        # E.164 format required
-        e164_phone = phone_number if phone_number.startswith('+') else f"+91{phone_number.lstrip('+91')}"
-        
-        # Firebase SMS (requires Phone Auth provider enabled in project)
-        auth.generate_phone_number_verification_code(
-            phone_number=e164_phone,
-            app=firebase_app
-        )
-        print(f"📱 Firebase SMS sent to {phone_number}: {message[:50]}...")
-        return True
-    except Exception as e:
-        print(f"❌ Firebase SMS failed for {phone_number}: {e}")
-        return False
+    # Firebase Admin SDK does not have a method to send custom SMS.
+    # The auth.verify_phone_number is for client-side verification, not server-side.
+    # For now, we skip SMS and let the frontend handle Firebase Phone Auth flow.
+    print(f"⚠️  Firebase Admin SDK does not support sending custom SMS")
+    print(f"   Use frontend Firebase Phone Auth or integrate Twilio/MSG91 for SMS")
+    print(f"   OTP code: {message}")
+    return False
 
