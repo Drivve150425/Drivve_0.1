@@ -1,4 +1,3 @@
-
 from datetime import UTC, datetime, timedelta, timezone
 import random
 import os
@@ -12,10 +11,11 @@ from fastapi import APIRouter
 
 # Firebase Admin (optional — falls back gracefully if service account missing)
 try:
-    from configapp.firebase_admin import init_firebase_admin, verify_firebase_token
+    from configapp.firebase_admin import init_firebase_admin, verify_firebase_token, send_sms
     init_firebase_admin()
 except Exception as e:
     print("⚠️ Firebase Admin not available:", e)
+    send_sms = None
 
 router = APIRouter()
 
@@ -26,7 +26,7 @@ def generate_otp() -> str:
 
 
 @router.post("/api/send-otp")
-async def send_otp(phone_data: dict, db: Session = Depends(get_db)):
+async def send_otp_endpoint(phone_data: dict, db: Session = Depends(get_db)):
     try:
         phone_number = normalize_phone(phone_data.get("phone_number"))
         if not phone_number:
@@ -58,18 +58,19 @@ async def send_otp(phone_data: dict, db: Session = Depends(get_db)):
         print("🔢 OTP:", otp_code)
         print("⏳ Expires", expires_at.isoformat())
 
-        # SMS DELIVERY via Firebase Admin (guaranteed SMS)
-        try:
-            from configapp.firebase_admin import firebase_app
-            
-            if firebase_app:
+        # SMS DELIVERY via Firebase Admin (non-blocking)
+        if send_sms:
+            try:
                 message = f"Your Drivve verification code is {otp_code}. Valid for 10 minutes. Do not share."
-                firebase_app.send_sms(phone_number, message)
-                print("📱 Firebase SMS sent successfully")
-            else:
-                print("⚠️ Firebase Admin unavailable - SMS skipped (dev mode)")
-        except Exception as sms_error:
-            print("⚠️ SMS send failed (non-blocking):", sms_error)
+                sms_sent = send_sms(phone_number, message)
+                if sms_sent:
+                    print("📱 Firebase SMS sent successfully")
+                else:
+                    print("⚠️ Firebase SMS failed - SMS skipped (non-blocking)")
+            except Exception as sms_error:
+                print("⚠️ SMS send failed (non-blocking):", sms_error)
+        else:
+            print("⚠️ Firebase Admin not initialized - SMS skipped (non-blocking)")
 
         return {
             "success": True,
@@ -246,5 +247,3 @@ def check_user_exists(user_check: dict, db: Session = Depends(get_db)):
     except Exception as e:
         print("❌ USERS CHECK ERROR:", str(e))
         raise HTTPException(status_code=500, detail="User check failed")
-
-
