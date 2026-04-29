@@ -233,9 +233,9 @@ const ChatListScreen = ({ navigation }) => {
 
         <View style={styles.messageRow}>
           <View style={styles.messageContent}>
-            <Text style={styles.tripInfo} numberOfLines={1}>
+            {/* <Text style={styles.tripInfo} numberOfLines={1}>
               {item.tripInfo}
-            </Text>
+            </Text> */}
             <View style={styles.lastMessageRow}>
               {item.isVoiceMessage && (
                 <Icon 
