@@ -124,7 +124,6 @@ const ChatListScreen = ({ navigation }) => {
           isOnline: false,
           avatar: conv.other_user.avatar,
           isPinned: false,
-          tripInfo: conv.trip_info || '',
           isVoiceMessage: conv.last_message_type === 'voice',
           conversationId: conv.id,
           otherUserId: conv.other_user.id,
