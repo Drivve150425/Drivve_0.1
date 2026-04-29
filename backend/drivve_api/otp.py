@@ -12,7 +12,7 @@ from fastapi import APIRouter
 
 # Firebase Admin (optional — falls back gracefully if service account missing)
 try:
-    from ..config.firebase_admin import init_firebase_admin, verify_firebase_token
+    from config.firebase_admin import init_firebase_admin, verify_firebase_token
     init_firebase_admin()
 except Exception as e:
     print("⚠️ Firebase Admin not available:", e)
@@ -60,7 +60,7 @@ async def send_otp(phone_data: dict, db: Session = Depends(get_db)):
 
         # SMS DELIVERY via Firebase Admin (guaranteed SMS)
         try:
-            from ..config.firebase_admin import firebase_app
+            from config.firebase_admin import firebase_app
             
             if firebase_app:
                 message = f"Your Drivve verification code is {otp_code}. Valid for 10 minutes. Do not share."
