@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, Animated, StyleSheet } from 'react-native
 import MapView, { Polyline, Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Colors } from '../../constants/Colors';
 import { Ionicons } from '@expo/vector-icons';
+import CustomAlert from '../../components/CustomAlert';
 
 /* =========================================
    HELPERS
@@ -81,6 +82,41 @@ export default function Step2({
 }) {
   const mapRef = useRef(null);
 
+  // Custom Alert states
+  const [alertVisible, setAlertVisible] = useState(false);
+  const [alertConfig, setAlertConfig] = useState({
+    title: "",
+    message: "",
+    icon: "check-circle",
+    iconColor: "#10B981",
+    buttons: []
+  });
+
+  const showCustomAlert = (title, message, type = 'success') => {
+    let icon = "check-circle";
+    let iconColor = "#10B981";
+    
+    if (type === 'error') {
+      icon = "error";
+      iconColor = "#EF4444";
+    } else if (type === 'warning') {
+      icon = "warning";
+      iconColor = "#F59E0B";
+    } else if (type === 'info') {
+      icon = "info";
+      iconColor = Colors.primary;
+    }
+    
+    setAlertConfig({
+      title,
+      message,
+      icon,
+      iconColor,
+      buttons: [{ text: 'OK', onPress: () => setAlertVisible(false) }]
+    });
+    setAlertVisible(true);
+  };
+
   const labels = useMemo(() => getRouteLabels(routeOptions), [routeOptions]);
 
   const selectedRoute = routeOptions?.[selectedRouteIndex];
@@ -107,6 +143,14 @@ export default function Step2({
       }, 500);
     }
   }, [selectedRouteIndex, selectedRoute]);
+
+  const handleNext = () => {
+    if (!selectedRoute) {
+      showCustomAlert("No Route Selected", "Please select a route to continue.", "warning");
+      return;
+    }
+    onNext();
+  };
 
   if (!routeOptions || routeOptions.length === 0) {
     return (
@@ -197,10 +241,22 @@ export default function Step2({
 
       <TouchableOpacity
         style={[styles.actionButton, { backgroundColor: Colors.primary }]}
-        onPress={onNext}
+        onPress={handleNext}
+        activeOpacity={0.8}
       >
         <Text style={styles.actionButtonText}>Continue</Text>
       </TouchableOpacity>
+
+      {/* Custom Alert */}
+      <CustomAlert
+        visible={alertVisible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        icon={alertConfig.icon}
+        iconColor={alertConfig.iconColor}
+        buttons={alertConfig.buttons}
+        onBackdropPress={() => setAlertVisible(false)}
+      />
     </View>
   );
 }
@@ -358,4 +414,3 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
 });
-

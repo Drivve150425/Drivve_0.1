@@ -6,12 +6,13 @@ import {
   TouchableOpacity,
   Switch,
   StyleSheet,
-  ActivityIndicator,
   Modal,
 } from 'react-native';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
+import LottieView from "lottie-react-native";
 import DatabaseService from '../../services/myvehicle_ds';
 import matchpreferenceDatabaseService from '../../services/matchingpreference_ds';
+import CustomAlert from '../../components/CustomAlert';
 
 import { Colors } from '../../constants/Colors';
 import { useFocusEffect } from '@react-navigation/native';
@@ -67,6 +68,41 @@ export default function Step3({ phoneNumber, onNext, navigation, setVehicleId, v
   const [showPreferences, setShowPreferences] = useState(false);
   const [preferencesSummary, setPreferencesSummary] = useState(null);
 
+  // Custom Alert states
+  const [alertVisible, setAlertVisible] = useState(false);
+  const [alertConfig, setAlertConfig] = useState({
+    title: "",
+    message: "",
+    icon: "check-circle",
+    iconColor: "#10B981",
+    buttons: []
+  });
+
+  const showCustomAlert = (title, message, type = 'success') => {
+    let icon = "check-circle";
+    let iconColor = "#10B981";
+    
+    if (type === 'error') {
+      icon = "error";
+      iconColor = "#EF4444";
+    } else if (type === 'warning') {
+      icon = "warning";
+      iconColor = "#F59E0B";
+    } else if (type === 'info') {
+      icon = "info";
+      iconColor = Colors.primary;
+    }
+    
+    setAlertConfig({
+      title,
+      message,
+      icon,
+      iconColor,
+      buttons: [{ text: 'OK', onPress: () => setAlertVisible(false) }]
+    });
+    setAlertVisible(true);
+  };
+
   useEffect(() => {
     loadPrefs();
     loadVehicles();
@@ -102,6 +138,7 @@ export default function Step3({ phoneNumber, onNext, navigation, setVehicleId, v
       }
     } catch (e) {
       console.log("Vehicle load error", e);
+      showCustomAlert('Error', 'Failed to load vehicles', 'error');
     } finally {
       setLoadingVehicles(false);
     }
@@ -145,7 +182,6 @@ export default function Step3({ phoneNumber, onNext, navigation, setVehicleId, v
   const handlePreferencesToggle = (value) => {
     if (value) {
       // Navigate to MatchingPreferenceScreen when toggle is ON
-      // User can toggle ON again to edit preferences
       navigation.navigate("MatchingPreferenceScreen", {
         onSave: (savedPrefs) => {
           setValues(savedPrefs);
@@ -189,16 +225,34 @@ export default function Step3({ phoneNumber, onNext, navigation, setVehicleId, v
 
   const compactSummary = getCompactPreferenceSummary();
 
+  const handleContinue = () => {
+    if (!selectedVehicle) {
+      showCustomAlert('Vehicle Required', 'Please select a vehicle before continuing', 'warning');
+      return;
+    }
+    onNext({ 
+      preferences: values, 
+      vehicleId: selectedVehicle.id,
+      maxSeats: selectedVehicle.max_seats || 4
+    });
+  };
+
   /* =========================================
      UI
   ========================================= */
-if (loading || loadingVehicles) {
+  if (loading || loadingVehicles) {
     return (
-      <View style={{ padding: 30, alignItems: 'center' }}>
-        <ActivityIndicator size="large" color={Colors.primary} />
+      <View style={styles.loaderContainer}>
+        <LottieView
+          source={require("../../assets/loading.json")}
+          autoPlay
+          loop
+          style={styles.loaderAnimation}
+        />
       </View>
     );
   }
+  
   return (
     <View style={styles.container}>
 
@@ -322,6 +376,22 @@ if (loading || loadingVehicles) {
               <Text style={styles.editHint}>Tap to edit preferences</Text>
             </TouchableOpacity>
           )}
+          
+          {showPreferences && !compactSummary && (
+            <TouchableOpacity 
+              style={styles.emptyPreferenceCard}
+              onPress={() => {
+                navigation.navigate("MatchingPreferenceScreen", {
+                  onSave: (savedPrefs) => {
+                    setValues(savedPrefs);
+                    setPreferencesSummary(savedPrefs);
+                  }
+                });
+              }}
+            >
+              <Text style={styles.emptyPreferenceText}>+ Add your ride preferences</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
       </ScrollView>
@@ -331,18 +401,7 @@ if (loading || loadingVehicles) {
           styles.actionButton,
           !selectedVehicle && styles.actionButtonDisabled
         ]}
-        onPress={() => {
-          if (!selectedVehicle) {
-            return;
-          }
-          // Pass max_seats along with other data
-          onNext({ 
-            preferences: values, 
-            vehicleId: selectedVehicle.id,
-            maxSeats: selectedVehicle.max_seats || 4
-          });
-        }}
-        disabled={!selectedVehicle}
+        onPress={handleContinue}
       >
         <Text style={styles.actionButtonText}>
           Continue
@@ -403,8 +462,17 @@ if (loading || loadingVehicles) {
         </View>
       </Modal>
 
+      {/* Custom Alert */}
+      <CustomAlert
+        visible={alertVisible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        icon={alertConfig.icon}
+        iconColor={alertConfig.iconColor}
+        buttons={alertConfig.buttons}
+        onBackdropPress={() => setAlertVisible(false)}
+      />
     </View>
-    
   );
 }
 
@@ -426,6 +494,22 @@ const styles = StyleSheet.create({
     elevation: 10,
     borderWidth: 1,
     borderColor: 'rgba(229, 231, 235, 0.5)',
+  },
+
+  loaderContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    borderRadius: 28,
+    padding: 18,
+    marginBottom: 14,
+    minHeight: 700,
+  },
+
+  loaderAnimation: {
+    width: 300,
+    height: 300,
   },
 
   title: {
@@ -579,6 +663,22 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#d4edda',
     backgroundColor: '#f0fff4',
+  },
+
+  emptyPreferenceCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#e0e8f0',
+    borderStyle: 'dashed',
+    alignItems: 'center',
+  },
+
+  emptyPreferenceText: {
+    color: Colors.primary,
+    fontSize: 14,
+    fontWeight: '600',
   },
 
   preferenceSummaryHeader: {

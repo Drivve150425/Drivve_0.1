@@ -13,12 +13,14 @@ import {
   Modal,
   Image,
   Animated,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
+import LottieView from "lottie-react-native";
 
 import { Colors, Typography } from '../constants/Colors';
 import { STATES, getCitiesByState } from '../constants/IndianStatesData';
@@ -79,10 +81,64 @@ export default function CreateProfileScreen({ navigation, route }) {
   const [emailVerificationSuccess, setEmailVerificationSuccess] = useState(false);
   const [emailVerificationError, setEmailVerificationError] = useState('');
 
+  // Custom Alert states
+  const [alertVisible, setAlertVisible] = useState(false);
+  const [alertConfig, setAlertConfig] = useState({
+    title: "",
+    message: "",
+    icon: "check-circle",
+    iconColor: "#10B981",
+    buttons: []
+  });
+
   // Animation refs
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
   const scaleAnim = useRef(new Animated.Value(0.95)).current;
+
+  // Helper function to show custom alerts
+  const showCustomAlert = (title, message, type = 'success') => {
+    let icon = "check-circle";
+    let iconColor = "#10B981";
+    
+    if (type === 'error') {
+      icon = "error";
+      iconColor = "#EF4444";
+    } else if (type === 'warning') {
+      icon = "warning";
+      iconColor = "#F59E0B";
+    } else if (type === 'info') {
+      icon = "info";
+      iconColor = Colors.primary;
+    }
+    
+    setAlertConfig({
+      title,
+      message,
+      icon,
+      iconColor,
+      buttons: [{ text: 'OK', onPress: () => setAlertVisible(false) }]
+    });
+    setAlertVisible(true);
+  };
+
+  // Helper function to show confirmation alerts
+  const showConfirmationAlert = (title, message, onConfirm, confirmText = 'Yes') => {
+    setAlertConfig({
+      title,
+      message,
+      icon: "warning",
+      iconColor: "#F59E0B",
+      buttons: [
+        { text: 'Cancel', onPress: () => setAlertVisible(false), style: 'cancel' },
+        { text: confirmText, onPress: () => {
+          setAlertVisible(false);
+          onConfirm();
+        }, style: 'destructive' }
+      ]
+    });
+    setAlertVisible(true);
+  };
 
   useEffect(() => {
     // Entrance animation
@@ -268,8 +324,8 @@ export default function CreateProfileScreen({ navigation, route }) {
     }
 
     setIsEmailLoading(true);
-    setEmailVerificationError(''); // Clear previous errors
-    setEmailVerificationSuccess(false); // Clear previous success
+    setEmailVerificationError('');
+    setEmailVerificationSuccess(false);
     
     try {
       console.log('📤 Calling DatabaseService.verifyEmailOTP...');
@@ -281,18 +337,14 @@ export default function CreateProfileScreen({ navigation, route }) {
         console.log('✅ Email verified successfully!');
         setIsEmailVerified(true);
         setEmailOTP('');
-        setEmailVerificationSuccess(true); // Trigger success animation
+        setEmailVerificationSuccess(true);
         setEmailVerificationError('');
         
-        // Haptic feedback
         if (Platform.OS !== 'web') {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }
-        
-        // Close modal after success animation completes (handled by EmailOTPModal)
       } else {
         console.log('❌ Verification failed:', result.message);
-        // Set error - modal will display it
         setEmailVerificationError(result.message || 'Invalid verification code. Please try again');
         setEmailVerificationSuccess(false);
       }
@@ -336,10 +388,9 @@ export default function CreateProfileScreen({ navigation, route }) {
       let base64Image = null;
 
       if (profileImage?.uri) {
-
         const resizedImage = await ImageManipulator.manipulateAsync(
           profileImage.uri,
-          [{ resize: { width: 500 } }], // 🔥 critical
+          [{ resize: { width: 500 } }],
           {
             compress: 0.6,
             format: ImageManipulator.SaveFormat.JPEG,
@@ -364,28 +415,11 @@ export default function CreateProfileScreen({ navigation, route }) {
         city: selectedCity,
         referral_code: referralCode.trim() || null,
         profile_image: base64Image,
-
-        // Store avatar id (or name) instead of JSON.stringify(component)
-        avatar: selectedAvatar?.id  || null,
+        avatar: selectedAvatar?.id || null,
         is_active: true,
         profile_completed: true
       };
 
-     {/*} // Send profile to backend
-      const createResult = await DatabaseService.createUserProfile(profileData);
-      console.log('Create profile result:', createResult);
-
-      if (createResult && createResult.success) {
-        const returnedUserId = createResult.userId || generatedUserId;
-        setSuccessData({ userId: returnedUserId, age: calculateAge(dateOfBirth), profileData: createResult.userData || profileData });
-        setShowSuccessAlert(true);
-      } else {
-        const msg = (createResult && createResult.message) || 'Failed to create profile. Please try again';
-        setAlertMessage(msg);
-        setShowEmailErrorAlert(true);
-      }
-      setSuccessData({ userId: generatedUserId, age: calculateAge(dateOfBirth), profileData });
-      // Send profile to backend */}
       const createResult = await DatabaseService.createUserProfile(profileData);
       console.log('Create profile result:', createResult);
 
@@ -400,18 +434,13 @@ export default function CreateProfileScreen({ navigation, route }) {
       }
 
     } catch (error) {
-
-  console.log("PROFILE CREATE ERROR:", error);
-
-  setAlertMessage(
-    error?.message || 
-    JSON.stringify(error) || 
-    "Unknown error"
-  );
-
-  setShowEmailErrorAlert(true);
-
-
+      console.log("PROFILE CREATE ERROR:", error);
+      setAlertMessage(
+        error?.message || 
+        JSON.stringify(error) || 
+        "Unknown error"
+      );
+      setShowEmailErrorAlert(true);
     } finally {
       setIsLoading(false);
     }
@@ -422,13 +451,10 @@ export default function CreateProfileScreen({ navigation, route }) {
     if (profileImage) {
       return <Image source={{ uri: profileImage.uri }} style={styles.profileImage} />;
     } else if (selectedAvatar) {
-      // If avatar provides an SVG component, render it to fully cover the container
       const Icon = selectedAvatar.component;
       if (Icon) {
-        // use container size (140) so SVG fills the circle completely
         return <Icon width={140} height={140} style={styles.avatarSvg} />;
       }
-      // fallback to emoji/name if present
       return <Text style={styles.avatarPreview}>{selectedAvatar.emoji || selectedAvatar.name || selectedAvatar.id}</Text>;
     } else {
       return <MaterialIcons name="add-a-photo" size={45} color={Colors.white} />;
@@ -486,6 +512,23 @@ export default function CreateProfileScreen({ navigation, route }) {
     </Modal>
   );
 
+  // Show loader while profile is being created
+  if (isLoading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
+        <View style={styles.loaderContainer}>
+          <LottieView
+            source={require("../assets/loading.json")}
+            autoPlay
+            loop
+            style={{ width: 300, height: 300 }}
+          />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
@@ -533,7 +576,6 @@ export default function CreateProfileScreen({ navigation, route }) {
                   {renderProfileImage()}
                 </LinearGradient>
               ) : (
-                // when an image or avatar is selected render content directly so it fills container without gradient behind it
                 <View style={[styles.modernProfileImageCircle, { backgroundColor: 'transparent' }]}>
                   {renderProfileImage()}
                 </View>
@@ -593,7 +635,6 @@ export default function CreateProfileScreen({ navigation, route }) {
                   autoCapitalize="none"
                 />
                 
-                {/* Verify Button or Badge - Now inside the input field */}
                 {email && isValidEmail(email) && !isEmailVerified && (
                   <TouchableOpacity 
                     style={styles.verifyButtonInline}
@@ -776,10 +817,9 @@ export default function CreateProfileScreen({ navigation, route }) {
       <AvatarPicker
         visible={showAvatarPicker}
         onClose={() => setShowAvatarPicker(false)}
-       onSelect={async (avatar) => {
+        onSelect={async (avatar) => {
           setSelectedAvatar(avatar);
           setProfileImage(null);
-
         }}
         selectedAvatar={selectedAvatar}
       />
@@ -821,7 +861,7 @@ export default function CreateProfileScreen({ navigation, route }) {
         message="Please fill all required fields correctly"
         icon="error-outline"
         iconColor="#EF4444"
-         buttons={[
+        buttons={[
           { text: 'OK', onPress: () => setShowValidationAlert(false) }
         ]}
         onBackdropPress={() => setShowValidationAlert(false)}
@@ -838,28 +878,15 @@ export default function CreateProfileScreen({ navigation, route }) {
             text: 'Continue',
             onPress: () => {
               setShowSuccessAlert(false);
-// Set session and navigate to Home
               login({
                 phone_number: fullPhoneNumber || (countryCode + phoneNumber),
                 id: successData?.userId,
                 ...successData?.profileData,
               });
-              // Reset
               navigation.reset({
                 index: 0,
                 routes: [{ name: 'Home' }],
               });
-              // try {
-              //   navigation.replace('Home', {
-              //     firstName: firstName.trim(),
-              //     lastName: lastName.trim(),
-              //     userId: successData?.userId,
-              //     userData: successData?.profileData,
-              //     isNewUser: true
-              //   });
-              // } catch (navError) {
-              //   navigation.navigate('Login');
-              // }
             }
           }
         ]}
@@ -919,6 +946,17 @@ export default function CreateProfileScreen({ navigation, route }) {
           { text: 'Try Again', onPress: () => setShowEmailErrorAlert(false) }
         ]}
         onBackdropPress={() => setShowEmailErrorAlert(false)}
+      />
+
+      {/* New CustomAlert Component */}
+      <CustomAlert
+        visible={alertVisible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        icon={alertConfig.icon}
+        iconColor={alertConfig.iconColor}
+        buttons={alertConfig.buttons}
+        onBackdropPress={() => setAlertVisible(false)}
       />
     </SafeAreaView>
   );
@@ -1003,7 +1041,6 @@ const styles = StyleSheet.create({
   avatarPreview: {
     fontSize: 70,
   },
-  // added: svg avatar preview sizing/centering
   avatarSvg: {
     width: '100%',
     height: '100%',
@@ -1106,24 +1143,24 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   verifyButtonInline: {
-  paddingHorizontal: 8,
-  paddingVertical: 0,
-  marginRight: 0,
-  justifyContent: 'center',
-  alignItems: 'center',
-},
-verifyButtonInlineText: {
-  color: Colors.primary,
-  fontSize: 14,
-  fontWeight: '700',
-  letterSpacing: 0.5,
-  textDecorationLine: 'underline',
-},
-verifiedBadgeInline: {
-  marginRight: 5,
-  justifyContent: 'center',
-  alignItems: 'center',
-},
+    paddingHorizontal: 8,
+    paddingVertical: 0,
+    marginRight: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  verifyButtonInlineText: {
+    color: Colors.primary,
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    textDecorationLine: 'underline',
+  },
+  verifiedBadgeInline: {
+    marginRight: 5,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   modernContinueButton: {
     borderRadius: 16,
     overflow: 'hidden',
@@ -1159,7 +1196,7 @@ verifiedBadgeInline: {
     backgroundColor: Colors.white,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
-    maxHeight: height* 0.7,
+    maxHeight: height * 0.7,
     paddingTop: 0,
   },
   modernModalHeader: {
@@ -1224,5 +1261,11 @@ verifiedBadgeInline: {
     color: Colors.white,
     fontSize: 18,
     fontWeight: '700',
+  },
+  loaderContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: Colors.white,
   },
 });

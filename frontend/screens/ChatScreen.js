@@ -8,9 +8,12 @@ import {
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
-  Alert,
-  ActionSheetIOS,
   Dimensions,
+  Modal,
+  Animated,
+  StatusBar,
+  ActivityIndicator,
+  Linking,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import io from 'socket.io-client';
@@ -18,6 +21,8 @@ import { Colors } from '../constants/Colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { API_BASE_URL } from "../config/config_ip";
 import { useAuth } from '../context/AuthContext';
+import LottieView from "lottie-react-native";
+import CustomAlert from '../components/CustomAlert';
 
 const { width, height } = Dimensions.get('window');
 const scale = (size) => (width / 375) * size;
@@ -30,21 +35,89 @@ const ChatScreen = ({ route, navigation }) => {
   const { user, conversationId: passedConversationId, receiverPhone, rideId } = route.params || {};
 
   const myPhone = currentUser?.phone_number;
+  const [chatPartnerPhone, setChatPartnerPhone] = useState(receiverPhone || user?.phone_number || null);
+  
   const chatPartner = user || {
     name: receiverPhone ? `User ${String(receiverPhone).slice(-4)}` : 'Unknown',
-    tripInfo: 'Active'
+    tripInfo: 'Active',
+    phone_number: chatPartnerPhone
   };
+  console.log(user)
+  
   const conversationId = passedConversationId || rideId || null;
 
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [recording, setRecording] = useState(false);
   const [typing, setTyping] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [showOptionsModal, setShowOptionsModal] = useState(false);
+  const [showMessageOptionsModal, setShowMessageOptionsModal] = useState(false);
+  const [selectedMessage, setSelectedMessage] = useState(null);
+
+  // Custom Alert states
+  const [alertVisible, setAlertVisible] = useState(false);
+  const [alertConfig, setAlertConfig] = useState({
+    title: "",
+    message: "",
+    icon: "check-circle",
+    iconColor: "#10B981",
+    buttons: []
+  });
 
   const socketRef = useRef(null);
   const flatListRef = useRef(null);
   const typingTimeoutRef = useRef(null);
   const inputRef = useRef(null);
+
+  // Separate animation values for each modal
+  const optionsModalScale = useRef(new Animated.Value(0.8)).current;
+  const optionsModalFade = useRef(new Animated.Value(0)).current;
+  const messageModalScale = useRef(new Animated.Value(0.8)).current;
+  const messageModalFade = useRef(new Animated.Value(0)).current;
+
+  const showAlert = (title, message, type = 'success') => {
+    let icon = "check-circle";
+    let iconColor = "#10B981";
+    
+    if (type === 'error') {
+      icon = "error";
+      iconColor = "#EF4444";
+    } else if (type === 'warning') {
+      icon = "warning";
+      iconColor = "#F59E0B";
+    } else if (type === 'info') {
+      icon = "info";
+      iconColor = Colors.primary;
+    }
+    
+    setAlertConfig({
+      title,
+      message,
+      icon,
+      iconColor,
+      buttons: [{ text: 'OK', onPress: () => setAlertVisible(false) }]
+    });
+    setAlertVisible(true);
+  };
+
+  const showConfirmationAlert = (title, message, onConfirm, confirmText = 'Confirm') => {
+    setAlertConfig({
+      title,
+      message,
+      icon: "warning",
+      iconColor: "#F59E0B",
+      buttons: [
+        { text: 'Cancel', onPress: () => setAlertVisible(false), style: 'cancel' },
+        { text: confirmText, onPress: () => {
+          setAlertVisible(false);
+          onConfirm();
+        }, style: 'destructive' }
+      ]
+    });
+    setAlertVisible(true);
+  };
 
   useEffect(() => {
     navigation.setOptions({ headerShown: false });
@@ -58,13 +131,50 @@ const ChatScreen = ({ route, navigation }) => {
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
   }, [messages]);
 
+  // Animate modal in/out
+  const animateModalIn = (scaleAnim, fadeAnim) => {
+    Animated.parallel([
+      Animated.spring(scaleAnim, {
+        toValue: 1,
+        tension: 50,
+        friction: 7,
+        useNativeDriver: true,
+      }),
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  };
+
+  const animateModalOut = (scaleAnim, fadeAnim, onClose) => {
+    Animated.parallel([
+      Animated.spring(scaleAnim, {
+        toValue: 0.8,
+        tension: 50,
+        friction: 7,
+        useNativeDriver: true,
+      }),
+      Animated.timing(fadeAnim, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      if (onClose) onClose();
+    });
+  };
+
   const initializeChat = async () => {
-    if (!conversationId) {
-      Alert.alert('Chat', 'Chat is not available for this ride.');
-      return;
-    }
+    // if (!conversationId) {
+    //   showAlert('Chat', 'Chat is not available for this ride.', 'warning');
+    //   setLoading(false);
+    //   return;
+    // }
     if (!myPhone) {
-      Alert.alert('Login Required', 'Please log in to use chat.');
+      showAlert('Login Required', 'Please log in to use chat.', 'warning');
+      setLoading(false);
       return;
     }
     try {
@@ -74,10 +184,11 @@ const ChatScreen = ({ route, navigation }) => {
     } catch (error) {
       console.error('Initialize chat error:', error);
       loadMockMessages();
+    } finally {
+      setLoading(false);
     }
   };
 
-  // REST API calls use X-Phone-Number header (no JWT token in this app)
   const apiHeaders = () => ({
     'X-Phone-Number': myPhone,
     'Content-Type': 'application/json',
@@ -90,7 +201,7 @@ const ChatScreen = ({ route, navigation }) => {
         { headers: apiHeaders() }
       );
       const data = await response.json();
-      if (data.success) {
+      if (data.success && data.messages) {
         setMessages(data.messages);
         return true;
       }
@@ -106,22 +217,22 @@ const ChatScreen = ({ route, navigation }) => {
       {
         id: 1, text: 'Hey there! Ready for the trip?',
         sender_id: 101, from_me: false, status: 'seen',
-        created_at: '2026-02-12T18:28:00.000Z', sender_name: 'Sarah Wilson', type: 'text'
+        created_at: new Date(Date.now() - 3600000).toISOString(), sender_name: chatPartner.name, type: 'text'
       },
       {
         id: 2, text: 'Yes, I am! What time should we meet?',
         sender_id: 999, from_me: true, status: 'sent',
-        created_at: '2026-02-12T18:33:00.000Z', sender_name: 'You', type: 'text'
+        created_at: new Date(Date.now() - 3000000).toISOString(), sender_name: 'You', type: 'text'
       },
       {
         id: 3, text: 'Let\'s meet at 8 AM at the pickup point.',
         sender_id: 101, from_me: false, status: 'seen',
-        created_at: '2026-02-12T18:38:00.000Z', sender_name: 'Sarah Wilson', type: 'text'
+        created_at: new Date(Date.now() - 2400000).toISOString(), sender_name: chatPartner.name, type: 'text'
       },
       {
         id: 4, text: 'Perfect! See you then.',
         sender_id: 999, from_me: true, status: 'sent',
-        created_at: '2026-02-12T18:58:00.000Z', sender_name: 'You', type: 'text'
+        created_at: new Date(Date.now() - 1800000).toISOString(), sender_name: 'You', type: 'text'
       },
     ];
     setMessages(mockMessages);
@@ -136,6 +247,13 @@ const ChatScreen = ({ route, navigation }) => {
 
     socketRef.current.on('connected', (data) => {
       console.log('Connected:', data);
+      // Extract the phone number from the connected event
+      if (data && data.phone) {
+        console.log('Chat partner phone number from socket:', data.phone);
+        setChatPartnerPhone(data.phone);
+        // Update chatPartner object with the phone number
+        chatPartner.phone_number = data.phone;
+      }
       socketRef.current.emit('join_conversation', { conversation_id: conversationId });
     });
 
@@ -155,6 +273,7 @@ const ChatScreen = ({ route, navigation }) => {
 
   const sendMessage = (type = 'text') => {
     if (!input.trim() && type === 'text') return;
+    setSending(true);
     const messageData = {
       conversation_id: conversationId, type,
       text: type === 'text' ? input.trim() : 'Voice message', file_url: null,
@@ -168,6 +287,7 @@ const ChatScreen = ({ route, navigation }) => {
     if (socketRef.current?.connected) {
       socketRef.current.emit('send_message', messageData);
     }
+    setTimeout(() => setSending(false), 500);
   };
 
   const markMessagesAsSeen = (messageIds) => {
@@ -188,66 +308,146 @@ const ChatScreen = ({ route, navigation }) => {
   };
 
   const toggleRecording = () => {
-    if (!recording) { setRecording(true); }
-    else { setRecording(false); sendMessage('voice'); }
+    if (!recording) { 
+      setRecording(true); 
+      // Simulate recording for 3 seconds
+      setTimeout(() => {
+        if (recording) {
+          setRecording(false);
+          sendMessage('voice');
+        }
+      }, 3000);
+    } else { 
+      setRecording(false); 
+      sendMessage('voice');
+    }
   };
 
   const handleCall = () => {
-    Alert.alert('Call ' + chatPartner.name, 'Start a voice call?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Call', onPress: () => console.log('Call...') },
-    ]);
+    // Get phone number from multiple sources
+    // Priority: 1. chatPartnerPhone state, 2. receiverPhone from params, 3. user?.phone_number, 4. socket data
+    const phoneNumber =  user?.id;
+    
+    console.log('Attempting to call phone number:', phoneNumber);
+    
+    if (!phoneNumber) {
+      showAlert('Call Failed', 'Phone number not available for this user.', 'error');
+      return;
+    }
+    
+    // Clean the phone number (remove any spaces, ensure it starts with + if needed)
+    let cleanPhoneNumber = phoneNumber.toString().trim();
+    if (!cleanPhoneNumber.startsWith('+') && !cleanPhoneNumber.startsWith('0')) {
+      // Add country code if needed (adjust based on your country)
+      cleanPhoneNumber = '+91' + cleanPhoneNumber;
+    }
+    
+    showConfirmationAlert(
+      'Call ' + chatPartner.name,
+      `Call ${cleanPhoneNumber}?`,
+      () => {
+        // Make actual phone call
+        const telUrl = `tel:${cleanPhoneNumber}`;
+        Linking.canOpenURL(telUrl)
+          .then(supported => {
+            if (supported) {
+              Linking.openURL(telUrl);
+            } else {
+              showAlert('Call Failed', 'Phone calls are not supported on this device.', 'error');
+            }
+          })
+          .catch(err => {
+            console.error('An error occurred', err);
+            showAlert('Call Failed', 'Unable to make phone call.', 'error');
+          });
+      },
+      'Call'
+    );
   };
 
-  const handleBlock = () => Alert.alert('Block User', 'User blocked');
-  const handleReport = () => Alert.alert('Report User', 'User reported');
+  const handleBlock = () => {
+    setShowOptionsModal(false);
+    showConfirmationAlert(
+      'Block User',
+      `Are you sure you want to block ${chatPartner.name}?`,
+      () => showAlert('User Blocked', `${chatPartner.name} has been blocked.`, 'warning'),
+      'Block'
+    );
+  };
+
+  const handleReport = () => {
+    setShowOptionsModal(false);
+    showConfirmationAlert(
+      'Report User',
+      `Report ${chatPartner.name} for inappropriate behavior?`,
+      () => showAlert('Report Submitted', 'Thank you for reporting. We will review this.', 'success'),
+      'Report'
+    );
+  };
+
   const handleClearChat = () => {
-    Alert.alert('Clear Chat', 'Delete all messages?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Clear', style: 'destructive', onPress: () => setMessages([]) },
-    ]);
+    setShowOptionsModal(false);
+    showConfirmationAlert(
+      'Clear Chat',
+      'Delete all messages? This action cannot be undone.',
+      () => {
+        setMessages([]);
+        showAlert('Chat Cleared', 'All messages have been deleted.', 'success');
+      },
+      'Clear'
+    );
   };
 
   const showOptionsMenu = () => {
-    const options = ['Block User', 'Report User', 'Clear Chat', 'Cancel'];
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        { options, destructiveButtonIndex: 0, cancelButtonIndex: 3 },
-        buttonIndex => {
-          if (buttonIndex === 0) handleBlock();
-          else if (buttonIndex === 1) handleReport();
-          else if (buttonIndex === 2) handleClearChat();
-        }
-      );
-    } else {
-      Alert.alert('Options', '', [
-        { text: 'Block User', onPress: handleBlock, style: 'destructive' },
-        { text: 'Report User', onPress: handleReport },
-        { text: 'Clear Chat', onPress: handleClearChat },
-        { text: 'Cancel', style: 'cancel' },
-      ]);
-    }
+    setShowOptionsModal(true);
+    animateModalIn(optionsModalScale, optionsModalFade);
+  };
+
+  const closeOptionsMenu = () => {
+    animateModalOut(optionsModalScale, optionsModalFade, () => {
+      setShowOptionsModal(false);
+    });
+  };
+
+  const handleMessageCopy = (message) => {
+    setShowMessageOptionsModal(false);
+    showAlert('Copied', 'Message copied to clipboard', 'success');
+  };
+
+  const handleMessageDelete = (message) => {
+    setShowMessageOptionsModal(false);
+    showConfirmationAlert(
+      'Delete Message',
+      'Are you sure you want to delete this message?',
+      () => {
+        setMessages(prev => prev.filter(m => m.id !== message.id));
+        showAlert('Deleted', 'Message deleted successfully', 'success');
+      },
+      'Delete'
+    );
+  };
+
+  const handleMessageReport = (message) => {
+    setShowMessageOptionsModal(false);
+    showConfirmationAlert(
+      'Report Message',
+      'Report this message for inappropriate content?',
+      () => showAlert('Report Submitted', 'Message has been reported.', 'success'),
+      'Report'
+    );
   };
 
   const handleLongPressMessage = (message) => {
-    const options = ['Copy', 'Delete', 'Report', 'Cancel'];
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        { options, destructiveButtonIndex: 1, cancelButtonIndex: 3 },
-        buttonIndex => {
-          if (buttonIndex === 0) console.log('Copy:', message.text);
-          else if (buttonIndex === 1) setMessages(prev => prev.filter(m => m.id !== message.id));
-          else if (buttonIndex === 2) console.log('Report:', message.id);
-        }
-      );
-    } else {
-      Alert.alert('Message Options', '', [
-        { text: 'Copy', onPress: () => console.log('Copy:', message.text) },
-        { text: 'Delete', onPress: () => setMessages(prev => prev.filter(m => m.id !== message.id)), style: 'destructive' },
-        { text: 'Report', onPress: () => console.log('Report:', message.id) },
-        { text: 'Cancel', style: 'cancel' },
-      ]);
-    }
+    setSelectedMessage(message);
+    setShowMessageOptionsModal(true);
+    animateModalIn(messageModalScale, messageModalFade);
+  };
+
+  const closeMessageOptionsMenu = () => {
+    animateModalOut(messageModalScale, messageModalFade, () => {
+      setShowMessageOptionsModal(false);
+      setSelectedMessage(null);
+    });
   };
 
   const renderStatusIcon = (status) => {
@@ -317,6 +517,20 @@ const ChatScreen = ({ route, navigation }) => {
     );
   };
 
+  if (loading) {
+    return (
+      <View style={styles.loaderContainer}>
+        <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
+        <LottieView
+          source={require("../assets/loading.json")}
+          autoPlay
+          loop
+          style={{ width: 300, height: 300 }}
+        />
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <View style={[styles.header, { paddingTop: insets.top }]}>
@@ -365,9 +579,14 @@ const ChatScreen = ({ route, navigation }) => {
 
         <View style={styles.inputBarContainer}>
           <View style={styles.inputBar}>
-            <TouchableOpacity style={[styles.actionButton, { backgroundColor: 'transparent' }]}>
-              <Icon name="add-circle" size={moderateScale(48)} color={Colors.secondary} />
+            {/* Mic button on the left side */}
+            <TouchableOpacity 
+              style={[styles.actionButton, { backgroundColor: recording ? "#EF4444" : "#10B981" }]} 
+              onPress={toggleRecording}
+            >
+              <Icon name={recording ? 'stop' : 'mic'} size={moderateScale(24)} color={Colors.white} />
             </TouchableOpacity>
+            
             <View style={styles.inputWrapper}>
               <TextInput
                 ref={inputRef}
@@ -380,18 +599,137 @@ const ChatScreen = ({ route, navigation }) => {
                 maxLength={500}
               />
             </View>
-            {input.trim() ? (
-              <TouchableOpacity style={[styles.actionButton, { backgroundColor: Colors.primary }]} onPress={() => sendMessage('text')}>
+            
+            {/* Send button on the right side */}
+            <TouchableOpacity 
+              style={[styles.actionButton, { backgroundColor: Colors.primary }]} 
+              onPress={() => sendMessage('text')} 
+              disabled={!input.trim() || sending}
+            >
+              {sending ? (
+                <ActivityIndicator size="small" color={Colors.white} />
+              ) : (
                 <Icon name="send" size={moderateScale(24)} color={Colors.white} />
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity style={[styles.actionButton, { backgroundColor: recording ? Colors.error : Colors.success }]} onPress={toggleRecording}>
-                <Icon name={recording ? 'stop' : 'mic'} size={moderateScale(24)} color={Colors.white} />
-              </TouchableOpacity>
-            )}
+              )}
+            </TouchableOpacity>
           </View>
         </View>
       </KeyboardAvoidingView>
+
+      {/* Options Modal - Three Dots Menu */}
+      <Modal
+        transparent
+        visible={showOptionsModal}
+        animationType="none"
+        onRequestClose={closeOptionsMenu}
+      >
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={closeOptionsMenu}>
+          <Animated.View 
+            style={[
+              styles.optionsModalContainer,
+              {
+                opacity: optionsModalFade,
+                transform: [{ scale: optionsModalScale }],
+              }
+            ]}
+          >
+            <View style={styles.optionsModalHeader}>
+              <Text style={styles.optionsModalTitle}>Options</Text>
+              <TouchableOpacity onPress={closeOptionsMenu} style={styles.closeModalButton}>
+                <Icon name="close" size={24} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.optionsModalDivider} />
+            <TouchableOpacity
+              style={[styles.optionsModalItem, styles.optionsModalItemDestructive]}
+              onPress={handleBlock}
+            >
+              <Icon name="person-remove-outline" size={22} color="#DC2626" />
+              <Text style={[styles.optionsModalItemText, styles.optionsModalItemTextDestructive]}>
+                Block User
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.optionsModalItem}
+              onPress={handleReport}
+            >
+              <Icon name="flag-outline" size={22} color={Colors.primary} />
+              <Text style={styles.optionsModalItemText}>Report User</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.optionsModalItem, styles.optionsModalItemDestructive]}
+              onPress={handleClearChat}
+            >
+              <Icon name="trash-outline" size={22} color="#DC2626" />
+              <Text style={[styles.optionsModalItemText, styles.optionsModalItemTextDestructive]}>
+                Clear Chat
+              </Text>
+            </TouchableOpacity>
+          </Animated.View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Message Options Modal */}
+      <Modal
+        transparent
+        visible={showMessageOptionsModal}
+        animationType="none"
+        onRequestClose={closeMessageOptionsMenu}
+      >
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={closeMessageOptionsMenu}>
+          <Animated.View 
+            style={[
+              styles.optionsModalContainer,
+              {
+                opacity: messageModalFade,
+                transform: [{ scale: messageModalScale }],
+              }
+            ]}
+          >
+            <View style={styles.optionsModalHeader}>
+              <Text style={styles.optionsModalTitle}>Message Options</Text>
+              <TouchableOpacity onPress={closeMessageOptionsMenu} style={styles.closeModalButton}>
+                <Icon name="close" size={24} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.optionsModalDivider} />
+            <TouchableOpacity
+              style={styles.optionsModalItem}
+              onPress={() => handleMessageCopy(selectedMessage)}
+            >
+              <Icon name="copy-outline" size={22} color={Colors.primary} />
+              <Text style={styles.optionsModalItemText}>Copy</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.optionsModalItem, styles.optionsModalItemDestructive]}
+              onPress={() => handleMessageDelete(selectedMessage)}
+            >
+              <Icon name="trash-outline" size={22} color="#DC2626" />
+              <Text style={[styles.optionsModalItemText, styles.optionsModalItemTextDestructive]}>
+                Delete
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.optionsModalItem}
+              onPress={() => handleMessageReport(selectedMessage)}
+            >
+              <Icon name="flag-outline" size={22} color={Colors.primary} />
+              <Text style={styles.optionsModalItemText}>Report</Text>
+            </TouchableOpacity>
+          </Animated.View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Custom Alert */}
+      <CustomAlert
+        visible={alertVisible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        icon={alertConfig.icon}
+        iconColor={alertConfig.iconColor}
+        buttons={alertConfig.buttons}
+        onBackdropPress={() => setAlertVisible(false)}
+      />
     </View>
   );
 };
@@ -400,6 +738,8 @@ export default ChatScreen;
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.white },
+  loaderContainer: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: Colors.white },
+  loaderText: { marginTop: 20, fontSize: 16, color: Colors.primary, fontWeight: "500" },
   header: {
     width: "100%", minHeight: verticalScale(30),
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
@@ -451,5 +791,67 @@ const styles = StyleSheet.create({
   actionButton: { width: scale(44), height: scale(44), borderRadius: scale(22), backgroundColor: Colors.primary, justifyContent: 'center', alignItems: 'center' },
   inputWrapper: { flex: 1, height: scale(44), backgroundColor: '#F8F8F8', borderRadius: scale(22), borderWidth: 0.5, borderColor: '#E0E0E0', paddingHorizontal: moderateScale(16), justifyContent: 'center' },
   textInput: { fontSize: moderateScale(16), color: Colors.dark, paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false, lineHeight: Platform.OS === 'ios' ? verticalScale(20) : undefined },
+  
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  optionsModalContainer: {
+    backgroundColor: Colors.white,
+    borderRadius: moderateScale(20),
+    width: width * 0.85,
+    maxWidth: 350,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  optionsModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: moderateScale(20),
+    paddingVertical: moderateScale(16),
+  },
+  optionsModalTitle: {
+    fontSize: moderateScale(18),
+    fontWeight: '600',
+    color: Colors.dark,
+  },
+  closeModalButton: {
+    width: scale(32),
+    height: scale(32),
+    borderRadius: scale(16),
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  optionsModalDivider: {
+    height: 1,
+    backgroundColor: '#E5E7EB',
+  },
+  optionsModalItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: moderateScale(20),
+    paddingVertical: moderateScale(14),
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#F3F4F6',
+  },
+  optionsModalItemDestructive: {
+    backgroundColor: '#FEF2F2',
+  },
+  optionsModalItemText: {
+    fontSize: moderateScale(16),
+    color: Colors.dark,
+    marginLeft: moderateScale(12),
+    fontWeight: '500',
+  },
+  optionsModalItemTextDestructive: {
+    color: '#DC2626',
+  },
 });
-

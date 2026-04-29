@@ -10,20 +10,57 @@ import {
   TextInput,
   Platform,
   ScrollView,
-  Alert,
   Modal,
 } from 'react-native';
 import { Colors } from '../../constants/Colors';
 import { Ionicons, MaterialIcons, Zocial } from '@expo/vector-icons';
-import DateTimePicker from '@react-native-community/datetimepicker'
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../../context/AuthContext';
+import LottieView from "lottie-react-native";
+import CustomAlert from '../../components/CustomAlert';
 
 export default function Step1({ from, to, setFrom, setTo, setFromCoords, setToCoords, dateTime, setDateTime, onNext, navigation, route, phoneNumber: phoneNumberProp, fromCoords, toCoords }) {
 
   const [fromLocation, setFromLocation] = useState(from);
   const [toLocation, setToLocation] = useState(to);
   const [selectedDate, setSelectedDate] = useState(dateTime);
+  const [loading, setLoading] = useState(false);
+
+  // Custom Alert states
+  const [alertVisible, setAlertVisible] = useState(false);
+  const [alertConfig, setAlertConfig] = useState({
+    title: "",
+    message: "",
+    icon: "check-circle",
+    iconColor: "#10B981",
+    buttons: []
+  });
+
+  const showCustomAlert = (title, message, type = 'success') => {
+    let icon = "check-circle";
+    let iconColor = "#10B981";
+    
+    if (type === 'error') {
+      icon = "error";
+      iconColor = "#EF4444";
+    } else if (type === 'warning') {
+      icon = "warning";
+      iconColor = "#F59E0B";
+    } else if (type === 'info') {
+      icon = "info";
+      iconColor = Colors.primary;
+    }
+    
+    setAlertConfig({
+      title,
+      message,
+      icon,
+      iconColor,
+      buttons: [{ text: 'OK', onPress: () => setAlertVisible(false) }]
+    });
+    setAlertVisible(true);
+  };
 
   useEffect(() => {
     // Auto-set coords if provided (edit mode)
@@ -34,6 +71,7 @@ export default function Step1({ from, to, setFrom, setTo, setFromCoords, setToCo
       setToCoords({ latitude: toCoords[1], longitude: toCoords[0] });
     }
   }, [fromCoords, toCoords]);
+  
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
   const { firstName, lastName, userId, userData, isNewUser } = route?.params || {};
@@ -76,47 +114,47 @@ export default function Step1({ from, to, setFrom, setTo, setFromCoords, setToCo
   };
 
   const showDateTimePicker = () => {
-      setShowDatePicker(true);
-    };
-  
-    const onDateChange = (event, selectedDate) => {
-      if (Platform.OS === 'android') {
-        setShowDatePicker(false);
-        setShowTimePicker(true);
-      }
-      if (selectedDate) {
-        setSelectedDate(selectedDate);
-        setDateTime(selectedDate);
-      }
-    };
-  
-    const onTimeChange = (event, selectedTime) => {
-      setShowTimePicker(false);
-      if (selectedTime) {
-        const newDateTime = new Date(selectedDate);
-        newDateTime.setHours(selectedTime.getHours());
-        newDateTime.setMinutes(selectedTime.getMinutes());
-        setSelectedDate(newDateTime);
-        setDateTime(newDateTime);
-      }
-    };
+    setShowDatePicker(true);
+  };
+
+  const onDateChange = (event, selectedDate) => {
+    if (Platform.OS === 'android') {
+      setShowDatePicker(false);
+      setShowTimePicker(true);
+    }
+    if (selectedDate) {
+      setSelectedDate(selectedDate);
+      setDateTime(selectedDate);
+    }
+  };
+
+  const onTimeChange = (event, selectedTime) => {
+    setShowTimePicker(false);
+    if (selectedTime) {
+      const newDateTime = new Date(selectedDate);
+      newDateTime.setHours(selectedTime.getHours());
+      newDateTime.setMinutes(selectedTime.getMinutes());
+      setSelectedDate(newDateTime);
+      setDateTime(newDateTime);
+    }
+  };
 
   const handleNext = () => {
-        if (!from || !to) {
-          Alert.alert('Required Fields', 'Please enter both pickup and destination locations');
-          return;
-        }
+    if (!from || !to) {
+      showCustomAlert('Required Fields', 'Please enter both pickup and destination locations', 'warning');
+      return;
+    }
 
-        const DriveData = {
-          from,
-          to,
-          dateTime: selectedDate,
-          userId: userId,
-        };
-        console.log('🚗 Drive data:', DriveData);
+    const DriveData = {
+      from,
+      to,
+      dateTime: selectedDate,
+      userId: userId,
+    };
+    console.log('🚗 Drive data:', DriveData);
 
-        onNext();
-  }
+    onNext();
+  };
 
   return (
     <View style={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', padding: 18, marginBottom: 16, borderRadius: 28,
@@ -142,9 +180,9 @@ export default function Step1({ from, to, setFrom, setTo, setFromCoords, setToCo
             { onSelect: (location) => {
                 setFrom(location.label); 
                 setFromCoords(location.coordinates);
-             }
-        })
-      }
+              }
+          })
+        }
       >
         <Ionicons name="location-sharp" size={20} color={Colors.success} style={styles.inputIcon} />
         <Text style={styles.locationInput}>
@@ -158,9 +196,9 @@ export default function Step1({ from, to, setFrom, setTo, setFromCoords, setToCo
            { onSelect: (location) => {
                 setTo(location.label); 
                 setToCoords(location.coordinates);
-             }
-        })
-      }
+              }
+          })
+        }
       >
         <Ionicons name="location-sharp" size={20} color={Colors.secondary} style={styles.inputIcon} />
         <Text style={styles.locationInput}>
@@ -182,6 +220,7 @@ export default function Step1({ from, to, setFrom, setTo, setFromCoords, setToCo
         <TouchableOpacity
           style={[styles.actionButton, { backgroundColor: Colors.primary }]}
           onPress={handleNext}
+          disabled={loading}
         >
           <Text style={styles.actionButtonText}>Continue</Text>
         </TouchableOpacity>
@@ -231,10 +270,22 @@ export default function Step1({ from, to, setFrom, setTo, setFromCoords, setToCo
           </View>
         </Modal>
       )}
+
+      {/* Custom Alert */}
+      <CustomAlert
+        visible={alertVisible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        icon={alertConfig.icon}
+        iconColor={alertConfig.iconColor}
+        buttons={alertConfig.buttons}
+        onBackdropPress={() => setAlertVisible(false)}
+      />
     </View>
   );
 
 }
+
 const styles = StyleSheet.create({ 
   titleSection: {
     marginBottom: 2,
@@ -267,7 +318,7 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
     textAlignVertical: 'center',
     includeFontPadding: false,
-    },
+  },
   whenSection: {
     marginBottom: 2,
   },

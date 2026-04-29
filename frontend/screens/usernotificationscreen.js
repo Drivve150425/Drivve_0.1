@@ -11,6 +11,8 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import CommonHeader from "../components/CommonHeader";
+import LottieView from "lottie-react-native";
+import CustomAlert from "../components/CustomAlert";
 
 import DatabaseService from "../services/usernotification_ds";
 import { Colors, Typography } from "../constants/Colors";
@@ -24,6 +26,59 @@ export default function NotificationScreen({ navigation, route }) {
 
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [clearing, setClearing] = useState(false);
+  
+  // Custom Alert states
+  const [alertVisible, setAlertVisible] = useState(false);
+  const [alertConfig, setAlertConfig] = useState({
+    title: "",
+    message: "",
+    icon: "check-circle",
+    iconColor: "#10B981",
+    buttons: []
+  });
+
+  const showCustomAlert = (title, message, type = 'success') => {
+    let icon = "check-circle";
+    let iconColor = "#10B981";
+    
+    if (type === 'error') {
+      icon = "error";
+      iconColor = "#EF4444";
+    } else if (type === 'warning') {
+      icon = "warning";
+      iconColor = "#F59E0B";
+    } else if (type === 'info') {
+      icon = "info";
+      iconColor = Colors.primary;
+    }
+    
+    setAlertConfig({
+      title,
+      message,
+      icon,
+      iconColor,
+      buttons: [{ text: 'OK', onPress: () => setAlertVisible(false) }]
+    });
+    setAlertVisible(true);
+  };
+
+  const showConfirmationAlert = (title, message, onConfirm, confirmText = 'Clear') => {
+    setAlertConfig({
+      title,
+      message,
+      icon: "warning",
+      iconColor: "#F59E0B",
+      buttons: [
+        { text: 'Cancel', onPress: () => setAlertVisible(false), style: 'cancel' },
+        { text: confirmText, onPress: () => {
+          setAlertVisible(false);
+          onConfirm();
+        }, style: 'destructive' }
+      ]
+    });
+    setAlertVisible(true);
+  };
 
   /* ================= FETCH ================= */
   useEffect(() => {
@@ -32,16 +87,22 @@ export default function NotificationScreen({ navigation, route }) {
 
   const fetchNotifications = async () => {
     try {
-      if (!phoneNumber) return;
+      if (!phoneNumber) {
+        setLoading(false);
+        return;
+      }
 
       const cleanPhone = phoneNumber.replace(/\s/g, "");
       const res = await DatabaseService.getNotifications(cleanPhone);
 
       if (res?.notifications) {
         setNotifications(res.notifications);
+      } else if (res?.error) {
+        showCustomAlert('Error', res.error, 'error');
       }
     } catch (e) {
       console.error("❌ Notification fetch error:", e);
+      showCustomAlert('Error', 'Failed to load notifications. Please try again.', 'error');
     } finally {
       setLoading(false);
     }
@@ -52,6 +113,12 @@ export default function NotificationScreen({ navigation, route }) {
     try {
       if (!item.is_read) {
         await DatabaseService.markNotificationRead(item.id);
+        // Update local state
+        setNotifications(prev => 
+          prev.map(notif => 
+            notif.id === item.id ? { ...notif, is_read: true } : notif
+          )
+        );
       }
 
       if (item.action_type === "document") {
@@ -63,52 +130,115 @@ export default function NotificationScreen({ navigation, route }) {
       }
     } catch (e) {
       console.error("❌ Open notification error:", e);
+      showCustomAlert('Error', 'Failed to open notification', 'error');
     }
   };
 
   const clearAll = async () => {
     if (!phoneNumber) return;
+    
+    if (notifications.length === 0) {
+      showCustomAlert('Info', 'No notifications to clear', 'info');
+      return;
+    }
 
-    await DatabaseService.clearNotifications(
-      phoneNumber.replace(/\s/g, "")
+    showConfirmationAlert(
+      'Clear All Notifications',
+      `Are you sure you want to clear all ${notifications.length} notification${notifications.length > 1 ? 's' : ''}? This action cannot be undone.`,
+      async () => {
+        setClearing(true);
+        try {
+          await DatabaseService.clearNotifications(
+            phoneNumber.replace(/\s/g, "")
+          );
+          setNotifications([]);
+          showCustomAlert('Success', 'All notifications cleared successfully', 'success');
+        } catch (e) {
+          console.error("❌ Clear all error:", e);
+          showCustomAlert('Error', 'Failed to clear notifications', 'error');
+        } finally {
+          setClearing(false);
+        }
+      },
+      'Clear All'
     );
-    setNotifications([]);
+  };
+
+  const handleRefresh = () => {
+    setLoading(true);
+    fetchNotifications();
   };
 
   /* ================= UI ================= */
+  // Loading state with Lottie animation
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
+        <CommonHeader
+          title="Notifications"
+          showBackButton={true}
+        />
+        <View style={styles.loaderContainer}>
+          <LottieView
+            source={require("../assets/loading.json")}
+            autoPlay
+            loop
+            style={{ width: 300, height: 300 }}
+          />
+          {/* <Text style={styles.loadingText}>Loading notifications...</Text>
+          <TouchableOpacity 
+            style={styles.reloadButton}
+            onPress={handleRefresh}>
+            <Ionicons name="refresh" size={moderateScale(18)} color={Colors.white} />
+            <Text style={styles.reloadButtonText}>Try Again</Text>
+          </TouchableOpacity> */}
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
 
-    <CommonHeader
-    title="Notifications"
-    rightIcon={
-      <Text style={{ 
-        color: Colors.orange1, 
-        fontWeight: "700",
-        fontSize: moderateScale(14)
-      }}>
-        Clear
-      </Text>
-    }
-    onRightPress={clearAll}
-  />
+      <CommonHeader
+        title="Notifications"
+        showBackButton={true}
+        rightIcon={
+          notifications.length > 0 && !clearing ? (
+            <Text style={{ 
+              color: Colors.orange1, 
+              fontWeight: "700",
+              fontSize: moderateScale(14)
+            }}>
+              Clear
+            </Text>
+          ) : clearing ? (
+            <ActivityIndicator size="small" color={Colors.orange1} />
+          ) : null
+        }
+        onRightPress={clearAll}
+      />
+
       {/* ================= CONTENT ================= */}
-      {loading ? (
-        <View style={styles.loader}>
-          <ActivityIndicator size="large" color={Colors.primary} />
-        </View>
-      ) : notifications.length === 0 ? (
+      {notifications.length === 0 ? (
         <View style={styles.empty}>
           <Ionicons
             name="notifications-outline"
-            size={64}
+            size={moderateScale(80)}
             color={Colors.borderGray}
           />
           <Text style={styles.emptyTitle}>No Notifications</Text>
           <Text style={styles.emptyText}>
-            You’re all caught up. New alerts will appear here.
+            You're all caught up. New alerts will appear here.
           </Text>
+          {/* <TouchableOpacity 
+            style={styles.refreshEmptyButton}
+            onPress={handleRefresh}>
+            <Ionicons name="refresh-outline" size={moderateScale(18)} color={Colors.primary} />
+            <Text style={styles.refreshEmptyText}>Refresh</Text>
+          </TouchableOpacity> */}
         </View>
       ) : (
         <ScrollView
@@ -146,6 +276,17 @@ export default function NotificationScreen({ navigation, route }) {
           ))}
         </ScrollView>
       )}
+
+      {/* CUSTOM ALERT */}
+      <CustomAlert
+        visible={alertVisible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        icon={alertConfig.icon}
+        iconColor={alertConfig.iconColor}
+        buttons={alertConfig.buttons}
+        onBackdropPress={() => setAlertVisible(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -167,8 +308,21 @@ const getIcon = (type) => {
 };
 
 const formatDate = (date) => {
+  if (!date) return '';
   const d = new Date(date);
-  return d.toLocaleDateString() + " • " + d.toLocaleTimeString();
+  const now = new Date();
+  const diffInMs = now - d;
+  const diffInMins = Math.floor(diffInMs / 60000);
+  const diffInHours = Math.floor(diffInMs / 3600000);
+  const diffInDays = Math.floor(diffInMs / 86400000);
+
+  if (diffInMins < 1) return 'Just now';
+  if (diffInMins < 60) return `${diffInMins} min ago`;
+  if (diffInHours < 24) return `${diffInHours} hour${diffInHours > 1 ? 's' : ''} ago`;
+  if (diffInDays === 1) return 'Yesterday';
+  if (diffInDays < 7) return `${diffInDays} days ago`;
+  
+  return d.toLocaleDateString();
 };
 
 /* ================= STYLES ================= */
@@ -179,18 +333,18 @@ const styles = StyleSheet.create({
   },
 
   list: {
-    padding: 16,
-    paddingBottom: 40,
+    padding: moderateScale(16),
+    paddingBottom: verticalScale(40),
   },
 
   card: {
     flexDirection: "row",
-    padding: 14,
-    borderRadius: 16,
+    padding: moderateScale(14),
+    borderRadius: moderateScale(16),
     borderWidth: 1,
     borderColor: Colors.borderGray,
     backgroundColor: "#F9FAFB",
-    marginBottom: 12,
+    marginBottom: verticalScale(12),
     alignItems: "center",
   },
 
@@ -200,13 +354,13 @@ const styles = StyleSheet.create({
   },
 
   iconBox: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: moderateScale(42),
+    height: moderateScale(42),
+    borderRadius: moderateScale(21),
     backgroundColor: "#FFEAD5",
     justifyContent: "center",
     alignItems: "center",
-    marginRight: 12,
+    marginRight: moderateScale(12),
   },
 
   content: {
@@ -214,54 +368,106 @@ const styles = StyleSheet.create({
   },
 
   title: {
-    fontSize: 15,
+    fontSize: moderateScale(15),
     fontWeight: "700",
     color: Colors.primary,
   },
 
   message: {
-    fontSize: 14,
+    fontSize: moderateScale(14),
     color: Colors.dark,
-    marginTop: 2,
+    marginTop: verticalScale(2),
   },
 
   time: {
-    fontSize: 11,
+    fontSize: moderateScale(11),
     color: "#6B7280",
-    marginTop: 6,
+    marginTop: verticalScale(6),
   },
 
   dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: moderateScale(8),
+    height: moderateScale(8),
+    borderRadius: moderateScale(4),
     backgroundColor: Colors.orange1,
   },
 
-  loader: {
+  loaderContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+    paddingHorizontal: moderateScale(40),
+  },
+
+  loadingText: {
+    fontSize: moderateScale(16),
+    color: Colors.gray,
+    marginTop: verticalScale(16),
+    marginBottom: verticalScale(24),
+    fontFamily: Typography.fontFamily?.regular,
+  },
+
+  reloadButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.primary,
+    paddingHorizontal: moderateScale(24),
+    paddingVertical: verticalScale(12),
+    borderRadius: moderateScale(25),
+    marginTop: verticalScale(24),
+    elevation: 2,
+    shadowColor: Colors.black,
+    shadowOffset: { width: 0, height: verticalScale(2) },
+    shadowOpacity: 0.1,
+    shadowRadius: moderateScale(3),
+  },
+
+  reloadButtonText: {
+    fontSize: moderateScale(16),
+    color: Colors.white,
+    fontWeight: '600',
+    marginLeft: moderateScale(8),
   },
 
   empty: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: 40,
+    paddingHorizontal: moderateScale(40),
   },
 
   emptyTitle: {
-    fontSize: 20,
+    fontSize: moderateScale(20),
     fontWeight: "700",
-    marginTop: 16,
+    marginTop: verticalScale(16),
     color: Colors.primary,
   },
 
   emptyText: {
-    fontSize: 14,
+    fontSize: moderateScale(14),
     textAlign: "center",
-    marginTop: 8,
+    marginTop: verticalScale(8),
     color: "#6B7280",
+    marginBottom: verticalScale(24),
+    lineHeight: verticalScale(20),
+  },
+
+  refreshEmptyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: moderateScale(20),
+    paddingVertical: verticalScale(10),
+    borderRadius: moderateScale(25),
+    marginTop: verticalScale(16),
+  },
+
+  refreshEmptyText: {
+    fontSize: moderateScale(14),
+    color: Colors.primary,
+    fontWeight: '600',
+    marginLeft: moderateScale(8),
   },
 });

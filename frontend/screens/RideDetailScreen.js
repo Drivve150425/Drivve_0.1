@@ -5,7 +5,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  Alert,
   ActivityIndicator,
   Platform,
   StatusBar,
@@ -16,9 +15,11 @@ import {
 } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
+import LottieView from "lottie-react-native";
 import { Colors } from '../constants/Colors';
 import { useAuth } from '../context/AuthContext';
 import { API_BASE_URL } from '../config/config_ip';
+import CustomAlert from '../components/CustomAlert';
 
 const { height } = Dimensions.get('window');
 const SAFE_TOP = Platform.OS === 'ios' ? 56 : 24;
@@ -126,25 +127,74 @@ export default function RideDetailScreen({ navigation, route }) {
   const { user, isAuthenticated } = useAuth();
   const { ride, searchData } = route.params || {};
 
-  useEffect(() => {
-    if (!isAuthenticated) {
-      Alert.alert(
-        'Login Required',
-        'Please login to book rides or chat with drivers.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Login', onPress: () => navigation.navigate('Login') },
-        ]
-      );
-      navigation.goBack();
-    }
-  }, [isAuthenticated, navigation]);
-
   const [seatsRequested, setSeatsRequested] = useState(1);
   const [requestLoading, setRequestLoading] = useState(false);
   const [drawerExpanded, setDrawerExpanded] = useState(true);
   const animatedDrawer = useRef(new Animated.Value(1)).current;
   const mapRef = useRef(null);
+
+  // Custom Alert states
+  const [alertVisible, setAlertVisible] = useState(false);
+  const [alertConfig, setAlertConfig] = useState({
+    title: "",
+    message: "",
+    icon: "check-circle",
+    iconColor: "#10B981",
+    buttons: []
+  });
+
+  const showCustomAlert = (title, message, type = 'success') => {
+    let icon = "check-circle";
+    let iconColor = "#10B981";
+    
+    if (type === 'error') {
+      icon = "error";
+      iconColor = "#EF4444";
+    } else if (type === 'warning') {
+      icon = "warning";
+      iconColor = "#F59E0B";
+    } else if (type === 'info') {
+      icon = "info";
+      iconColor = Colors.primary;
+    }
+    
+    setAlertConfig({
+      title,
+      message,
+      icon,
+      iconColor,
+      buttons: [{ text: 'OK', onPress: () => setAlertVisible(false) }]
+    });
+    setAlertVisible(true);
+  };
+
+  const showConfirmationAlert = (title, message, onConfirm) => {
+    setAlertConfig({
+      title,
+      message,
+      icon: "warning",
+      iconColor: "#F59E0B",
+      buttons: [
+        { text: 'Cancel', onPress: () => setAlertVisible(false), style: 'cancel' },
+        { text: 'Login', onPress: () => {
+          setAlertVisible(false);
+          onConfirm();
+        }, style: 'destructive' }
+      ]
+    });
+    setAlertVisible(true);
+  };
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      showConfirmationAlert(
+        'Login Required',
+        'Please login to book rides or chat with drivers.',
+        () => navigation.navigate('Login')
+      );
+      navigation.goBack();
+    }
+  }, [isAuthenticated, navigation]);
 
   const profilePhotoUrl = buildImageUrl(
     ride?.profilePicture || ride?.profilepicture
@@ -334,7 +384,7 @@ export default function RideDetailScreen({ navigation, route }) {
 
   const handleRequestJoin = async () => {
     if (!user?.phone_number) {
-      Alert.alert('Login Required', 'Please log in to request a ride.');
+      showCustomAlert('Login Required', 'Please log in to request a ride.', 'warning');
       return;
     }
 
@@ -374,10 +424,10 @@ export default function RideDetailScreen({ navigation, route }) {
         throw new Error(data.detail || data.message || `Server error (${response.status})`);
       }
 
-      Alert.alert('Success', data.message || 'Ride request sent successfully');
-      navigation.goBack();
+      showCustomAlert('Success', data.message || 'Ride request sent successfully', 'success');
+      setTimeout(() => navigation.goBack(), 1500);
     } catch (error) {
-      Alert.alert('Error', error.message || 'Failed to send request');
+      showCustomAlert('Error', error.message || 'Failed to send request', 'error');
     } finally {
       setRequestLoading(false);
     }
@@ -391,7 +441,7 @@ export default function RideDetailScreen({ navigation, route }) {
         driverName: ride.driverName || 'Driver',
       });
     } else {
-      Alert.alert('Profile', 'Driver profile not available');
+      showCustomAlert('Profile', 'Driver profile not available', 'warning');
     }
   };
 
@@ -399,7 +449,7 @@ export default function RideDetailScreen({ navigation, route }) {
     try {
       const myPhone = user?.phone_number;
       if (!myPhone) {
-        Alert.alert('Login Required', 'Please log in to use chat.');
+        showCustomAlert('Login Required', 'Please log in to use chat.', 'warning');
         return null;
       }
       const response = await fetch(`${API_BASE_URL}/api/chat/conversations`, {
@@ -436,13 +486,25 @@ export default function RideDetailScreen({ navigation, route }) {
           },
         });
       } else {
-        Alert.alert('Chat', 'Unable to start chat. Please try again.');
+        showCustomAlert('Chat', 'Unable to start chat. Please try again.', 'error');
       }
     } else {
-      Alert.alert('Chat', 'Driver contact not available');
+      showCustomAlert('Chat', 'Driver contact not available', 'warning');
     }
   };
-
+if (requestLoading) {
+  return (
+    <View style={styles.loaderContainer}>
+      <LottieView
+        source={require("../assets/loading.json")}
+        autoPlay
+        loop
+        style={{ width: 300, height: 300 }}
+      />
+      {/* <Text style={styles.loaderText}>Booking your ride...</Text> */}
+    </View>
+  );
+}
   if (!ride) {
     return (
       <View style={styles.centerContainer}>
@@ -836,7 +898,7 @@ export default function RideDetailScreen({ navigation, route }) {
                     onPress={() =>
                       setSeatsRequested(Math.max(1, seatsRequested - 1))
                     }
-                    disabled={seatsRequested === 1}
+                    disabled={seatsRequested === 1 || requestLoading}
                   >
                     <Ionicons name="remove" size={20} color={Colors.gray} />
                   </TouchableOpacity>
@@ -855,7 +917,7 @@ export default function RideDetailScreen({ navigation, route }) {
                         Math.min(ride.seatsAvailable || 1, seatsRequested + 1)
                       )
                     }
-                    disabled={seatsRequested === ride.seatsAvailable}
+                    disabled={seatsRequested === ride.seatsAvailable || requestLoading}
                   >
                     <Ionicons name="add" size={20} color="#2457A6" />
                   </TouchableOpacity>
@@ -889,24 +951,31 @@ export default function RideDetailScreen({ navigation, route }) {
                 <Text style={styles.bottomTotal}>₹{totalPrice}</Text>
               </View>
 
-              <TouchableOpacity
-                style={[
-                  styles.bookNowBtn,
-                  requestLoading && styles.bookNowBtnDisabled,
-                ]}
-                onPress={handleRequestJoin}
-                disabled={requestLoading}
-              >
-                {requestLoading ? (
-                  <ActivityIndicator size="small" color="white" />
-                ) : (
-                  <Text style={styles.bookNowText}>Book Now</Text>
-                )}
-              </TouchableOpacity>
+ <TouchableOpacity
+  style={[
+    styles.bookNowBtn,
+    requestLoading && styles.bookNowBtnDisabled,
+  ]}
+  onPress={handleRequestJoin}
+  disabled={requestLoading}
+>
+  <Text style={styles.bookNowText}>Book Now</Text>
+</TouchableOpacity>
             </View>
           </>
         )}
       </Animated.View>
+
+      {/* Custom Alert */}
+      <CustomAlert
+        visible={alertVisible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        icon={alertConfig.icon}
+        iconColor={alertConfig.iconColor}
+        buttons={alertConfig.buttons}
+        onBackdropPress={() => setAlertVisible(false)}
+      />
     </View>
   );
 }
@@ -1478,5 +1547,17 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
   },
-});
+  loaderContainer: {
+  flex: 1,
+  justifyContent: "center",
+  alignItems: "center",
+  backgroundColor: "#fff",
+},
 
+loaderText: {
+  marginTop: 16,
+  fontSize: 16,
+  color: "#2457A6",
+  fontWeight: "600",
+},
+});

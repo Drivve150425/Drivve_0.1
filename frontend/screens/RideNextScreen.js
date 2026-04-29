@@ -1,573 +1,3 @@
-// import React, { useState, useEffect, useCallback } from 'react';
-// import {
-//   View,
-//   Text,
-//   StyleSheet,
-//   TouchableOpacity,
-//   FlatList,
-//   StatusBar,
-//   Platform,
-//   Alert,
-//   ActivityIndicator,
-//   Image,
-// } from 'react-native';
-// import { Ionicons, MaterialIcons } from '@expo/vector-icons';
-// import { Colors, Typography } from "../constants/Colors";
-// import { useAuth } from '../context/AuthContext';
-// import { API_BASE_URL } from "../config/config_ip";
-
-// const IMAGE_BASE_URL = API_BASE_URL;
-
-// function buildImageUrl(url) {
-//   if (!url) return null;
-//   if (url.startsWith('http://') || url.startsWith('https://')) return url;
-//   return `${IMAGE_BASE_URL}${url.startsWith('/') ? '' : '/'}${url}`;
-// }
-
-// function getDriverInitials(name) {
-//   if (!name) return 'D';
-//   const parts = name.trim().split(' ').filter(Boolean);
-//   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-//   return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
-// }
-
-// export default function RideNextScreen({ navigation, route }) {
-//   const { user, loading: authLoading } = useAuth();
-//   const { searchData } = route.params || {};
-//   const { from, to, fromCoords, toCoords, dateTime, seats } = searchData || {};
-
-//   const [availableRides, setAvailableRides] = useState([]);
-//   const [loading, setLoading] = useState(true);
-//   const [errorMessage, setErrorMessage] = useState('');
-
-//   const fetchAvailableRides = useCallback(async () => {
-//     if (!searchData || !fromCoords || !toCoords || !dateTime) {
-//       setAvailableRides([]);
-//       setLoading(false);
-//       return;
-//     }
-
-//     try {
-//       setLoading(true);
-//       setErrorMessage('');
-
-//       const response = await fetch(`${API_BASE_URL}/search-rides`, {
-//         method: 'POST',
-//         headers: {
-//           'Content-Type': 'application/json',
-//         },
-//         body: JSON.stringify({
-//           from_location: from,
-//           to_location: to,
-//           from_coords: fromCoords,
-//           to_coords: toCoords,
-//           departure_time: new Date(dateTime).toISOString(),
-//           seats_required: seats || 1,
-//         }),
-//       });
-
-//       const rawText = await response.text();
-//       let parsedData = null;
-
-//       try {
-//         parsedData = rawText ? JSON.parse(rawText) : {};
-//       } catch (parseError) {
-//         parsedData = { detail: rawText || 'Unexpected server response' };
-//       }
-
-//       if (!response.ok) {
-//         throw new Error(parsedData?.detail || 'Failed to fetch rides');
-//       }
-
-//       setAvailableRides(Array.isArray(parsedData?.rides) ? parsedData.rides : []);
-//     } catch (error) {
-//       console.log('❌ search-rides error:', error);
-//       setAvailableRides([]);
-//       setErrorMessage(error.message || 'Failed to search rides');
-//       Alert.alert('Error', error.message || 'Failed to search rides');
-//     } finally {
-//       setLoading(false);
-//     }
-//   }, [searchData, from, to, fromCoords, toCoords, dateTime, seats]);
-
-//   useEffect(() => {
-//     if (authLoading) return;
-//     fetchAvailableRides();
-//   }, [authLoading, fetchAvailableRides]);
-
-//   const handleCardPress = (ride) => {
-//     navigation.navigate('RideDetailScreen', { ride });
-//   };
-
-//   const renderRideCard = ({ item }) => {
-//     const profilePhotoUrl = buildImageUrl(
-//       item.profilePicture || item.profilepicture || item.profilePhoto
-//     );
-//     const avatarText = getDriverInitials(item.driverName || 'Driver');
-//     const timeLabel = item.time || '--:--';
-//     const dateLabel = item.date || '';
-//     const seatsLeft = item.seatsAvailable ?? item.seats_left ?? 0;
-
-//     const vehicleLabel = item.vehicle
-//       ? [item.vehicle.make, item.vehicle.model].filter(Boolean).join(' ')
-//       : '';
-
-//     return (
-//       <TouchableOpacity
-//         style={styles.rideCard}
-//         onPress={() => handleCardPress(item)}
-//         activeOpacity={0.88}
-//       >
-//         <View style={styles.topRow}>
-//           <View style={styles.driverRow}>
-//             <View style={styles.avatarContainer}>
-//               {profilePhotoUrl ? (
-//                 <Image
-//                   source={{ uri: profilePhotoUrl }}
-//                   style={styles.avatarImage}
-//                   resizeMode="cover"
-//                 />
-//               ) : (
-//                 <Text style={styles.avatarFallback}>{avatarText}</Text>
-//               )}
-//             </View>
-
-//             <View style={styles.driverDetails}>
-//               <Text style={styles.driverName} numberOfLines={1}>
-//                 {item.driverName || 'Driver'}
-//               </Text>
-
-//               <View style={styles.metaTopRow}>
-//                 {item.profileCompleted ? (
-//                   <View style={styles.verifiedBadge}>
-//                     <Ionicons
-//                       name="checkmark-circle"
-//                       size={13}
-//                       color="#16A34A"
-//                     />
-//                     <Text style={styles.verifiedText}>Verified</Text>
-//                   </View>
-//                 ) : null}
-
-//                 <View style={styles.ratingPill}>
-//                   <Ionicons name="star" size={12} color="#F59E0B" />
-//                   <Text style={styles.ratingText}>{item.rating ?? 4.5}</Text>
-//                 </View>
-//               </View>
-
-//               {!!vehicleLabel && (
-//                 <View style={styles.vehicleRow}>
-//                   <Ionicons
-//                     name="car-sport-outline"
-//                     size={13}
-//                     color={Colors.gray}
-//                   />
-//                   <Text style={styles.vehicleText} numberOfLines={1}>
-//                     {vehicleLabel}
-//                   </Text>
-//                 </View>
-//               )}
-//             </View>
-//           </View>
-
-//           <View style={styles.matchBadge}>
-//             <Text style={styles.matchPercent}>{item.matchPercentage}%</Text>
-//             <Text style={styles.matchLabel}>Match</Text>
-//           </View>
-//         </View>
-
-//         <View style={styles.locationSection}>
-//           <View style={styles.locationCard}>
-//             <View style={styles.locationHeader}>
-//               <View style={[styles.locationDot, { backgroundColor: '#22C55E' }]} />
-//               <Text style={styles.locationLabel}>Pickup point</Text>
-//             </View>
-//             <Text style={styles.locationText} numberOfLines={2}>
-//               {item.pickupLabel || 'Pickup point'}
-//             </Text>
-//           </View>
-
-//           <View style={styles.locationCard}>
-//             <View style={styles.locationHeader}>
-//               <View style={[styles.locationDot, { backgroundColor: '#F97316' }]} />
-//               <Text style={styles.locationLabel}>Drop point</Text>
-//             </View>
-//             <Text style={styles.locationText} numberOfLines={2}>
-//               {item.dropLabel || 'Drop point'}
-//             </Text>
-//           </View>
-//         </View>
-
-//         <View style={styles.metaGrid}>
-//           <View style={styles.metaChip}>
-//             <Ionicons name="calendar-outline" size={14} color={Colors.gray} />
-//             <Text style={styles.metaChipText} numberOfLines={1}>
-//               {dateLabel}
-//             </Text>
-//           </View>
-
-//           <View style={styles.metaChip}>
-//             <Ionicons name="time-outline" size={14} color={Colors.gray} />
-//             <Text style={styles.metaChipText} numberOfLines={1}>
-//               {timeLabel}
-//             </Text>
-//           </View>
-//         </View>
-
-//         <View style={styles.bottomRow}>
-//           <View>
-//             <Text style={styles.priceText}>₹{item.price}</Text>
-//             <Text style={styles.priceHint}>{seatsLeft} seat(s) available</Text>
-//           </View>
-
-//           <View style={styles.chevronWrap}>
-//             <Ionicons name="chevron-forward" size={18} color={Colors.primary} />
-//           </View>
-//         </View>
-//       </TouchableOpacity>
-//     );
-//   };
-
-//   if (authLoading || loading) {
-//     return (
-//       <View style={styles.loadingContainer}>
-//         <ActivityIndicator size="large" color={Colors.primary} />
-//         <Text style={styles.loadingText}>Finding available rides...</Text>
-//       </View>
-//     );
-//   }
-
-//   return (
-//     <View style={styles.container}>
-//       <StatusBar barStyle="dark-content" backgroundColor={Colors.white} />
-
-//       <View style={styles.header}>
-//         <TouchableOpacity
-//           style={styles.backButton}
-//           onPress={() => navigation.goBack()}
-//         >
-//           <MaterialIcons
-//             name="arrow-back-ios"
-//             size={24}
-//             color={Colors.primary}
-//           />
-//         </TouchableOpacity>
-
-//         <Text style={styles.headerTitle}>Available Rides</Text>
-//         <View style={{ width: 40 }} />
-//       </View>
-
-//       {availableRides.length === 0 ? (
-//         <View style={styles.emptyContainer}>
-//           <Ionicons name="car-outline" size={80} color={Colors.gray} />
-//           <Text style={styles.emptyTitle}>No Rides Found</Text>
-//           <Text style={styles.emptySubtitle}>
-//             {errorMessage
-//               ? errorMessage
-//               : 'There are no available rides for this route at the moment.'}
-//           </Text>
-
-//           <TouchableOpacity
-//             style={styles.backToHomeButton}
-//             onPress={() => navigation.goBack()}
-//           >
-//             <Text style={styles.backToHomeText}>Search Again</Text>
-//           </TouchableOpacity>
-//         </View>
-//       ) : (
-//         <FlatList
-//           data={availableRides}
-//           renderItem={renderRideCard}
-//           keyExtractor={(item) => String(item.id)}
-//           contentContainerStyle={styles.listContent}
-//           showsVerticalScrollIndicator={false}
-//           ItemSeparatorComponent={() => <View style={{ height: 14 }} />}
-//         />
-//       )}
-//     </View>
-//   );
-// }
-
-// const styles = StyleSheet.create({
-//   container: {
-//     flex: 1,
-//     backgroundColor: '#F4F6FA',
-//   },
-//   header: {
-//     flexDirection: 'row',
-//     alignItems: 'center',
-//     justifyContent: 'space-between',
-//     paddingHorizontal: 18,
-//     paddingTop: Platform.OS === 'ios' ? 60 : 40,
-//     paddingBottom: 14,
-//     backgroundColor: Colors.white,
-//     borderBottomWidth: 1,
-//     borderBottomColor: '#EEF2F7',
-//   },
-//   backButton: {
-//     width: 44,
-//     height: 44,
-//     alignItems: 'center',
-//     justifyContent: 'center',
-//     borderRadius: 22,
-//     backgroundColor: '#F8FAFC',
-//   },
-//   headerTitle: {
-//     ...Typography.h2,
-//     fontSize: 22,
-//     fontWeight: '700',
-//     color: Colors.dark,
-//     flex: 1,
-//     textAlign: 'center',
-//   },
-//   loadingContainer: {
-//     flex: 1,
-//     justifyContent: 'center',
-//     alignItems: 'center',
-//     backgroundColor: '#F4F6FA',
-//   },
-//   loadingText: {
-//     marginTop: 16,
-//     fontSize: 16,
-//     color: Colors.gray,
-//   },
-//   listContent: {
-//     padding: 16,
-//     paddingBottom: 28,
-//   },
-//   rideCard: {
-//     backgroundColor: Colors.white,
-//     borderRadius: 20,
-//     padding: 16,
-//     borderWidth: 1,
-//     borderColor: '#EDF1F6',
-//     shadowColor: '#0F172A',
-//     shadowOffset: { width: 0, height: 8 },
-//     shadowOpacity: 0.06,
-//     shadowRadius: 16,
-//     elevation: 2,
-//   },
-//   topRow: {
-//     flexDirection: 'row',
-//     justifyContent: 'space-between',
-//     alignItems: 'flex-start',
-//     marginBottom: 14,
-//   },
-//   driverRow: {
-//     flexDirection: 'row',
-//     alignItems: 'center',
-//     flex: 1,
-//     paddingRight: 10,
-//   },
-//   avatarContainer: {
-//     width: 50,
-//     height: 50,
-//     borderRadius: 16,
-//     backgroundColor: '#EEF2F7',
-//     alignItems: 'center',
-//     justifyContent: 'center',
-//     marginRight: 12,
-//     overflow: 'hidden',
-//   },
-//   avatarImage: {
-//     width: 50,
-//     height: 50,
-//   },
-//   avatarFallback: {
-//     fontSize: 14,
-//     fontWeight: '800',
-//     color: Colors.gray,
-//   },
-//   driverDetails: {
-//     flex: 1,
-//   },
-//   driverName: {
-//     fontSize: 16,
-//     fontWeight: '800',
-//     color: Colors.dark,
-//     marginBottom: 5,
-//   },
-//   metaTopRow: {
-//     flexDirection: 'row',
-//     alignItems: 'center',
-//     flexWrap: 'wrap',
-//     gap: 8,
-//     marginBottom: 5,
-//   },
-//   verifiedBadge: {
-//     flexDirection: 'row',
-//     alignItems: 'center',
-//     gap: 4,
-//     backgroundColor: '#ECFDF3',
-//     paddingHorizontal: 8,
-//     paddingVertical: 4,
-//     borderRadius: 12,
-//   },
-//   verifiedText: {
-//     fontSize: 11,
-//     color: '#16A34A',
-//     fontWeight: '700',
-//   },
-//   ratingPill: {
-//     flexDirection: 'row',
-//     alignItems: 'center',
-//     gap: 4,
-//     backgroundColor: '#FFF7ED',
-//     paddingHorizontal: 8,
-//     paddingVertical: 4,
-//     borderRadius: 12,
-//   },
-//   ratingText: {
-//     fontSize: 11,
-//     color: '#9A6700',
-//     fontWeight: '700',
-//   },
-//   vehicleRow: {
-//     flexDirection: 'row',
-//     alignItems: 'center',
-//     gap: 5,
-//   },
-//   vehicleText: {
-//     fontSize: 12,
-//     color: Colors.gray,
-//     fontWeight: '600',
-//     flexShrink: 1,
-//   },
-//   matchBadge: {
-//     backgroundColor: '#EEF6FF',
-//     paddingHorizontal: 12,
-//     paddingVertical: 8,
-//     borderRadius: 14,
-//     alignItems: 'center',
-//     minWidth: 64,
-//   },
-//   matchPercent: {
-//     fontSize: 14,
-//     fontWeight: '800',
-//     color: Colors.primary,
-//   },
-//   matchLabel: {
-//     fontSize: 10,
-//     color: Colors.primary,
-//     marginTop: 1,
-//     fontWeight: '700',
-//   },
-//   locationSection: {
-//     gap: 10,
-//     marginBottom: 14,
-//   },
-//   locationCard: {
-//     backgroundColor: '#F8FAFC',
-//     borderWidth: 1,
-//     borderColor: '#EEF2F7',
-//     borderRadius: 14,
-//     paddingHorizontal: 12,
-//     paddingVertical: 10,
-//   },
-//   locationHeader: {
-//     flexDirection: 'row',
-//     alignItems: 'center',
-//     marginBottom: 4,
-//   },
-//   locationDot: {
-//     width: 8,
-//     height: 8,
-//     borderRadius: 4,
-//     marginRight: 8,
-//   },
-//   locationLabel: {
-//     fontSize: 11,
-//     color: Colors.gray,
-//     fontWeight: '700',
-//   },
-//   locationText: {
-//     fontSize: 14,
-//     color: Colors.dark,
-//     fontWeight: '600',
-//     lineHeight: 19,
-//   },
-//   metaGrid: {
-//     flexDirection: 'row',
-//     gap: 8,
-//     marginBottom: 14,
-//   },
-//   metaChip: {
-//     flexDirection: 'row',
-//     alignItems: 'center',
-//     gap: 6,
-//     paddingHorizontal: 10,
-//     paddingVertical: 8,
-//     borderRadius: 12,
-//     backgroundColor: '#F8FAFC',
-//     borderWidth: 1,
-//     borderColor: '#EEF2F7',
-//   },
-//   metaChipText: {
-//     fontSize: 12,
-//     color: Colors.dark,
-//     fontWeight: '600',
-//     maxWidth: 110,
-//   },
-//   bottomRow: {
-//     flexDirection: 'row',
-//     justifyContent: 'space-between',
-//     alignItems: 'center',
-//     paddingTop: 14,
-//     borderTopWidth: 1,
-//     borderTopColor: '#EEF2F7',
-//   },
-//   priceText: {
-//     fontSize: 24,
-//     lineHeight: 28,
-//     fontWeight: '800',
-//     color: Colors.secondary,
-//   },
-//   priceHint: {
-//     marginTop: 2,
-//     fontSize: 12,
-//     color: Colors.gray,
-//     fontWeight: '600',
-//   },
-//   chevronWrap: {
-//     width: 38,
-//     height: 38,
-//     borderRadius: 19,
-//     alignItems: 'center',
-//     justifyContent: 'center',
-//     backgroundColor: '#EEF6FF',
-//   },
-//   emptyContainer: {
-//     flex: 1,
-//     justifyContent: 'center',
-//     alignItems: 'center',
-//     paddingHorizontal: 40,
-//   },
-//   emptyTitle: {
-//     fontSize: 22,
-//     fontWeight: '700',
-//     color: Colors.dark,
-//     marginTop: 20,
-//     marginBottom: 8,
-//   },
-//   emptySubtitle: {
-//     fontSize: 15,
-//     color: Colors.gray,
-//     textAlign: 'center',
-//     lineHeight: 22,
-//     marginBottom: 30,
-//   },
-//   backToHomeButton: {
-//     backgroundColor: Colors.primary,
-//     paddingHorizontal: 32,
-//     paddingVertical: 14,
-//     borderRadius: 12,
-//   },
-//   backToHomeText: {
-//     color: Colors.white,
-//     fontSize: 16,
-//     fontWeight: '700',
-//   },
-// });
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
@@ -577,17 +7,18 @@ import {
   FlatList,
   StatusBar,
   Platform,
-  Alert,
-  ActivityIndicator,
   Image,
   ScrollView,
   Modal,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import LottieView from "lottie-react-native";
 import { Colors, Typography } from '../constants/Colors';
 import { useAuth } from '../context/AuthContext';
 import { API_BASE_URL } from '../config/config_ip';
 import DatabaseService from '../services/matchingpreference_ds';
+import CustomAlert from '../components/CustomAlert';
 
 const IMAGE_BASE_URL = API_BASE_URL;
 
@@ -758,6 +189,41 @@ export default function RideNextScreen({ navigation, route }) {
   const [userPreferences, setUserPreferences] = useState({});
   const [advancedFilters, setAdvancedFilters] = useState({});
 
+  // Custom Alert states
+  const [alertVisible, setAlertVisible] = useState(false);
+  const [alertConfig, setAlertConfig] = useState({
+    title: "",
+    message: "",
+    icon: "check-circle",
+    iconColor: "#10B981",
+    buttons: []
+  });
+
+  const showCustomAlert = (title, message, type = 'success') => {
+    let icon = "check-circle";
+    let iconColor = "#10B981";
+    
+    if (type === 'error') {
+      icon = "error";
+      iconColor = "#EF4444";
+    } else if (type === 'warning') {
+      icon = "warning";
+      iconColor = "#F59E0B";
+    } else if (type === 'info') {
+      icon = "info";
+      iconColor = Colors.primary;
+    }
+    
+    setAlertConfig({
+      title,
+      message,
+      icon,
+      iconColor,
+      buttons: [{ text: 'OK', onPress: () => setAlertVisible(false) }]
+    });
+    setAlertVisible(true);
+  };
+
   const phoneNumber = user?.phone_number;
 
   const fetchAvailableRides = useCallback(async () => {
@@ -804,7 +270,7 @@ export default function RideNextScreen({ navigation, route }) {
       console.log('❌ search-rides error:', error);
       setAvailableRides([]);
       setErrorMessage(error.message || 'Failed to search rides');
-      Alert.alert('Error', error.message || 'Failed to search rides');
+      showCustomAlert('Search Error', error.message || 'Failed to search rides', 'error');
     } finally {
       setLoading(false);
     }
@@ -888,7 +354,7 @@ export default function RideNextScreen({ navigation, route }) {
   const handleCardPress = (ride) => {
     navigation.navigate('RideDetailScreen', { 
       ride,
-      searchData: searchData || null,  // rider's original pickup/drop for intersection viz
+      searchData: searchData || null,
     });
   };
 
@@ -901,6 +367,7 @@ export default function RideNextScreen({ navigation, route }) {
   const clearAllFilters = () => {
     setQuickFilters([]);
     setAdvancedFilters({});
+    showCustomAlert('Filters Cleared', 'All filters have been reset.', 'info');
   };
 
   const renderAdvancedFilterControl = (pref) => {
@@ -1110,35 +577,39 @@ export default function RideNextScreen({ navigation, route }) {
   if (authLoading || loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={Colors.primary} />
-        <Text style={styles.loadingText}>Finding available rides...</Text>
+        <LottieView
+          source={require("../assets/loading.json")}
+          autoPlay
+          loop
+          style={{ width: 300, height: 300 }}
+        />
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.white} />
 
+      {/* Header - Matching SavedAddressesScreen style */}
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
-          <MaterialIcons
-            name="arrow-back-ios"
-            size={24}
-            color={Colors.primary}
-          />
+          <MaterialIcons name="arrow-back-ios" size={24} color="#ED7117" />
         </TouchableOpacity>
 
         <Text style={styles.headerTitle}>Available Rides</Text>
 
         <TouchableOpacity
-          style={[styles.filterButton, headerFiltersVisible && styles.filterButtonActive]}
+          style={[
+            styles.filterButton,
+            headerFiltersVisible && styles.filterButtonActive
+          ]}
           onPress={() => setHeaderFiltersVisible(prev => !prev)}
         >
-          <Ionicons name="options-outline" size={22} color={Colors.primary} />
+          <Ionicons name="options-outline" size={22} color="#ED7117" />
         </TouchableOpacity>
       </View>
 
@@ -1175,7 +646,7 @@ export default function RideNextScreen({ navigation, route }) {
               style={styles.moreFilterChip}
               onPress={() => setFilterModalVisible(true)}
             >
-              <Ionicons name="options-outline" size={14} color={Colors.primary} />
+              <Ionicons name="options-outline" size={14} color="#ED7117" />
               <Text style={styles.moreFilterChipText}>More Filters</Text>
             </TouchableOpacity>
           </ScrollView>
@@ -1289,44 +760,53 @@ export default function RideNextScreen({ navigation, route }) {
           </View>
         </View>
       </Modal>
-    </View>
+
+      {/* Custom Alert */}
+      <CustomAlert
+        visible={alertVisible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        icon={alertConfig.icon}
+        iconColor={alertConfig.iconColor}
+        buttons={alertConfig.buttons}
+        onBackdropPress={() => setAlertVisible(false)}
+      />
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F6F7FB',
+    backgroundColor: '#fff',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'ios' ? 58 : 38,
-    paddingBottom: 12,
+    paddingVertical: 12,
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#fff',
     backgroundColor: Colors.white,
-    borderBottomWidth: 1,
-    borderBottomColor: '#EEF2F7',
   },
   backButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    alignItems: 'center',
+    width: 44,
+    height: 44,
     justifyContent: 'center',
   },
   filterButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    alignItems: 'center',
+    width: 44,
+    height: 44,
     justifyContent: 'center',
-    backgroundColor: '#F8FAFC',
+    alignItems: 'center',
+    borderRadius: 22,
+  },
+  filterButtonActive: {
+    backgroundColor: '#fff',
   },
   headerTitle: {
     ...Typography.h2,
-    fontSize: 22,
+    fontSize: 28,
     fontWeight: '700',
     color: Colors.primary,
     flex: 1,
@@ -1372,7 +852,7 @@ const styles = StyleSheet.create({
   moreFilterChipText: {
     fontSize: 12,
     fontWeight: '700',
-    color: Colors.primary,
+    color: '#ED7117',
   },
   sortLabel: {
     paddingHorizontal: 16,
@@ -1393,7 +873,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F3F4F6',
   },
   sortChipActive: {
-    backgroundColor: '#FF9F1C',
+    backgroundColor: '#ED7117',
   },
   sortChipText: {
     fontSize: 12,
@@ -1502,7 +982,7 @@ const styles = StyleSheet.create({
   priceText: {
     fontSize: 18,
     fontWeight: '800',
-    color: Colors.secondary,
+    color: '#ED7117',
     lineHeight: 20,
   },
   perSeatText: {
@@ -1600,12 +1080,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F6F7FB',
-  },
-  loadingText: {
-    marginTop: 14,
-    fontSize: 16,
-    color: Colors.gray,
+    backgroundColor: Colors.white,
   },
   emptyContainer: {
     flex: 1,
@@ -1764,10 +1239,5 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: Colors.white,
-  },
-  filterButtonActive: {
-    backgroundColor: '#EEF6FF',
-    borderWidth: 1,
-    borderColor: '#D9E8FF',
   },
 });

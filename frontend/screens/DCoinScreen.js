@@ -350,20 +350,7 @@ export default function DCoinWalletScreen({ route, navigation }) {
               activeOpacity={0.8}
               disabled={redeeming}
             >
-              <LinearGradient
-                colors={["#10B981", "#059669"]}
-                style={styles.redeemGradient}
-              >
-                {redeeming ? (
-                  <ActivityIndicator size="small" color={Colors.white} />
-                ) : (
-                  <>
-                    <Ionicons name="cash-outline" size={24} color="#fff" />
-                    <Text style={styles.redeemText}>Redeem D-Coins</Text>
-                    <Text style={styles.redeemSubtext}>Get ₹{balanceRupees}</Text>
-                  </>
-                )}
-              </LinearGradient>
+           
             </TouchableOpacity>
           )}
 

@@ -16,10 +16,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect } from '@react-navigation/native';
+import LottieView from "lottie-react-native";
 
 import { Colors } from '../constants/Colors';
 import { API_BASE_URL } from '../config/config_ip';
 import { useAuth } from '../context/AuthContext';
+import CustomAlert from '../components/CustomAlert';
 
 const { width } = Dimensions.get('window');
 
@@ -186,6 +188,58 @@ export default function ViewProfileScreen({ navigation, route }) {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // Custom Alert states
+  const [alertVisible, setAlertVisible] = useState(false);
+  const [alertConfig, setAlertConfig] = useState({
+    title: "",
+    message: "",
+    icon: "check-circle",
+    iconColor: "#10B981",
+    buttons: []
+  });
+
+  const showCustomAlert = (title, message, type = 'success') => {
+    let icon = "check-circle";
+    let iconColor = "#10B981";
+    
+    if (type === 'error') {
+      icon = "error";
+      iconColor = "#EF4444";
+    } else if (type === 'warning') {
+      icon = "warning";
+      iconColor = "#F59E0B";
+    } else if (type === 'info') {
+      icon = "info";
+      iconColor = "#1A56DB";
+    }
+    
+    setAlertConfig({
+      title,
+      message,
+      icon,
+      iconColor,
+      buttons: [{ text: 'OK', onPress: () => setAlertVisible(false) }]
+    });
+    setAlertVisible(true);
+  };
+
+  const showConfirmationAlert = (title, message, onConfirm) => {
+    setAlertConfig({
+      title,
+      message,
+      icon: "warning",
+      iconColor: "#F59E0B",
+      buttons: [
+        { text: 'Cancel', onPress: () => setAlertVisible(false), style: 'cancel' },
+        { text: 'Report', onPress: () => {
+          setAlertVisible(false);
+          onConfirm();
+        }, style: 'destructive' }
+      ]
+    });
+    setAlertVisible(true);
+  };
+
   const loadProfile = useCallback(async () => {
     setLoading(true);
     const data = await fetchPublicProfile(phoneNumber, userId);
@@ -201,7 +255,7 @@ export default function ViewProfileScreen({ navigation, route }) {
     try {
       const myPhone = currentUser?.phone_number;
       if (!myPhone) {
-        Alert.alert('Login Required', 'Please log in to use chat.');
+        showCustomAlert('Login Required', 'Please log in to use chat.', 'warning');
         return null;
       }
       const response = await fetch(`${API_BASE_URL}/api/chat/conversations`, {
@@ -237,22 +291,21 @@ export default function ViewProfileScreen({ navigation, route }) {
           },
         });
       } else {
-        Alert.alert('Chat', 'Unable to start chat. Please try again.');
+        showCustomAlert('Chat', 'Unable to start chat. Please try again.', 'error');
       }
     } else {
-      Alert.alert('Chat', 'Phone number not available');
+      showCustomAlert('Chat', 'Phone number not available', 'warning');
     }
   };
 
   const handleReport = () => {
-    Alert.alert('Report User', 'Are you sure you want to report this user?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Report',
-        style: 'destructive',
-        onPress: () => Alert.alert('Reported', 'Thank you for your report.'),
-      },
-    ]);
+    showConfirmationAlert(
+      'Report User',
+      'Are you sure you want to report this user?',
+      () => {
+        showCustomAlert('Reported', 'Thank you for your report. Our team will review it.', 'success');
+      }
+    );
   };
 
   const profileImageUrl = buildImageUrl(profile?.profile_picture);
@@ -275,9 +328,14 @@ export default function ViewProfileScreen({ navigation, route }) {
     return (
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="dark-content" backgroundColor={Colors.white} />
-        <View style={styles.loader}>
-          <ActivityIndicator size="large" color="#1A56DB" />
-          <Text style={styles.loadingText}>Loading profile...</Text>
+        <View style={styles.loaderContainer}>
+          <LottieView
+            source={require("../assets/loading.json")}
+            autoPlay
+            loop
+            style={{ width: 300, height: 300 }}
+          />
+          {/* <Text style={styles.loadingText}>Loading profile...</Text> */}
         </View>
       </SafeAreaView>
     );
@@ -312,13 +370,7 @@ export default function ViewProfileScreen({ navigation, route }) {
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
 
-        {/* ── 1. PROFILE HEADER CARD ──
-            s8.png is white-shapes-on-white-bg.
-            Fix: gradient is the solid base, then the image is placed on top
-            using blendMode="multiply" — this makes white pixels transparent
-            and the light grey shapes appear as darker blue tones on the gradient.
-            Result: the car + pin design shows as a subtle dark blue watermark.
-        */}
+        {/* ── 1. PROFILE HEADER CARD ── */}
         <View style={styles.headerWrapper}>
           {/* Solid gradient base */}
           <LinearGradient
@@ -328,8 +380,7 @@ export default function ViewProfileScreen({ navigation, route }) {
             style={StyleSheet.absoluteFillObject}
           />
 
-          {/* s8.png with blendMode multiply — white bg becomes transparent,
-              grey shapes darken the gradient beneath them */}
+          {/* s8.png with blendMode multiply */}
           <Image
             source={require('../assets/s8.png')}
             style={styles.headerBgImage}
@@ -367,13 +418,6 @@ export default function ViewProfileScreen({ navigation, route }) {
             </View>
 
             <Text style={styles.memberSince}>Member since {joinDateText}</Text>
-
-            {/* <View style={styles.verificationPills}>
-              {verifications.phone     && <VerifPill icon="call-outline"     label="Phone"     />}
-              {verifications.email     && <VerifPill icon="mail-outline"     label="Email"     />}
-              {verifications.id        && <VerifPill icon="id-card-outline"  label="ID"        />}
-              {verifications.corporate && <VerifPill icon="business-outline" label="Corporate" />}
-            </View> */}
           </View>
         </View>
 
@@ -504,6 +548,17 @@ export default function ViewProfileScreen({ navigation, route }) {
           <Text style={styles.reportBtnText}>Report</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Custom Alert */}
+      <CustomAlert
+        visible={alertVisible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        icon={alertConfig.icon}
+        iconColor={alertConfig.iconColor}
+        buttons={alertConfig.buttons}
+        onBackdropPress={() => setAlertVisible(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -512,8 +567,18 @@ export default function ViewProfileScreen({ navigation, route }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F3F4F6' },
-  loader: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  loadingText: { marginTop: 12, fontSize: 14, color: '#9CA3AF' },
+  loaderContainer: { 
+    flex: 1, 
+    justifyContent: 'center', 
+    alignItems: 'center',
+    backgroundColor: '#fff',
+  },
+  loadingText: { 
+    marginTop: 20, 
+    fontSize: 16, 
+    color: '#1A56DB', 
+    fontWeight: '500',
+  },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, backgroundColor: '#fff', borderBottomWidth: 0.5, borderBottomColor: '#E5E7EB' },
   backBtn: { width: 44, height: 44, justifyContent: 'center' },
   headerTitle: { flex: 1, textAlign: 'center', fontSize: 18, fontWeight: '700', color: '#111827' },
@@ -533,18 +598,11 @@ const styles = StyleSheet.create({
     paddingTop: Platform.OS === 'ios' ? 60 : 48,
     paddingBottom: 28,
   },
-  // blendMode:'multiply' makes white pixels fully transparent,
-  // grey shapes darken the blue gradient = visible watermark effect
   headerBgImage: {
     position: 'absolute',
     top: 0, left: 0, right: 0, bottom: 0,
     width: '90%', height: '150%',
-    opacity: 2,
-    blendMode: 'screen',
     opacity: 0.35,
-    // 'multiply' blend: white(255,255,255) × blue = blue (invisible bg)
-    //                   grey(220,220,220) × blue = darker blue (visible shapes)
-    //...(Platform.OS === 'ios' ? { blendMode: 'multiply' } : { blendMode: 'multiply' }),
   },
   backBtnLight: { position: 'absolute', top: Platform.OS === 'ios' ? 56 : 44, left: 16, width: 40, height: 40, justifyContent: 'center', zIndex: 10 },
   headerContent: { alignItems: 'center', paddingHorizontal: 20 },

@@ -16,8 +16,10 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { PanGestureHandler, State as GestureState } from 'react-native-gesture-handler';
+import LottieView from "lottie-react-native";
 import BackgroundAnimation from '../components/BackgroundAnimation';
 import BottomNavigation from '../components/BottomNavigation';
+import CustomAlert from '../components/CustomAlert';
 import { Colors, Typography } from '../constants/Colors';
 import { Roboto_300Light } from '@expo-google-fonts/roboto';
 import { useAuth } from '../context/AuthContext';
@@ -30,6 +32,41 @@ import { API_BASE_URL } from "../config/config_ip";
 export default function HomeScreen({ navigation }) {
   const { user, loading: authLoading, isAuthenticated } = useAuth();
   const [localLoading, setLocalLoading] = useState(true);
+  
+  // Custom Alert states
+  const [alertVisible, setAlertVisible] = useState(false);
+  const [alertConfig, setAlertConfig] = useState({
+    title: "",
+    message: "",
+    icon: "check-circle",
+    iconColor: "#10B981",
+    buttons: []
+  });
+
+  const showCustomAlert = (title, message, type = 'success') => {
+    let icon = "check-circle";
+    let iconColor = "#10B981";
+    
+    if (type === 'error') {
+      icon = "error";
+      iconColor = "#EF4444";
+    } else if (type === 'warning') {
+      icon = "warning";
+      iconColor = "#F59E0B";
+    } else if (type === 'info') {
+      icon = "info";
+      iconColor = Colors.primary;
+    }
+    
+    setAlertConfig({
+      title,
+      message,
+      icon,
+      iconColor,
+      buttons: [{ text: 'OK', onPress: () => setAlertVisible(false) }]
+    });
+    setAlertVisible(true);
+  };
 
   // 🔒 Improved Session Guard
   useEffect(() => {
@@ -96,14 +133,7 @@ export default function HomeScreen({ navigation }) {
       console.log('❌ Notification fetch error:', err);
     }
   };
-  // console.log("Home route params:", route.params);
-  // console.log("Greeting name:", route.params?.userData?.firstName);
 
-  // useEffect(() => {
-  //   if (userData?.phone_number) {
-  //     fetchNotificationsAndUnreadCount();
-  //   }
-  // }, [userData]);
   useEffect(() => {
     if (phoneNumber) {
       fetchNotificationsAndUnreadCount();
@@ -119,8 +149,6 @@ export default function HomeScreen({ navigation }) {
       setActiveBottomTab('home');
     }, [setActiveBottomTab])
   );
-
-  //const backgroundGradientColors = [Colors.primary, '#2563eb', '#3b82f6', '#2980b9', Colors.blue, '#1e40af'];
 
   // Format date and time
   const formatDateTime = () => {
@@ -145,7 +173,6 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
-
   // Gesture handler
   const handleGestureStateChange = ({ nativeEvent }) => {
     if (nativeEvent.state === GestureState.END) {
@@ -160,7 +187,7 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
- const toggleDrawer = () => {
+  const toggleDrawer = () => {
     if (isDrawerOpen) {
       closeDrawer();
     } else {
@@ -191,7 +218,6 @@ export default function HomeScreen({ navigation }) {
     ]).start();
   };
 
-
   const closeDrawer = () => {
     setIsDrawerOpen(false);
     Animated.parallel([
@@ -214,7 +240,6 @@ export default function HomeScreen({ navigation }) {
       })
     ]).start();
   };
-
 
   const showDateTimePicker = () => {
     setShowDatePicker(true);
@@ -240,19 +265,19 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
-const openNotifications = () => {
-  if (!user?.phone_number) {
-    Alert.alert('Session missing', 'Please log in again.');
-    return;
-  }
-  // Instantly clear badge for UX
-  setUnreadCount(0);
+  const openNotifications = () => {
+    if (!user?.phone_number) {
+      showCustomAlert('Session missing', 'Please log in again.', 'warning');
+      return;
+    }
+    // Instantly clear badge for UX
+    setUnreadCount(0);
 
-  // Navigate to notification screen
-  navigation.navigate('UserNotificationScreen', {phoneNumber: user?.phone_number});
-};
+    // Navigate to notification screen
+    navigation.navigate('UserNotificationScreen', {phoneNumber: user?.phone_number});
+  };
 
-// Handle bottom navigation
+  // Handle bottom navigation
   const handleBottomNavigation = (tabName) => {
     setActiveBottomTab(tabName);
     
@@ -274,81 +299,96 @@ const openNotifications = () => {
     }
   };
 
-    const handleAction = () => {
-      if (!fromLocation || !toLocation || !fromCoords || !toCoords) {
-        Alert.alert(
-          'Required Fields',
-          'Please select both pickup and destination from the map'
-        );
-        return;
-      }
+  const handleAction = () => {
+    if (!fromLocation || !toLocation || !fromCoords || !toCoords) {
+      showCustomAlert(
+        'Required Fields',
+        'Please select both pickup and destination from the map',
+        'warning'
+      );
+      return;
+    }
 
-      const searchData = {
-        type: activeTab,
-        from: fromLocation,
-        to: toLocation,
-        fromCoords,
-        toCoords,
-        dateTime: selectedDate,
-        seats: seatCount,
-      };
-
-      console.log('🔎 Search data:', searchData);
-
-      navigation.navigate('RideNext', {
-        searchData,
-      });
+    const searchData = {
+      type: activeTab,
+      from: fromLocation,
+      to: toLocation,
+      fromCoords,
+      toCoords,
+      dateTime: selectedDate,
+      seats: seatCount,
     };
 
-    const handleRecurring = () => {
-      navigation.navigate('Recurring');
+    console.log('🔎 Search data:', searchData);
+
+    navigation.navigate('RideNext', {
+      searchData,
+    });
+     setFromLocation('');
+  setToLocation('');
+  setFromCoords(null);
+  setToCoords(null);
+  };
+
+  const handleRecurring = () => {
+    navigation.navigate('Recurring');
+  };
+
+  //greetings
+  const getGreeting = (name) => {
+    const now = new Date();
+    const hour = now.getHours();
+    const dateKey = `${now.getMonth()}-${now.getDate()}`;
+
+    // Define special greetings for specific dates (month is 0-based)
+    const specialGreetings = {                      // 0= jan and 11=december
+      '11-08': {line1: `Happy Diwali ✨,`,line2: `${name}!`},         // Nov 08 example, update accordingly
+      '3-20': { line1: 'Eid Mubarak 🌙,', line2: `${name}!` },
+      '11-24': { line1: 'Gurpurab di vadhaiyan ☬,', line2: `${name}!` },
+      '12-25': { line1: 'Merry Christmas 🎄,', line2: `${name}!` },
+      '01-01': { line1: 'Happy New Year 🎉,', line2: `${name}!` },       // Jan 1
     };
 
-    //greetings
-    const getGreeting = (name) => {
-      const now = new Date();
-      const hour = now.getHours();
-      const dateKey = `${now.getMonth()}-${now.getDate()}`;
+    // Check if today is a special holiday with greeting
+    if (specialGreetings[dateKey]) {
+      return specialGreetings[dateKey];
+    }
 
-      // Define special greetings for specific dates (month is 0-based)
-      const specialGreetings = {                      // 0= jan and 11=december
-        '11-08': {line1: `Happy Diwali ✨,`,line2: `${name}!`},         // Nov 08 example, update accordingly
-        '3-20': { line1: 'Eid Mubarak 🌙,', line2: `${name}!` },
-        '11-24': { line1: 'Gurpurab di vadhaiyan ☬,', line2: `${name}!` },
-        '12-25': { line1: 'Merry Christmas 🎄,', line2: `${name}!` },
-        '01-01': { line1: 'Happy New Year 🎉,', line2: `${name}!` },       // Jan 1
-      };
+    // Time-based greetings
+    if (hour >= 6 && hour < 12) {
+      return { line1: 'Good Morning,', line2: `${name}!` };
+    } else if (hour >= 12 && hour < 16) {
+      return { line1: 'Good Afternoon,', line2: `${name}!` };
+    } else if (hour >= 16 && hour < 22) {
+      return { line1: 'Good Evening,', line2: `${name}!` };
+    } else {
+      return { line1: 'Welcome Back,', line2: `${name}!` };
+    }
+  };
 
-      // Check if today is a special holiday with greeting
-      if (specialGreetings[dateKey]) {
-        return specialGreetings[dateKey];
-      }
+  const greeting = getGreeting(firstName);
+  const firstLine = greeting.line1;
+  const secondLine = greeting.line2;
 
-      // Time-based greetings
-      if (hour >= 6 && hour < 12) {
-        return { line1: 'Good Morning,', line2: `${name}!` };
-      } else if (hour >= 12 && hour < 16) {
-        return { line1: 'Good Afternoon,', line2: `${name}!` };
-      } else if (hour >= 16 && hour < 22) {
-        return { line1: 'Good Evening,', line2: `${name}!` };
-      } else {
-        return { line1: 'Welcome Back,', line2: `${name}!` };
-      }
-    };
-
-    // const greeting = getGreeting(userData?.firstName || firstName || 'User');
-    const greeting = getGreeting(firstName);
-    const greetingText = greeting.line1 + '\\n' + greeting.secondLine; // Safe for Alert
-    const firstLine = greeting.line1;
-    const secondLine = greeting.line2;
+  // Show loading animation while authenticating
+  if (localLoading || authLoading) {
+    return (
+      <View style={styles.loaderContainer}>
+        <LottieView
+          source={require("../assets/loading.json")}
+          autoPlay
+          loop
+          style={{ width: 300, height: 300 }}
+        />
+        <Text style={styles.loaderText}>Loading your ride space...</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
-      {/*<StatusBar hidden={true} />*/}
-
-      {/* Animated header background (touch-safe, behind everything) */}
-       <BackgroundAnimation height={360} />
-      
+      <StatusBar hidden={true} />
+      <BackgroundAnimation height={360} />
 
       <PanGestureHandler onHandlerStateChange={handleGestureStateChange}>
         <Animated.View style={styles.mainContainer}>
@@ -358,29 +398,29 @@ const openNotifications = () => {
               <Text style={styles.greeting1}>{secondLine}</Text>
             </TouchableOpacity>
             <View style={styles.headerRight}>
-            <TouchableOpacity
-              style={styles.profileButton}
-              onPress={openNotifications}
-            >
-  <Ionicons
-    name="notifications"
-    size={40}
-    color={Colors.white}
-  />
+              <TouchableOpacity
+                style={styles.profileButton}
+                onPress={openNotifications}
+              >
+                <Ionicons
+                  name="notifications"
+                  size={40}
+                  color={Colors.white}
+                />
 
-  {unreadCount > 0 && (
-    <View style={styles.headerBadge}>
-      <Text style={styles.headerBadgeText}>
-        {unreadCount > 9 ? '9+' : unreadCount}
-      </Text>
-    </View>
-  )}
-</TouchableOpacity>
-          </View>
+                {unreadCount > 0 && (
+                  <View style={styles.headerBadge}>
+                    <Text style={styles.headerBadgeText}>
+                      {unreadCount > 9 ? '9+' : unreadCount}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
 
           <Animated.View 
-           pointerEvents={isDrawerOpen ? 'auto' : 'none'}
+            pointerEvents={isDrawerOpen ? 'auto' : 'none'}
             style={[
               styles.drawerContainer,
               { 
@@ -390,10 +430,10 @@ const openNotifications = () => {
             ]}
           >
             <TouchableOpacity 
-            activeOpacity={1} 
-            style={styles.drawerContent}
-            onPress={closeDrawer}
-          ></TouchableOpacity>
+              activeOpacity={1} 
+              style={styles.drawerContent}
+              onPress={closeDrawer}
+            />
             <View style={styles.earningSection}>
               <Text style={styles.earningTitle}>Total Earning</Text>
               <Text style={styles.earningAmount}>₹0</Text>
@@ -402,28 +442,26 @@ const openNotifications = () => {
           </Animated.View>
 
           <Animated.View style={[styles.contentCard, { transform: [{ translateY: contentTranslateY }] }]}> 
-              <View style={styles.tabContainer}>
-                <TouchableOpacity
-                  style={[styles.tabButton, activeTab === 'ride' && styles.tabButtonActive]}
-                  onPress={() => setActiveTab('ride')}
-                >
-                  <Text style={[styles.tabButtonText, activeTab === 'ride' && styles.tabButtonTextActive]}>Find a Ride</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.tabButton, activeTab === 'drive' && styles.tabButtonActive]}
-                  onPress={() => setActiveTab('drive')}
-                >
-                  <Text style={[styles.tabButtonText, activeTab === 'drive' && styles.tabButtonTextActive]}>Offer a Ride</Text>
-                </TouchableOpacity>
-              </View>
-              
-          <ScrollView 
-            style={styles.scrollView}
-            contentContainerStyle={styles.scrollContent}
-            showsVerticalScrollIndicator={false}
+            <View style={styles.tabContainer}>
+              <TouchableOpacity
+                style={[styles.tabButton, activeTab === 'ride' && styles.tabButtonActive]}
+                onPress={() => setActiveTab('ride')}
+              >
+                <Text style={[styles.tabButtonText, activeTab === 'ride' && styles.tabButtonTextActive]}>Find a Ride</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.tabButton, activeTab === 'drive' && styles.tabButtonActive]}
+                onPress={() => setActiveTab('drive')}
+              >
+                <Text style={[styles.tabButtonText, activeTab === 'drive' && styles.tabButtonTextActive]}>Offer a Ride</Text>
+              </TouchableOpacity>
+            </View>
             
-          >
-
+            <ScrollView 
+              style={styles.scrollView}
+              contentContainerStyle={styles.scrollContent}
+              showsVerticalScrollIndicator={false}
+            >
               <View style={[styles.Titlecontainer]}>
                 <Text style={[styles.TitleText]}>{activeTab === 'ride' ? 'Find a ride' : 'Offer a ride'}</Text>
               </View>
@@ -470,7 +508,6 @@ const openNotifications = () => {
                     </Text>
                   </TouchableOpacity>
 
-
                   <View style={styles.whenSection}>
                     <Text style={styles.sectionTitle}>When?</Text>
                     <TouchableOpacity style={styles.timeInput} onPress={showDateTimePicker}>
@@ -503,51 +540,19 @@ const openNotifications = () => {
                   </TouchableOpacity>
                 </View>
               )}
-          
-            {/*Extra Info and Quick Actions
-            <View style={styles.seprator}> </View>
-            <Text style={styles.stext}>Quick Actions</Text>
-            <View style={styles.quickaction}> 
-              <TouchableOpacity
-                style={styles.quick} onPress={handleRecurring}
-              >
-                <Ionicons style={styles.qicon} name="calendar-outline" size={25} color={Colors.secondary} />
-                <Text style={[{textAlign: 'center', ...Typography.button, color:Colors.dark}]}>Recurring Rides</Text>
-                <Text style={[{textAlign: 'center', ...Typography.button, color:Colors.gray}]}>Set up daily rides</Text>
-              </TouchableOpacity>
-          
-            </View>
-
-            <View style={styles.quickaction}> 
-              <View style={[styles.quick, {marginTop: 10, backgroundColor: '#9b9a9a1d'}]}>
-                <Text style={[styles.qtext, {color: Colors.dark}]}>Safety First</Text>
-                <Text style={styles.qtext}>
-                  <Ionicons name="ellipse" size={11} color={Colors.secondary} opacity={0.8}/> All drivers are verified</Text>
-                <Text style={styles.qtext}>
-                  <Ionicons name="ellipse" size={11} color={Colors.secondary} opacity={0.8}/> Live GPS Tracking</Text>
-                <Text style={styles.qtext}>
-                  <Ionicons name="ellipse" size={11} color={Colors.secondary} opacity={0.8}/> 24/7 support available</Text>
-              </View>
-            </View>
-
-            <View style={[{marginBottom: 100}]}></View>
-
-          */}
-
-          </ScrollView>
-        </Animated.View>
-        
-
+            </ScrollView>
+          </Animated.View>
         </Animated.View>
       </PanGestureHandler>
 
       {/* Reusable Bottom Navigation Component */}
-   <BottomNavigation 
-    activeTab={activeBottomTab}
-    onNavigate={handleBottomNavigation}
-    unreadCount={unreadCount}
-    profileImage={user?.profile_picture}
-  />
+      <BottomNavigation 
+        activeTab={activeBottomTab}
+        onNavigate={handleBottomNavigation}
+        unreadCount={unreadCount}
+        profileImage={user?.profile_picture}
+      />
+      
       {/* Date/Time Pickers */}
       {showDatePicker && (
         <DateTimePicker
@@ -593,6 +598,16 @@ const openNotifications = () => {
         </Modal>
       )}
 
+      {/* Custom Alert */}
+      <CustomAlert
+        visible={alertVisible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        icon={alertConfig.icon}
+        iconColor={alertConfig.iconColor}
+        buttons={alertConfig.buttons}
+        onBackdropPress={() => setAlertVisible(false)}
+      />
     </View>
   );
 }
@@ -600,6 +615,19 @@ const openNotifications = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: Colors.white,
+  },
+  loaderContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: Colors.white,
+  },
+  loaderText: {
+    marginTop: 20,
+    fontSize: 16,
+    color: Colors.primary,
+    fontWeight: "500",
   },
   backgroundGradient: {
     position: 'absolute',
@@ -636,7 +664,6 @@ const styles = StyleSheet.create({
   },
   greeting1: {
     fontSize: 28,
-    //fontWeight: '600',
     color: Colors.white,
   },
   profileButton: {
@@ -704,7 +731,6 @@ const styles = StyleSheet.create({
     marginTop: -12,
     alignContent: 'center',
     alignItems: 'center',
-
   },
   contentCard: {
     flex: 1,
@@ -760,13 +786,12 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
     textAlignVertical: 'center',
     includeFontPadding: false,
-    },
+  },
   whenSection: {
     marginBottom: 2,
   },
-   drawerContent: {
+  drawerContent: {
     flex: 1,
-    //backgroundColor: 'rgba(255,255,255,0.1)',
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
   },
@@ -804,11 +829,6 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     overflow: 'hidden',
     marginTop: 15,
-    //shadowColor: Colors.primary,
-    //shadowOffset: { width: 0, height: 8 },
-    //shadowOpacity: 0.3,
-    //shadowRadius: 16,
-    //elevation: 8,
     paddingVertical: 13,
     alignItems: 'center',
     justifyContent: 'center',
@@ -845,12 +865,12 @@ const styles = StyleSheet.create({
   gradient: {
     flex: 1,
   },
-  seprator:{
+  seprator: {
     marginTop: 15,
     borderTopColor: Colors.light,
     borderTopWidth: 1.5,
   },
-  stext:{
+  stext: {
     ...Typography.label,
     fontSize: 15,
     fontWeight: 'regular',
@@ -858,7 +878,7 @@ const styles = StyleSheet.create({
     paddingLeft: 8,
     paddingTop: 10,
   },
-  quickaction:{
+  quickaction: {
     marginTop: 10,
     flexDirection: 'row',
     alignItems: 'center',
@@ -867,7 +887,7 @@ const styles = StyleSheet.create({
     flex: 1,
     rowGap: 8,
   },
-  quick:{
+  quick: {
     borderWidth: 1.5,
     borderColor: '#E5E7EB',
     borderRadius: 14,
@@ -877,7 +897,7 @@ const styles = StyleSheet.create({
     gap: 8,
     marginInline: 5,
   },
-  quick1:{
+  quick1: {
     borderWidth: 1.5,
     borderColor: Colors.white,
     borderRadius: 14,
@@ -887,7 +907,7 @@ const styles = StyleSheet.create({
     gap: 8,
     marginInline: 5,
   },
-  qicon:{
+  qicon: {
     backgroundColor: Colors.logoCream,
     borderRadius: 80,
     justifyContent: 'center',
@@ -900,7 +920,7 @@ const styles = StyleSheet.create({
     marginLeft: 10,
     marginBottom: 5,
   },
-  qtext:{
+  qtext: {
     textAlign: 'auto',
     ...Typography.button,
     color: Colors.gray,
@@ -986,6 +1006,4 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 16,
   },
- 
-
 });

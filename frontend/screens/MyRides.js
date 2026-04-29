@@ -6,35 +6,100 @@ import {
   TouchableOpacity,
   ScrollView,
   StatusBar,
-  ActivityIndicator,
   RefreshControl,
   Animated,
-  Alert,
+  Image
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import axios from "axios";
+import LottieView from "lottie-react-native";
 
 import { useAuth } from "../context/AuthContext";
 import { Colors, Typography } from "../constants/Colors";
 import { FontFamily } from "../constants/Fonts";
+import CustomAlert from '../components/CustomAlert';
 
 import { API_BASE_URL } from "../config/config_ip";
+// Add inline getInitials and buildImageUrl (avoids import error)
+const buildImageUrl = (url) => {
+  if (!url) return null;
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+ return `${API_BASE_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+};
 
+const getInitials = (name) => {
+  if (!name) return '?';
+  const parts = name.trim().split(' ').filter(Boolean);
+  if (parts.length > 1) return ${parts[0][0]}${parts[1][0]}.toUpperCase();
+  return parts[0].slice(0, 2).toUpperCase();
+};
 export default function MyRides({ route, navigation }) {
   const { user, isAuthenticated, isGuest } = useAuth();
   const phoneNumber = user?.phone_number;
 
+  // Custom Alert states
+  const [alertVisible, setAlertVisible] = useState(false);
+  const [alertConfig, setAlertConfig] = useState({
+    title: "",
+    message: "",
+    icon: "check-circle",
+    iconColor: "#10B981",
+    buttons: []
+  });
+
+  const showCustomAlert = (title, message, type = 'success') => {
+    let icon = "check-circle";
+    let iconColor = "#10B981";
+    
+    if (type === 'error') {
+      icon = "error";
+      iconColor = "#EF4444";
+    } else if (type === 'warning') {
+      icon = "warning";
+      iconColor = "#F59E0B";
+    } else if (type === 'info') {
+      icon = "info";
+      iconColor = Colors.primary;
+    }
+    
+    setAlertConfig({
+      title,
+      message,
+      icon,
+      iconColor,
+      buttons: [{ text: 'OK', onPress: () => setAlertVisible(false) }]
+    });
+    setAlertVisible(true);
+  };
+
+  const showConfirmationAlert = (title, message, onConfirm) => {
+    setAlertConfig({
+      title,
+      message,
+      icon: "warning",
+      iconColor: "#F59E0B",
+      buttons: [
+        { text: 'Cancel', onPress: () => setAlertVisible(false), style: 'cancel' },
+        { text: title === "Cancel Ride" ? 'Yes, Cancel' : (title === "Cancel Booking" ? 'Yes, Cancel' : 'Yes, Proceed'), 
+          onPress: () => {
+            setAlertVisible(false);
+            onConfirm();
+          }, 
+          style: 'destructive' 
+        }
+      ]
+    });
+    setAlertVisible(true);
+  };
+
   useEffect(() => {
     if (!isAuthenticated || isGuest) {
-      Alert.alert(
+      showConfirmationAlert(
         'Login Required',
         'Please complete login/profile to view rides.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-{ text: 'Login', onPress: () => navigation.navigate('Login') }
-        ]
+        () => navigation.navigate('Login')
       );
       navigation.goBack();
     }
@@ -96,12 +161,8 @@ export default function MyRides({ route, navigation }) {
 
     try {
       const res = await axios.get(`${API_BASE_URL}/my-rides/${phoneNumber}`);
-      // For requested rides, join with Ride to get actual ride details
-      // Note: Backend now returns properly constructed dictionaries
-      // but we add defensive fallbacks in case some fields are missing
       const requestedFormated = (res.data.requested_rides || []).map((req) => ({
         ...req,
-        // Ensure these fields exist for backward compatibility
         origin: req.origin || req.ride?.origin || null,
         destination: req.destination || req.ride?.destination || null,
         departure_time: req.departure_time || req.ride?.departure_time || null,
@@ -111,7 +172,7 @@ export default function MyRides({ route, navigation }) {
       setRequestedRides(requestedFormated);
     } catch (error) {
       console.log("Error fetching rides:", error);
-      Alert.alert("Error", "Could not load your rides.");
+      showCustomAlert("Error", "Could not load your rides.", "error");
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -124,12 +185,12 @@ export default function MyRides({ route, navigation }) {
   };
 
   const showUpcomingFeature = (featureName) => {
-    Alert.alert("Upcoming feature", `${featureName} will be available soon.`);
+    showCustomAlert("Upcoming feature", `${featureName} will be available soon.`, "info");
   };
 
   const handleEditRide = (ride) => {
     if (!ride || !phoneNumber) {
-      Alert.alert("Error", "Cannot edit ride. Please refresh and try again.");
+      showCustomAlert("Error", "Cannot edit ride. Please refresh and try again.", "error");
       return;
     }
 
@@ -159,70 +220,50 @@ export default function MyRides({ route, navigation }) {
   const handleBookingAction = async (bookingId, action) => {
     const actionLabel = action === "accept" ? "Accept" : "Reject";
 
-    Alert.alert(
+    showConfirmationAlert(
       `${actionLabel} Request`,
       `Are you sure you want to ${action} this booking request?`,
-      [
-        { text: "No", style: "cancel" },
-        {
-          text: "Yes",
-          onPress: async () => {
-            try {
-              await axios.put(`${API_BASE_URL}/booking/${bookingId}/${action}`);
-              Alert.alert("Success", `Booking ${action}ed successfully.`);
-              fetchMyRides();
-            } catch (err) {
-              Alert.alert("Error", "Could not update booking.");
-            }
-          },
-        },
-      ]
+      async () => {
+        try {
+          await axios.put(`${API_BASE_URL}/booking/${bookingId}/${action}`);
+          showCustomAlert("Success", `Booking ${action}ed successfully.`, "success");
+          fetchMyRides();
+        } catch (err) {
+          showCustomAlert("Error", "Could not update booking.", "error");
+        }
+      }
     );
   };
 
   const cancelRide = async (rideId) => {
-    Alert.alert(
+    showConfirmationAlert(
       "Cancel Ride",
       "Are you sure you want to cancel this ride?",
-      [
-        { text: "No", style: "cancel" },
-        {
-          text: "Yes",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await axios.put(`${API_BASE_URL}/ride/${rideId}/cancel`);
-              Alert.alert("Success", "Ride cancelled successfully.");
-              fetchMyRides();
-            } catch (err) {
-              Alert.alert("Error", "Could not cancel ride.");
-            }
-          },
-        },
-      ]
+      async () => {
+        try {
+          await axios.put(`${API_BASE_URL}/ride/${rideId}/cancel`);
+          showCustomAlert("Success", "Ride cancelled successfully.", "success");
+          fetchMyRides();
+        } catch (err) {
+          showCustomAlert("Error", "Could not cancel ride.", "error");
+        }
+      }
     );
   };
 
   const cancelBooking = async (bookingId) => {
-    Alert.alert(
+    showConfirmationAlert(
       "Cancel Booking",
       "Are you sure you want to cancel this booking?",
-      [
-        { text: "No", style: "cancel" },
-        {
-          text: "Yes",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await axios.put(`${API_BASE_URL}/booking/${bookingId}/cancel`);
-              Alert.alert("Success", "Booking cancelled successfully.");
-              fetchMyRides();
-            } catch (err) {
-              Alert.alert("Error", "Could not cancel booking.");
-            }
-          },
-        },
-      ]
+      async () => {
+        try {
+          await axios.put(`${API_BASE_URL}/booking/${bookingId}/cancel`);
+          showCustomAlert("Success", "Booking cancelled successfully.", "success");
+          fetchMyRides();
+        } catch (err) {
+          showCustomAlert("Error", "Could not cancel booking.", "error");
+        }
+      }
     );
   };
 
@@ -525,11 +566,18 @@ export default function MyRides({ route, navigation }) {
                 <View style={styles.bookingHeader}>
                   <View style={styles.bookingInfo}>
                     <View style={styles.avatarContainer}>
-                      <Ionicons
-                        name="person"
-                        size={20}
-                        color={Colors.primary}
-                      />
+                      {booking.passenger_photo ? (
+                        <Image 
+                          source={{ uri: buildImageUrl(booking.passenger_photo) }}
+                          style={{ width: 40, height: 40, borderRadius: 20 }}
+                        />
+                      ) : (
+                        <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: "#F3F4F6", alignItems: 'center', justifyContent: 'center' }}>
+                          <Text style={{ fontSize: 14, fontWeight: '700', color: Colors.primary }}>
+                            {getInitials(booking.passenger_name || booking.passenger_phone || 'Rider')}
+                          </Text>
+                        </View>
+                      )}
                     </View>
 
                     <View style={{ flex: 1 }}>
@@ -541,6 +589,26 @@ export default function MyRides({ route, navigation }) {
                         {booking.seats_requested > 1 ? "s" : ""}
                       </Text>
                     </View>
+                   <TouchableOpacity
+  style={{ paddingHorizontal: 4, paddingVertical: 4 }}
+  onPress={() =>
+    navigation.navigate('ChatScreen', {
+      receiverPhone: booking.passenger_phone,
+      conversationId: `chat-${ride.id}-${booking.id}`,
+      user: {
+        name:
+          booking.passenger_name ||
+          `Rider ${booking.passenger_phone?.slice(-4) || ''}`,
+        tripInfo: `${ride.origin || 'Origin'} → ${
+          ride.destination || 'Destination'
+        }`,
+        phone: booking.passenger_phone,
+      },
+    })
+  }
+>
+  <Ionicons name="chatbubbles" size={26} color={Colors.primary} />
+</TouchableOpacity>
                   </View>
 
                   <View
@@ -749,8 +817,13 @@ export default function MyRides({ route, navigation }) {
   if (loading) {
     return (
       <View style={styles.loader}>
-        <ActivityIndicator size="large" color={Colors.primary} />
-        <Text style={styles.loadingText}>Loading your rides...</Text>
+        <LottieView
+          source={require("../assets/loading.json")}
+          autoPlay
+          loop
+          style={{ width: 300, height: 300 }}
+        />
+        {/* <Text style={styles.loadingText}>Loading your rides...</Text> */}
       </View>
     );
   }
@@ -952,6 +1025,17 @@ export default function MyRides({ route, navigation }) {
 
         <View style={styles.bottomSpacer} />
       </ScrollView>
+
+      {/* Custom Alert */}
+      <CustomAlert
+        visible={alertVisible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        icon={alertConfig.icon}
+        iconColor={alertConfig.iconColor}
+        buttons={alertConfig.buttons}
+        onBackdropPress={() => setAlertVisible(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -1435,9 +1519,10 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
   },
   loadingText: {
-    fontSize: 14,
-    color: Colors.gray,
-    marginTop: 12,
+    marginTop: 20,
+    fontSize: 16,
+    color: Colors.primary,
+    fontWeight: "500",
     fontFamily: FontFamily.secondary.regular,
   },
 

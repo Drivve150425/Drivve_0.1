@@ -14,7 +14,9 @@ import {
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import LottieView from "lottie-react-native";
 import { Colors, Typography } from '../constants/Colors';
+import CustomAlert from '../components/CustomAlert';
 
 const { width, height } = Dimensions.get('window');
 
@@ -26,6 +28,42 @@ const RecurringRide = ({ navigation, route }) => {
   const [departureDate, setDepartureDate] = useState(null);
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // Custom Alert states
+  const [alertVisible, setAlertVisible] = useState(false);
+  const [alertConfig, setAlertConfig] = useState({
+    title: "",
+    message: "",
+    icon: "check-circle",
+    iconColor: "#10B981",
+    buttons: []
+  });
+
+  const showCustomAlert = (title, message, type = 'success') => {
+    let icon = "check-circle";
+    let iconColor = "#10B981";
+    
+    if (type === 'error') {
+      icon = "error";
+      iconColor = "#EF4444";
+    } else if (type === 'warning') {
+      icon = "warning";
+      iconColor = "#F59E0B";
+    } else if (type === 'info') {
+      icon = "info";
+      iconColor = Colors.primary;
+    }
+    
+    setAlertConfig({
+      title,
+      message,
+      icon,
+      iconColor,
+      buttons: [{ text: 'OK', onPress: () => setAlertVisible(false) }]
+    });
+    setAlertVisible(true);
+  };
 
   // Accept location selections - removed map integration
   React.useEffect(() => {
@@ -52,9 +90,11 @@ const RecurringRide = ({ navigation, route }) => {
 
   const handleSaveRecurringRide = async () => {
     if (!fromLocation || !toLocation || selectedDays.length === 0 || !departureTime) {
-      alert('Please fill all fields');
+      showCustomAlert('Incomplete Information', 'Please fill all fields to save recurring ride.', 'warning');
       return;
     }
+
+    setSaving(true);
 
     const payload = {
       id: `rec_${Date.now()}`,
@@ -73,16 +113,21 @@ const RecurringRide = ({ navigation, route }) => {
       await AsyncStorage.setItem(key, JSON.stringify(list.slice(0, 100)));
       // store last saved for other screens to show persistent success state
       await AsyncStorage.setItem('last_saved_recurring', JSON.stringify(payload));
+      
+      showCustomAlert('Success!', 'Your recurring ride has been saved successfully.', 'success');
+      
+      // show confirmation modal then navigate away
+      setShowConfirmation(true);
+      setTimeout(() => {
+        setShowConfirmation(false);
+        navigation.navigate('Home', { recurringSaved: true });
+      }, 1400);
     } catch (e) {
       console.warn('save recurring error', e);
+      showCustomAlert('Error', 'Failed to save recurring ride. Please try again.', 'error');
+    } finally {
+      setSaving(false);
     }
-
-    // show confirmation modal then navigate away
-    setShowConfirmation(true);
-    setTimeout(() => {
-      setShowConfirmation(false);
-      navigation.navigate('Home', { recurringSaved: true });
-    }, 1400);
   };
 
   const isFormValid = fromLocation && toLocation && selectedDays.length > 0 && departureTime;
@@ -122,6 +167,7 @@ const RecurringRide = ({ navigation, route }) => {
                 placeholderTextColor="#ccc"
                 value={fromLocation}
                 onChangeText={setFromLocation}
+                editable={!saving}
               />
             </View>
           </View>
@@ -136,6 +182,7 @@ const RecurringRide = ({ navigation, route }) => {
                 placeholderTextColor="#ccc"
                 value={toLocation}
                 onChangeText={setToLocation}
+                editable={!saving}
               />
             </View>
           </View>
@@ -154,6 +201,7 @@ const RecurringRide = ({ navigation, route }) => {
                   selectedDays.includes(day.short) && styles.dayButtonActive,
                 ]}
                 onPress={() => toggleDay(day.short)}
+                disabled={saving}
               >
                 <Text
                   style={[
@@ -181,6 +229,7 @@ const RecurringRide = ({ navigation, route }) => {
           <TouchableOpacity
             activeOpacity={0.8}
             onPress={() => setShowTimePicker(true)}
+            disabled={saving}
           >
             <View style={styles.timeInput}>
               <Text style={styles.timeText}>
@@ -284,12 +333,24 @@ const RecurringRide = ({ navigation, route }) => {
       {/* Save Button */}
       <View style={styles.buttonContainer}>
         <TouchableOpacity
-          style={[styles.saveButton, !isFormValid && styles.saveButtonDisabled]}
+          style={[styles.saveButton, (!isFormValid || saving) && styles.saveButtonDisabled]}
           onPress={handleSaveRecurringRide}
           activeOpacity={0.8}
-          disabled={!isFormValid}
+          disabled={!isFormValid || saving}
         >
-          <Text style={styles.saveButtonText}>Save Recurring Ride</Text>
+          {saving ? (
+            <View style={styles.loadingContainer}>
+              <LottieView
+                source={require("../assets/loading.json")}
+                autoPlay
+                loop
+                style={{ width: 30, height: 30 }}
+              />
+              <Text style={styles.saveButtonText}>Saving...</Text>
+            </View>
+          ) : (
+            <Text style={styles.saveButtonText}>Save Recurring Ride</Text>
+          )}
         </TouchableOpacity>
       </View>
 
@@ -305,6 +366,17 @@ const RecurringRide = ({ navigation, route }) => {
           </View>
         </View>
       </Modal>
+
+      {/* Custom Alert */}
+      <CustomAlert
+        visible={alertVisible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        icon={alertConfig.icon}
+        iconColor={alertConfig.iconColor}
+        buttons={alertConfig.buttons}
+        onBackdropPress={() => setAlertVisible(false)}
+      />
     </SafeAreaView>
   );
 };
@@ -391,7 +463,7 @@ const styles = StyleSheet.create({
   inputIcon: {
     marginRight: width * 0.02,
   },
-  input: {
+  textInput: {
     flex: 1,
     paddingVertical: Platform.OS === 'ios' ? height * 0.015 : height * 0.01,
     fontSize: width * 0.04,
@@ -433,6 +505,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F0F0F0',
     borderRadius: 8,
     padding: width * 0.03,
+    marginTop: height * 0.015,
   },
   selectedDaysText: {
     fontSize: width * 0.035,
@@ -592,6 +665,12 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontSize: width * 0.04,
     fontWeight: '600',
+  },
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
   },
   confirmOverlay: {
     flex: 1,

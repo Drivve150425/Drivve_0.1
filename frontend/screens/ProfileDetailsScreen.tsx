@@ -29,6 +29,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from "../context/AuthContext";
 import { SvgCssUri } from 'react-native-svg/css';
 import LottieView from "lottie-react-native";
+import CustomAlert from '../components/CustomAlert'; // Import CustomAlert
 
 const { width, height } = Dimensions.get('window');
 
@@ -79,7 +80,42 @@ export default function ProfileScreen({ navigation, route }: Props) {
   // Add loading state for profile data
   const [isLoading, setIsLoading] = useState(true);
   
-  /* ✅ Get phone from route params or AuthContext */
+  // Custom Alert states
+  const [alertVisible, setAlertVisible] = useState(false);
+  const [alertConfig, setAlertConfig] = useState({
+    title: "",
+    message: "",
+    icon: "check-circle",
+    iconColor: "#10B981",
+    buttons: []
+  });
+
+  const showCustomAlert = (title, message, type = 'success', buttons = null) => {
+    let icon = "check-circle";
+    let iconColor = "#10B981";
+    
+    if (type === 'error') {
+      icon = "error";
+      iconColor = "#EF4444";
+    } else if (type === 'warning') {
+      icon = "warning";
+      iconColor = "#F59E0B";
+    } else if (type === 'info') {
+      icon = "info";
+      iconColor = Colors.primary;
+    }
+    
+    setAlertConfig({
+      title,
+      message,
+      icon,
+      iconColor,
+      buttons: buttons || [{ text: 'OK', onPress: () => setAlertVisible(false) }]
+    });
+    setAlertVisible(true);
+  };
+  
+  /* ✅ Get phone from route or AuthContext */
   const phoneFromRoute = route?.params?.phoneNumber || null;
   const phoneFromAuth = user?.phoneNumber || user?.phone || null;
   const userFromAuth = user?.userName || user?.name || "User";
@@ -94,12 +130,21 @@ export default function ProfileScreen({ navigation, route }: Props) {
 
   useEffect(() => {
     if (isGuest) {
-      Alert.alert(
+      showCustomAlert(
         'Login Required',
-        'Please complete login/profile.',
+        'Please complete login/profile to access all features.',
+        'warning',
         [
-          { text: 'Cancel', style: 'cancel', onPress: () => navigation.goBack() },
-          { text: 'Login', onPress: () => navigation.navigate('Login') }
+          { text: 'Cancel', onPress: () => {
+              setAlertVisible(false);
+              navigation.goBack();
+            } 
+          },
+          { text: 'Login', onPress: () => {
+              setAlertVisible(false);
+              navigation.navigate('Login');
+            } 
+          }
         ]
       );
       return;
@@ -141,6 +186,7 @@ export default function ProfileScreen({ navigation, route }: Props) {
       }
     } catch (err) {
       console.log("Profile fetch error:", err);
+      showCustomAlert('Error', 'Failed to load profile data', 'error');
     } finally {
       setIsLoading(false);
     }
@@ -230,19 +276,39 @@ export default function ProfileScreen({ navigation, route }: Props) {
   };
 
   const handleLogout = () => {
-    Alert.alert(
-      "Logout",
-      "Are you sure you want to logout?",
+    // Show custom alert instead of default Alert
+    showCustomAlert(
+      'Logout',
+      'Are you sure you want to logout?',
+      'warning',
       [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Logout",
-          style: "destructive",
-          onPress: async () => {
-            await authLogout();
-            navigation.navigate("Login");
-          },
+        { 
+          text: 'Cancel', 
+          onPress: () => setAlertVisible(false),
+          style: 'cancel'
         },
+        { 
+          text: 'Logout', 
+          onPress: async () => {
+            setAlertVisible(false);
+            // Show loading indicator before logout
+            setIsLoading(true);
+            try {
+              await authLogout();
+              // Navigate to login screen
+              navigation.reset({
+                index: 0,
+                routes: [{ name: 'Login' }],
+              });
+            } catch (error) {
+              console.log('Logout error:', error);
+              showCustomAlert('Error', 'Failed to logout. Please try again.', 'error');
+            } finally {
+              setIsLoading(false);
+            }
+          },
+          style: 'destructive'
+        }
       ]
     );
   };
@@ -303,32 +369,27 @@ export default function ProfileScreen({ navigation, route }: Props) {
                 onPress={handleEditProfile}
                 activeOpacity={0.8}
               >
-                <LinearGradient
-                  colors={[Colors.white, '#F3F4F6']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.profileImageCircle}
-                >
-                  {profileImage ? (
-                    profileImage.endsWith(".svg") ? (
-                      <SvgCssUri
-                        uri={profileImage}
-                        width={100}
-                        height={100}
-                      />
-                    ) : (
-                      <Image
-                        source={{ uri: profileImage }}
-                        style={styles.profileImage}
-                      />
-                    )
-                  ) : (
-                    <Image
-                      source={require("../assets/icon.png")}
-                      style={styles.profileImage}
-                    />
-                  )}
-                </LinearGradient>
+              {profileImage && (
+  <LinearGradient
+    colors={[Colors.white, '#F3F4F6']}
+    start={{ x: 0, y: 0 }}
+    end={{ x: 1, y: 1 }}
+    style={styles.profileImageCircle}
+  >
+    {profileImage.endsWith(".svg") ? (
+      <SvgCssUri
+        uri={profileImage}
+        width={100}
+        height={100}
+      />
+    ) : (
+      <Image
+        source={{ uri: profileImage }}
+        style={styles.profileImage}
+      />
+    )}
+  </LinearGradient>
+)}
 
                 <View style={styles.editIconContainer}>
                   <MaterialCommunityIcons
@@ -341,7 +402,7 @@ export default function ProfileScreen({ navigation, route }: Props) {
             </View>
 
             <Text style={styles.profileName}>
-              {userName || "User"}
+              {userName}
             </Text>
 
             <Text style={styles.profileNumber}>
@@ -440,7 +501,7 @@ export default function ProfileScreen({ navigation, route }: Props) {
               </View>
               <Text style={styles.versionText}>Version 1.0.0</Text>
               <Text style={styles.copyrightText}>
-                © 2025 Drivve. All rights reserved.
+                © 2026 Drivve. All rights reserved.
               </Text>
             </View>
           </View>
@@ -453,6 +514,17 @@ export default function ProfileScreen({ navigation, route }: Props) {
           </TouchableOpacity>
         )} */}
       </KeyboardAvoidingView>
+
+      {/* Custom Alert Component */}
+      <CustomAlert
+        visible={alertVisible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        icon={alertConfig.icon}
+        iconColor={alertConfig.iconColor}
+        buttons={alertConfig.buttons}
+        onBackdropPress={() => setAlertVisible(false)}
+      />
     </SafeAreaView>
   );
 }
