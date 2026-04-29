@@ -131,28 +131,30 @@ export default function LoginScreen({ navigation }) {
     setIsSendingOtp(true);
     setError('');
 
-    try {
-      // Backend OTP - fast, no WebView
-      const result = await LoginService.sendOtp(selectedCountry.dial + phoneNumber);
-      
-      console.log('📲 Backend OTP result:', result);
-      
+try {
+      // Use Firebase Phone Auth (client-side) - falls back to backend if unavailable
+      const fullPhoneNumber = selectedCountry.dial + phoneNumber;
+      const result = await FirebaseAuthService.sendOTP(phoneNumber, selectedCountry.dial);
+
+      console.log('📲 Firebase Phone Auth result:', result);
+
       if (result.success) {
         // Show success + navigate
         setOtpSentSuccess(true);
         setIsSendingOtp(false);
-        
+
         // Brief success delay for UX
         setTimeout(() => {
           navigation.navigate('OTP', {
             phoneNumber,
             countryCode: selectedCountry.dial,
-            fullNumber: selectedCountry.dial + phoneNumber,
+            fullNumber: fullPhoneNumber,
             country: selectedCountry,
-            isBackendFlow: true,  // Key for OTP screen
+            isBackendFlow: result.isBackendFlow || false,  // false = Firebase flow, true = backend fallback
+            confirmationResult: result.confirmationResult,  // Firebase confirmation
           });
         }, 800);  // "OTP sent!" flash time
-        
+
         if (Platform.OS !== 'web') {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }
