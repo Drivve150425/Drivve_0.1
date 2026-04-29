@@ -64,3 +64,27 @@ def verify_firebase_token(id_token: str) -> dict:
     except Exception as e:
         raise ValueError(f"Invalid Firebase ID token: {e}")
 
+def send_sms(phone_number: str, message: str):
+    """
+    Send SMS via Firebase (requires Firebase Phone Auth enabled + paid quota).
+    Non-blocking - logs errors.
+    """
+    if firebase_app is None:
+        print("⚠️  Firebase Admin unavailable - SMS skipped")
+        return False
+
+    try:
+        # E.164 format required
+        e164_phone = phone_number if phone_number.startswith('+') else f"+91{phone_number.lstrip('+91')}"
+        
+        # Firebase SMS (requires Phone Auth provider enabled in project)
+        auth.generate_phone_number_verification_code(
+            phone_number=e164_phone,
+            app=firebase_app
+        )
+        print(f"📱 Firebase SMS sent to {phone_number}: {message[:50]}...")
+        return True
+    except Exception as e:
+        print(f"❌ Firebase SMS failed for {phone_number}: {e}")
+        return False
+

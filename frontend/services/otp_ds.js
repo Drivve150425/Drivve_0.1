@@ -118,13 +118,15 @@ import * as Device from 'expo-device';
       };
     }
   }
-  async verifyOtp(phone_number, otp_code) {
+async verifyOtp(phone_number, otp_code) {
   try {
     const deviceName = `${Device.brand || "Unknown"} ${Device.modelName || "Device"}`;
-    const deviceType =
-      Device.deviceType && Device.deviceType === 2 ? "tablet" : "mobile";
+    const deviceType = Device.deviceType === Device.DeviceType.TABLET ? "tablet" : "mobile";
 
-    console.log("📱 Sending device:", deviceName, deviceType);
+    console.log("📱 Backend OTP verify:", phone_number, deviceName, deviceType);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
 
     const res = await fetch(`${API_BASE_URL}/api/verify-otp`, {
       method: "POST",
@@ -138,12 +140,29 @@ import * as Device from 'expo-device';
         device_name: deviceName,
         device_type: deviceType,
       }),
+      signal: controller.signal
     });
 
-    return await res.json();
+    clearTimeout(timeoutId);
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(`Verify failed: ${errorText}`);
+    }
+
+    const result = await res.json();
+    console.log("✅ Backend verify success:", result);
+    
+    return {
+      ...result,
+      success: true
+    };
   } catch (e) {
-    console.error("❌ verifyOtp error", e);
-    return null;
+    console.error("❌ verifyOtp error:", e);
+    return {
+      success: false,
+      message: e.message || "Verification failed"
+    };
   }
 }
 

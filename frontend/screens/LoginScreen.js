@@ -20,10 +20,10 @@ import LoginSvg from '../assets/login.svg';
 import CountryPicker from '../components/CountryPicker';
 import { getDefaultCountry } from '../constants/CountryData';
 import FirebaseAuthService from '../services/FirebaseAuthService';
+import LoginService from '../services/loginscreen_ds';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useAuth } from '../context/AuthContext';
-import DatabaseService from '../services/loginscreen_ds';
 import { Button } from 'react-native';  // Explicit import
 
 const { width } = Dimensions.get('window');
@@ -39,6 +39,8 @@ export default function LoginScreen({ navigation }) {
   const [focused, setFocused] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isSendingOtp, setIsSendingOtp] = useState(false);
+  const [otpSentSuccess, setOtpSentSuccess] = useState(false);
   const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
   
   // Animation values
@@ -126,47 +128,47 @@ export default function LoginScreen({ navigation }) {
     }
 
     setIsLoading(true);
+    setIsSendingOtp(true);
     setError('');
 
     try {
-      console.log('🔥 Sending Firebase OTP to:', selectedCountry.dial + phoneNumber);
+      // Backend OTP - fast, no WebView
+      const result = await LoginService.sendOtp(selectedCountry.dial + phoneNumber);
       
-      const result = await FirebaseAuthService.sendOTP(
-        phoneNumber,
-        selectedCountry.dial
-      );
+      console.log('📲 Backend OTP result:', result);
       
-      console.log('🔥 Firebase OTP Result:', result.success ? 'SUCCESS' : 'FAILED');
-      
-   if (result.success) {
-
-  // ✅ Navigate immediately
-  navigation.navigate('OTP', {
-    phoneNumber: phoneNumber,
-    countryCode: selectedCountry.dial,
-    fullNumber: selectedCountry.dial + phoneNumber,
-    country: selectedCountry,
-    confirmationResult: result.confirmationResult,
-    verificationId: result.verificationId,
-  });
-
-  // 🚀 Run backend in background (NO WAIT)
-  DatabaseService.sendOtp(selectedCountry.dial + phoneNumber)
-    .then(() => console.log("OTP saved"))
-    .catch(err => console.log("Save OTP error", err));
-
-}
- else {
-        setError(result.message);
+      if (result.success) {
+        // Show success + navigate
+        setOtpSentSuccess(true);
+        setIsSendingOtp(false);
+        
+        // Brief success delay for UX
+        setTimeout(() => {
+          navigation.navigate('OTP', {
+            phoneNumber,
+            countryCode: selectedCountry.dial,
+            fullNumber: selectedCountry.dial + phoneNumber,
+            country: selectedCountry,
+            isBackendFlow: true,  // Key for OTP screen
+          });
+        }, 800);  // "OTP sent!" flash time
+        
         if (Platform.OS !== 'web') {
-          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }
+      } else {
+        setError(result.message || 'Failed to send OTP');
+        setIsSendingOtp(false);
+        if (Platform.OS !== 'web') {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         }
       }
     } catch (error) {
-      console.error('🚨 Login Error:', error);
-      setError('Network error. Please check your connection and try again.');
+      console.error('🚨 Send OTP error:', error);
+      setError('Network error. Please try again.');
+      setIsSendingOtp(false);
       if (Platform.OS !== 'web') {
-        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       }
     } finally {
       setIsLoading(false);
@@ -318,7 +320,7 @@ const skipToHome = async () => {
                 onPress={handleNextPress}
                 disabled={!isValidPhone || isLoading}
                 accessible={true}
-                accessibilityLabel={isLoading ? 'Sending OTP' : 'Next, send OTP'}
+                accessibilityLabel={isSendingOtp ? 'Sending OTP...' : otpSentSuccess ? 'OTP sent! Moving to verification' : 'Next, send OTP'}
                 accessibilityRole="button"
                 accessibilityState={{ disabled: !isValidPhone || isLoading }}
                 activeOpacity={0.9}

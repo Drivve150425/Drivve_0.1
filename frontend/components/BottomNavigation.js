@@ -245,7 +245,7 @@ const BottomNavigation = ({
   const indicatorX = useRef(new Animated.Value(0)).current;
   const [containerWidth, setContainerWidth] = useState(0);
 
-  const INDICATOR_SIZE = scale(24);
+  const INDICATOR_SIZE = scale(28);
 
   /**
    * Move indicator
@@ -329,7 +329,7 @@ const BottomNavigation = ({
 
   <Ionicons
     name={item.icon}
-    size={moderateScale(16)}
+    size={moderateScale(22)}
     color={isActive ? Colors.white : Colors.gray}
   />
 
@@ -390,9 +390,9 @@ const styles = StyleSheet.create({
     height: verticalScale(56),
     position: 'absolute',
     bottom: verticalScale(18),
-    backgroundColor: Platform.OS === 'ios' ? '#ffffffc5' : '#dfdada3e',//'#dfdada38' ,//'#ffffffc5' , //Colors.white,
+    backgroundColor: Platform.OS === 'ios' ? '#ffffffc5' : '#c2bfbf80',//'#dfdada38' ,//'#ffffffc5' , //Colors.white,
     borderRadius: moderateScale(40),
-    borderColor: Colors.light,
+    borderColor: Platform.OS === 'ios' ? Colors.gray : '#c2bfbf95',
     flexDirection: 'row',
     width: '92%',
     maxWidth: 620, // prevents tablet stretching
@@ -429,7 +429,7 @@ const styles = StyleSheet.create({
   },
 
   label: {
-    marginTop: verticalScale(6),
+    marginTop: verticalScale(4),
     fontSize: moderateScale(11),
     letterSpacing: 0.3,
   },
@@ -458,7 +458,7 @@ const styles = StyleSheet.create({
   },
   profileDp: {
     width: scale(26),
-    height: scale(26),
+    height: scale(22),
     borderRadius: scale(13),
 
     borderWidth: 2,

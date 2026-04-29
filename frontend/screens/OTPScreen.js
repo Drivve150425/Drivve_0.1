@@ -49,7 +49,8 @@ export default function OTPScreen({ navigation, route }) {
     fullNumber,
     country,
     confirmationResult,
-    verificationId
+    verificationId,
+    isBackendFlow = false
   } = route.params || {};
   const { login } = useAuth();
   // State management - Changed initial timer from 60 to 30 seconds
@@ -61,6 +62,9 @@ export default function OTPScreen({ navigation, route }) {
   const [otpError, setOtpError] = useState('');
   const [focused, setFocused] = useState(false);
   const [showSuccessAnimation, setShowSuccessAnimation] = useState(false);
+
+  const [showVerificationErrorAlert, setShowVerificationErrorAlert] = useState(false);
+  const [showNavigationErrorAlert, setShowNavigationErrorAlert] = useState(false);
  
   // Alert states
   const [showBackAlert, setShowBackAlert] = useState(false);
@@ -205,61 +209,60 @@ export default function OTPScreen({ navigation, route }) {
       return;
     }
 
-
     setIsVerifying(true);
     setOtpError('');
-
 
     if (Platform.OS !== 'web') {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
 
-
     try {
-      console.log('🔥 Verifying Firebase OTP:', otpValue);
+      let result;
+      
+      if (isBackendFlow) {
+        // Backend verification (primary flow)
+        console.log('📲 Backend OTP verification:', otpValue);
+        result = await FirebaseAuthService.verifyOTP(fullNumber, otpValue, true);
+      } else {
+        // Legacy Firebase flow
+        console.log('🔥 Firebase OTP verification:', otpValue);
+        result = await FirebaseAuthService.verifyOTP(confirmationResult, otpValue);
+      }
      
-      const result = await FirebaseAuthService.verifyOTP(
-        confirmationResult,
-        otpValue
-      );
-     
-      console.log('🔥 Firebase Verification Result:', result.success ? 'SUCCESS' : 'FAILED');
+      console.log('✅ Verification Result:', result.success ? 'SUCCESS' : 'FAILED');
      
       if (result.success) {
-  console.log('✅ User authenticated:', result.user.uid);
-  console.log('📱 Phone number:', result.phoneNumber);
+        console.log('✅ User authenticated:', result.uid || result.user?.uid);
+        console.log('📱 Phone number:', result.phoneNumber);
 
-  // 🔐 REGISTER DEVICE WITH BACKEND
-  const deviceName = `${Device.brand || "Unknown"} ${Device.modelName || "Device"}`;
-  const deviceType =
-    Device.deviceType === Device.DeviceType.TABLET ? "tablet" : "mobile";
+        // 🔐 Backend device registration (always)
+        const deviceName = `${Device.brand || "Unknown"} ${Device.modelName || "Device"}`;
+        const deviceType = Device.deviceType === Device.DeviceType.TABLET ? "tablet" : "mobile";
 
-  console.log("📱 Registering device:", deviceName, deviceType);
+        console.log("📱 Registering device:", deviceName, deviceType);
 
-  await fetch(`${API_BASE_URL}/api/verify-otp`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      phone_number: fullNumber,
-      firebase_id_token: result.token,
-      device_name: deviceName,
-      device_type: deviceType,
-    }),
-  });
+        await fetch(`${API_BASE_URL}/api/verify-otp`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            phone_number: fullNumber,
+            device_name: deviceName,
+            device_type: deviceType,
+          }),
+        });
 
-  if (Platform.OS !== 'web') {
-    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  }
+        if (Platform.OS !== 'web') {
+          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }
 
-  setIsVerifying(false);
-  setShowSuccessAnimation(true);
-}
- else {
+        setIsVerifying(false);
+        setShowSuccessAnimation(true);
+      } else {
         setOtpError(result.message);
         setOtpValue('');
         setIsVerifying(false);
         triggerShakeAnimation();
-        Alert.alert('Verification Failed', result.message);
+        setShowVerificationErrorAlert(true)
       }
     } catch (error) {
       console.error('🚨 OTP Verification Error:', error);
@@ -267,7 +270,7 @@ export default function OTPScreen({ navigation, route }) {
       setOtpValue('');
       setIsVerifying(false);
       triggerShakeAnimation();
-      Alert.alert('Error', 'Verification failed. Please try again.');
+      setShowVerificationErrorAlert(true);
     }
   };
 
@@ -368,50 +371,25 @@ export default function OTPScreen({ navigation, route }) {
   const handleNavigationError = () => {
     console.log('🚨 Handling navigation error - showing alert');
    
-    Alert.alert(
-      'Navigation Error',
-      'There was an issue navigating. Please try logging in again.',
-      [
-        {
-          text: 'Go Back',
-          onPress: () => {
-            try {
-              navigation.navigate('Login');
-            } catch (error) {
-              console.error('❌ Fallback navigation error:', error);
-              navigation.reset({
-                index: 0,
-                routes: [{ name: 'Login' }],
-              });
-            }
-          }
-        }
-      ]
-    );
+    setShowNavigationErrorAlert(true);
   };
 
 
   const handleResendOTP = async () => {
     if (!canResend || resendCount >= maxResendAttempts) return;
 
-
     if (Platform.OS !== 'web') {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
 
-
     try {
       setIsVerifying(true);
      
-      console.log('🔥 Resending Firebase OTP...');
-     
-      const result = await FirebaseAuthService.sendOTP(
-        phoneNumber,
-        countryCode
-      );
+      console.log('📲 Backend resend OTP');
+      const result = await FirebaseAuthService.sendOTP(phoneNumber, countryCode);
      
       if (result.success) {
-        setTimeLeft(30); // ✅ Changed from 60 to 30
+        setTimeLeft(30);
         setCanResend(false);
         setResendCount(resendCount + 1);
         setOtpValue('');
@@ -426,15 +404,14 @@ export default function OTPScreen({ navigation, route }) {
         if (Platform.OS !== 'web') {
           await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }
-       
-        console.log('✅ OTP resent successfully');
+        console.log('✅ OTP resent');
       } else {
-        console.error('❌ Failed to resend OTP:', result.message);
-        Alert.alert('Resend Failed', result.message);
+        console.error('❌ Resend failed:', result.message);
+        setShowErrorAlert(true);
       }
     } catch (error) {
-      console.error('🚨 Resend OTP Error:', error);
-      Alert.alert('Error', 'Failed to resend OTP. Please try again.');
+      console.error('🚨 Resend error:', error);
+      setShowErrorAlert(true);
     } finally {
       setIsVerifying(false);
     }
@@ -669,44 +646,111 @@ export default function OTPScreen({ navigation, route }) {
         visible={showBackAlert}
         title="Go Back"
         message="Are you sure you want to go back to login screen?"
+        icon="warning"
+        iconColor="#F59E0B"
         buttons={[
-          { text: 'Cancel', style: 'cancel', onPress: () => setShowBackAlert(false) },
-          { text: 'Yes', onPress: () => { setShowBackAlert(false); navigation.goBack(); } }
+          { 
+            text: 'Cancel', 
+            style: 'cancel', 
+            onPress: () => setShowBackAlert(false) 
+          },
+          { 
+            text: 'Yes', 
+            onPress: () => { 
+              setShowBackAlert(false); 
+              navigation.goBack(); 
+            } 
+          }
         ]}
         onBackdropPress={() => setShowBackAlert(false)}
       />
 
-
       <CustomAlert
         visible={showErrorAlert}
-        title="Verification Failed ❌"
-        message="Invalid OTP or verification failed. Please try again."
+        title="Resend Failed ❌"
+        message="Failed to resend OTP. Please check your connection and try again."
+        icon="error"
+        iconColor="#EF4444"
         buttons={[
-          { text: 'Try Again', onPress: () => setShowErrorAlert(false) }
+          { 
+            text: 'Try Again', 
+            onPress: () => setShowErrorAlert(false) 
+          }
         ]}
         onBackdropPress={() => setShowErrorAlert(false)}
       />
 
+      <CustomAlert
+        visible={showVerificationErrorAlert}
+        title="Verification Failed"
+        message="Invalid OTP or verification failed. Please try again with the correct code."
+        icon="error"
+        iconColor="#EF4444"
+        buttons={[
+          { 
+            text: 'Try Again', 
+            onPress: () => {
+              setShowVerificationErrorAlert(false);
+              setOtpValue('');
+            } 
+          }
+        ]}
+        onBackdropPress={() => setShowVerificationErrorAlert(false)}
+      />
 
       <CustomAlert
         visible={showLimitAlert}
         title="Limit Reached ⚠️"
-        message="You have exceeded the maximum number of OTP resend attempts. Please check your entered number or try again later."
+        message="You have exceeded the maximum number of OTP resend attempts (3). Please check your phone number and try again later."
+        icon="warning"
+        iconColor="#F59E0B"
         buttons={[
-          { text: 'Check Number', style: 'destructive', onPress: () => { setShowLimitAlert(false); navigation.goBack(); } }
+          { 
+            text: 'Go Back', 
+            style: 'destructive', 
+            onPress: () => { 
+              setShowLimitAlert(false); 
+              navigation.goBack(); 
+            } 
+          }
         ]}
         onBackdropPress={() => setShowLimitAlert(false)}
       />
 
-
       <CustomAlert
         visible={showResendAlert}
-        title="OTP Sent 📱"
-        message="A new verification code has been sent to your phone number"
+        title="OTP Sent Successfully"
+        message="A new verification code has been sent to your phone number. Please check your messages."
+        icon="check-circle"
+        iconColor="#10B981"
         buttons={[
-          { text: 'OK', onPress: () => setShowResendAlert(false) }
+          { 
+            text: 'OK', 
+            onPress: () => setShowResendAlert(false) 
+          }
         ]}
         onBackdropPress={() => setShowResendAlert(false)}
+      />
+
+      <CustomAlert
+        visible={showNavigationErrorAlert}
+        title="Navigation Error 🚨"
+        message="There was an issue completing your request. Please try logging in again."
+        icon="error"
+        iconColor="#EF4444"
+        buttons={[
+          { 
+            text: 'Go to Login', 
+            onPress: () => { 
+              setShowNavigationErrorAlert(false);
+              navigation.reset({
+                index: 0,
+                routes: [{ name: 'Login' }],
+              });
+            } 
+          }
+        ]}
+        onBackdropPress={() => setShowNavigationErrorAlert(false)}
       />
 
     </SafeAreaView>
@@ -919,5 +963,14 @@ const styles = StyleSheet.create({
     color: Colors.primary,
     fontWeight: '600',
     fontSize: 15,
+  },
+  dot1: {
+    opacity: 0.4,
+  },
+  dot2: {
+    opacity: 0.7,
+  },
+  dot3: {
+    opacity: 1,
   },
 });

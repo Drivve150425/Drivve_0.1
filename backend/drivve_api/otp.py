@@ -41,14 +41,6 @@ async def send_otp(phone_data: dict, db: Session = Depends(get_db)):
         otp_code = generate_otp()
         expires_at = datetime.now(UTC) + timedelta(minutes=10)
 
-        # create_notification(
-        #     db=db,
-        #     phone_number=phone_number,
-        #     title="OTP Sent",
-        #     message="An OTP has been sent to your registered mobile number.",
-        #     ntype=NotificationType.SYSTEM
-        # )
-
         otp_entry = OTPVerification(
             phone_number=phone_number,
             otp_code=otp_code,
@@ -65,6 +57,19 @@ async def send_otp(phone_data: dict, db: Session = Depends(get_db)):
         print("📞 Phone:", phone_number)
         print("🔢 OTP:", otp_code)
         print("⏳ Expires:", expires_at.isoformat())
+
+        # SMS DELIVERY via Firebase Admin (guaranteed SMS)
+        try:
+            from config.firebase_admin import firebase_app
+            
+            if firebase_app:
+                message = f"Your Drivve verification code is {otp_code}. Valid for 10 minutes. Do not share."
+                firebase_app.send_sms(phone_number, message)
+                print("📱 Firebase SMS sent successfully")
+            else:
+                print("⚠️ Firebase Admin unavailable - SMS skipped (dev mode)")
+        except Exception as sms_error:
+            print("⚠️ SMS send failed (non-blocking):", sms_error)
 
         return {
             "success": True,

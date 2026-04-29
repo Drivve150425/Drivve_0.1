@@ -285,10 +285,14 @@ app.mount("/socket.io", socket_app)
 from fastapi.staticfiles import StaticFiles
 from routers.routes import router as riderrouter
 from routers.routes import router as routes_router
+
 from routers.ride import router as ridesrouter
+from routers.my_rides import router as myrides_router
 app.include_router(riderrouter)
 app.include_router(routes_router)
 app.include_router(ridesrouter)
+app.include_router(myrides_router)
+
 
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
