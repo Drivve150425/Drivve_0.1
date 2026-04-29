@@ -100,65 +100,7 @@ const ChatListScreen = ({ navigation }) => {
       const myPhone = user?.phone_number;
       if (!myPhone || myPhone === 'guest_mode') {
         console.log('No phone - guest/demo mode');
-        const mockChats = [
-          {
-            id: '1',
-            name: 'John Doe',
-            lastMessage: 'Hey, are you still available for the ride?',
-            timestamp: '2:30 PM',
-            unreadCount: 2,
-            isOnline: true,
-            avatar: null,
-            isPinned: false,
-            tripInfo: 'Mumbai → Pune',
-            isVoiceMessage: false,
-            conversationId: 1,
-            otherUserId: 101,
-          },
-          {
-            id: '2',
-            name: 'Sarah Wilson',
-            lastMessage: 'Thanks for the ride! It was great.',
-            timestamp: 'Yesterday',
-            unreadCount: 0,
-            isOnline: false,
-            avatar: null,
-            isPinned: true,
-            tripInfo: 'Delhi → Jaipur',
-            isVoiceMessage: false,
-            conversationId: 2,
-            otherUserId: 102,
-          },
-          {
-            id: '3',
-            name: 'Mike Johnson',
-            lastMessage: 'Voice message',
-            timestamp: '10:15 AM',
-            unreadCount: 1,
-            isOnline: true,
-            avatar: null,
-            isPinned: false,
-            tripInfo: 'Bangalore → Chennai',
-            isVoiceMessage: true,
-            conversationId: 3,
-            otherUserId: 103,
-          },
-          {
-            id: '4',
-            name: 'Emma Davis',
-            lastMessage: 'See you at the pickup point!',
-            timestamp: 'Mon',
-            unreadCount: 0,
-            isOnline: false,
-            avatar: null,
-            isPinned: false,
-            tripInfo: 'Kolkata → Patna',
-            isVoiceMessage: false,
-            conversationId: 4,
-            otherUserId: 104,
-          },
-        ];
-        setChats(mockChats);
+        
         return;
       }
 
@@ -182,7 +124,7 @@ const ChatListScreen = ({ navigation }) => {
           isOnline: false,
           avatar: conv.other_user.avatar,
           isPinned: false,
-          tripInfo: 'Mumbai → Pune',
+          tripInfo: conv.trip_info || '',
           isVoiceMessage: conv.last_message_type === 'voice',
           conversationId: conv.id,
           otherUserId: conv.other_user.id,

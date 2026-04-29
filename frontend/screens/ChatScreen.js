@@ -212,32 +212,6 @@ const ChatScreen = ({ route, navigation }) => {
     }
   };
 
-  const loadMockMessages = () => {
-    const mockMessages = [
-      {
-        id: 1, text: 'Hey there! Ready for the trip?',
-        sender_id: 101, from_me: false, status: 'seen',
-        created_at: new Date(Date.now() - 3600000).toISOString(), sender_name: chatPartner.name, type: 'text'
-      },
-      {
-        id: 2, text: 'Yes, I am! What time should we meet?',
-        sender_id: 999, from_me: true, status: 'sent',
-        created_at: new Date(Date.now() - 3000000).toISOString(), sender_name: 'You', type: 'text'
-      },
-      {
-        id: 3, text: 'Let\'s meet at 8 AM at the pickup point.',
-        sender_id: 101, from_me: false, status: 'seen',
-        created_at: new Date(Date.now() - 2400000).toISOString(), sender_name: chatPartner.name, type: 'text'
-      },
-      {
-        id: 4, text: 'Perfect! See you then.',
-        sender_id: 999, from_me: true, status: 'sent',
-        created_at: new Date(Date.now() - 1800000).toISOString(), sender_name: 'You', type: 'text'
-      },
-    ];
-    setMessages(mockMessages);
-  };
-
   const connectSocket = () => {
     socketRef.current = io(API_BASE_URL, {
       transports: ['websocket'],
