@@ -3,7 +3,6 @@ import { API_BASE_URL } from '../config/config_ip';
 
 /**
  * Backend confirmation result that mimics Firebase's confirmation result.
- * Used when native Firebase auth is unavailable (e.g., Expo Go).
  */
 class BackendConfirmationResult {
   constructor(phoneNumber, otpCode) {
@@ -12,6 +11,7 @@ class BackendConfirmationResult {
     this.verificationId = 'backend-fallback';
     this.isBackendFallback = true;
   }
+
 
   async confirm(otpCode) {
     if (otpCode !== this.otpCode) {
@@ -42,17 +42,11 @@ class FirebaseAuthService {
     if (this._authInstance) return this._authInstance;
     if (Platform.OS === 'web') return null;
 
-    try {
-      const firebaseAuth = require('@react-native-firebase/auth');
-      const { getAuth } = firebaseAuth;
-      this._authInstance = getAuth();
-      console.log('✅ FirebaseAuthService: Native Firebase Auth ready');
-      return this._authInstance;
-    } catch (e) {
-      console.log('⚠️ FirebaseAuthService: @react-native-firebase/auth load failed:', e.message);
-      return null;
-    }
+    // Expo Go does not support RNFirebase native modules.
+    // Always return null on iOS/Android so we never load @react-native-firebase/auth.
+    return null;
   }
+
 
   /**
    * Send OTP via Firebase Phone Auth (client-side).

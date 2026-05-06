@@ -20,15 +20,14 @@ export default function SplashScreen({ navigation, onFinish }) {
 
     const timer = setTimeout(() => {
       console.log('🕒 Splash timer complete. Auth state:', { loading, isAuthenticated });
-      
-      // Smart navigation based on session
+
+      // Avoid any auth-library side effects during splash.
       console.log('🕒 Splash → LoginScreen (guest/login flow)');
       navigation.replace('Login');
-      
-      if (onFinish) {
-        onFinish();
-      }
+
+      if (onFinish) onFinish();
     }, 2000); // Reduced to 2s for faster validation
+
 
     return () => clearTimeout(timer);
   }, [navigation, onFinish, fadeAnim, loading, isAuthenticated]);

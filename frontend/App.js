@@ -81,27 +81,16 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    // Listen to authentication state changes
-    const unsubscribe = FirebaseAuthService.onAuthStateChanged((user) => {
-      console.log('Auth state changed:', user ? 'User logged in' : 'User logged out');
-      setUser(user);
-      
-      // Add iOS-specific delay to prevent timing issues
-      if (Platform.OS === 'ios') {
-        setTimeout(() => setIsLoading(false), 200);
-      } else {
-        setIsLoading(false);
-      }
-    });
+    // Expo Go + RNFirebase native modules can be unavailable.
+    // Do not block app UI on Firebase auth state in App.js.
+    // Let AuthProvider restore session independently.
+    setIsLoading(false);
 
-    // Cleanup subscription on unmount
     return () => {
-      if (unsubscribe && typeof unsubscribe === 'function') {
-        unsubscribe();
-      }
       FirebaseAuthService.cleanup();
     };
   }, []);
+
 
   // Show loading screen while fonts or auth state is loading
   if (!fontsLoaded || isLoading) {
