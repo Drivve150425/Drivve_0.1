@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, Text, Enum, Date, JSON,Float, UniqueConstraint
+from sqlalchemy import BigInteger, Column, Integer, String, DateTime, Boolean, Text, Enum, Date, JSON,Float, UniqueConstraint
 from sqlalchemy.sql import func
 from database import Base
 import enum
@@ -745,3 +745,33 @@ class ChatMessage(Base):
     status = Column(String(20), default="sent") # sent | delivered | seen
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class DBList(Base):
+    __tablename__ = "db_list"
+
+    id = Column(BigInteger, primary_key=True, index=True)
+
+    body_type = Column(String)
+    sub_category = Column(String)
+    make_company_name = Column(String)
+    model_name = Column(String)
+
+    claimed_mileage_petrol = Column(String)
+    claimed_mileage_cng = Column(String)
+    claimed_mileage_lpg = Column(String)
+    claimed_mileage_diesel = Column(String)
+    claimed_range_ev = Column(String)
+    claimed_mileage_hybrid = Column(String)
+
+    actual_mileage_petrol = Column(String)
+    actual_mileage_cng = Column(String)
+    actual_mileage_lpg = Column(String)
+    actual_mileage_diesel = Column(String)
+    actual_range_ev = Column(String)
+    actual_mileage_hybrid = Column(String)
+
+    fuel_type = Column(String)
+
+    seating_capacity = Column(BigInteger)
+
+    created_at = Column(DateTime)

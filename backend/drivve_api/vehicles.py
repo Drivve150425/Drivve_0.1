@@ -11,7 +11,7 @@ from fastapi import Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 from database import get_db
 from fastapi import APIRouter
-
+from models import  DBList
 router = APIRouter()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -280,3 +280,38 @@ def delete_vehicle(vehicle_id: int, db: Session = Depends(get_db)):
     db.delete(vehicle)
     db.commit()
     return {"success": True}
+# ===================== DB LIST GET =====================
+@router.get("/api/v1/db-list")
+def get_db_list(
+    body_type: Optional[str] = None,
+    fuel_type: Optional[str] = None,
+    make_company_name: Optional[str] = None,
+    model_name: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    query = db.query(DBList)
+
+    # Filters
+    if body_type:
+        query = query.filter(DBList.body_type.ilike(f"%{body_type}%"))
+
+    if fuel_type:
+        query = query.filter(DBList.fuel_type.ilike(f"%{fuel_type}%"))
+
+    if make_company_name:
+        query = query.filter(
+            DBList.make_company_name.ilike(f"%{make_company_name}%")
+        )
+
+    if model_name:
+        query = query.filter(
+            DBList.model_name.ilike(f"%{model_name}%")
+        )
+
+    data = query.order_by(DBList.id.desc()).all()
+
+    return {
+        "success": True,
+        "count": len(data),
+        "data": jsonable_encoder(data)
+    }
