@@ -750,6 +750,7 @@ class DBList(Base):
     __tablename__ = "db_list"
 
     id = Column(BigInteger, primary_key=True, index=True)
+    vehicle_type = Column(String)
 
     body_type = Column(String)
     sub_category = Column(String)
