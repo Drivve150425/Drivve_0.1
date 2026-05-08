@@ -773,6 +773,6 @@ class DBList(Base):
 
     fuel_type = Column(String)
 
-    seating_capacity = Column(BigInteger)
+    seating_capacity = Column(String)
 
     created_at = Column(DateTime)
