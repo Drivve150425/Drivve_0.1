@@ -340,7 +340,7 @@ class RideReward(Base):
 class FAQ(Base):
     __tablename__ = "faqs"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True, index=True,autoincrement=True)
     category = Column(String(50), nullable=False)
     question = Column(String(255), nullable=False)
     answer = Column(Text, nullable=False)
