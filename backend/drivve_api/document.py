@@ -791,18 +791,15 @@ async def search_documents(
 
 @router.get("/api/v1/admin/documents/all")
 async def get_all_documents(
-    status: str = Query("all", description="all, pending, approved, rejected, deleted, expired"),
+    status: str = Query("all"),
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
     userId: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
     db: Session = Depends(get_db)
 ):
-    """Get all documents with filtering for admin panel"""
     try:
         offset = (page - 1) * limit
-        
-        # Build base query
         query = db.query(DocumentVerification)
         
         # Apply status filters
@@ -815,18 +812,18 @@ async def get_all_documents(
         elif status == "deleted":
             query = query.filter(DocumentVerification.is_deleted == True)
         elif status == "expired":
+            # 🔧 FIX: Convert to date for comparison
+            today = datetime.now(timezone.utc).date()
             query = query.filter(
-                DocumentVerification.expiry_date < datetime.now(timezone.utc),
+                DocumentVerification.expiry_date < today,
                 DocumentVerification.is_deleted == False
             )
         else:  # all
             query = query.filter(DocumentVerification.is_deleted == False)
         
-        # 🔧 SIMPLE FIX: Direct string comparison for user_id
+        # Filter by user_id (string)
         if userId and userId != "all" and userId != "null" and userId.strip():
-            # userId is already the string user_id like "D-SV2310"
             query = query.filter(DocumentVerification.user_id == userId)
-            print(f"✅ Filtering by user_id: {userId}")
         
         # Search functionality
         if search:
@@ -849,10 +846,11 @@ async def get_all_documents(
         for doc in documents:
             user = db.query(User).filter(User.user_id == doc.user_id).first()
             
-            # Check if expired
+            # 🔧 FIX: Check expired using date comparison
             is_expired = False
             if doc.expiry_date:
-                is_expired = doc.expiry_date < datetime.now(timezone.utc)
+                today = datetime.now(timezone.utc).date()
+                is_expired = doc.expiry_date < today
             
             documents_data.append({
                 "id": doc.id,
@@ -967,24 +965,24 @@ async def permanent_delete_document(
 
 
 # ================= ADMIN - GET DOCUMENT STATISTICS =================
-
 @router.get("/api/v1/admin/documents/stats")
 async def get_document_stats(
-    time_range: str = Query("all", description="all, today, week, month"),
+    time_range: str = Query("all"),
     db: Session = Depends(get_db)
 ):
-    """Get document statistics for admin dashboard"""
     try:
-        now = datetime.now(timezone.utc)
+        # 🔧 FIX: Use date() for comparison
+        today = datetime.now(timezone.utc).date()
         
-        # Base queries
         total = db.query(DocumentVerification).filter(DocumentVerification.is_deleted == False).count()
         pending = db.query(DocumentVerification).filter(DocumentVerification.status == "pending", DocumentVerification.is_deleted == False).count()
         approved = db.query(DocumentVerification).filter(DocumentVerification.status == "approved", DocumentVerification.is_deleted == False).count()
         rejected = db.query(DocumentVerification).filter(DocumentVerification.status == "rejected", DocumentVerification.is_deleted == False).count()
         deleted = db.query(DocumentVerification).filter(DocumentVerification.is_deleted == True).count()
+        
+        # 🔧 FIX: Compare date with date
         expired = db.query(DocumentVerification).filter(
-            DocumentVerification.expiry_date < now,
+            DocumentVerification.expiry_date < today,
             DocumentVerification.is_deleted == False
         ).count()
         
@@ -1000,4 +998,5 @@ async def get_document_stats(
             }
         }
     except Exception as e:
-        raise HTTPException(500, str(e))
+        print(f"❌ Error: {str(e)}")
+        return {"success": False, "message": str(e), "stats": {}}
