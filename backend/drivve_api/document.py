@@ -2,14 +2,15 @@ from datetime import date, datetime, timezone
 import os
 from typing import Optional
 import uuid
+from xml.dom.minidom import Document
 
 from pydantic import BaseModel
-from sqlalchemy import desc
+from sqlalchemy import desc, or_
 from drivve_api.createnotification import create_notification
 from models import  DocumentStatus, DocumentType, DocumentVerification, NotificationType, User, UserNotification, VerificationLog
 from database import get_db
 from sqlalchemy.orm import Session
-from fastapi import Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import Depends, File, Form, HTTPException, Query, Request, UploadFile
 
 from fastapi import APIRouter
 
@@ -787,3 +788,213 @@ async def search_documents(
             status_code=500,
             detail=f"Failed to search documents: {str(e)}"
         )
+
+@router.get("/api/v1/admin/documents/all")
+async def get_all_documents(
+    status: str = Query("all", description="all, pending, approved, rejected, deleted, expired"),
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    userId: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+    db: Session = Depends(get_db)
+):
+    """Get all documents with filtering for admin panel"""
+    try:
+        offset = (page - 1) * limit
+        
+        # Build base query
+        query = db.query(DocumentVerification)
+        
+        # Apply status filters
+        if status == "pending":
+            query = query.filter(DocumentVerification.status == "pending", DocumentVerification.is_deleted == False)
+        elif status == "approved":
+            query = query.filter(DocumentVerification.status == "approved", DocumentVerification.is_deleted == False)
+        elif status == "rejected":
+            query = query.filter(DocumentVerification.status == "rejected", DocumentVerification.is_deleted == False)
+        elif status == "deleted":
+            query = query.filter(DocumentVerification.is_deleted == True)
+        elif status == "expired":
+            query = query.filter(
+                DocumentVerification.expiry_date < datetime.now(timezone.utc),
+                DocumentVerification.is_deleted == False
+            )
+        else:  # all
+            query = query.filter(DocumentVerification.is_deleted == False)
+        
+        # Filter by user
+        if userId and userId != "all":
+            query = query.filter(DocumentVerification.user_id == int(userId))
+        
+        # Search functionality
+        if search:
+            query = query.join(User).filter(
+                or_(
+                    User.full_name.ilike(f"%{search}%"),
+                    User.phone_number.ilike(f"%{search}%"),
+                    DocumentVerification.document_number.ilike(f"%{search}%")
+                )
+            )
+        
+        # Get total count
+        total_count = query.count()
+        total_pages = (total_count + limit - 1) // limit if total_count > 0 else 1
+        
+        # Get paginated results
+        documents = query.order_by(desc(DocumentVerification.submitted_at)).offset(offset).limit(limit).all()
+        
+        documents_data = []
+        for doc in documents:
+            user = db.query(User).filter(User.id == doc.user_id).first()
+            
+            # Check if expired
+            is_expired = False
+            if doc.expiry_date:
+                is_expired = doc.expiry_date < datetime.now(timezone.utc)
+            
+            documents_data.append({
+                "id": doc.id,
+                "document_type": doc.document_type,
+                "document_number": doc.document_number,
+                "document_name": doc.document_name,
+                "status": doc.status,
+                "rejection_reason": doc.rejection_reason,
+                "user_id": doc.user_id,
+                "user_name": user.full_name if user else "Unknown",
+                "phone_number": user.phone_number if user else "N/A",
+                "front_image_url": doc.front_image_url,
+                "back_image_url": doc.back_image_url,
+                "selfie_image_url": doc.selfie_image_url,
+                "issue_date": doc.issue_date.isoformat() if doc.issue_date else None,
+                "expiry_date": doc.expiry_date.isoformat() if doc.expiry_date else None,
+                "submitted_at": doc.submitted_at.isoformat() if doc.submitted_at else None,
+                "is_expired": is_expired,
+                "is_deleted": doc.is_deleted
+            })
+        
+        return {
+            "success": True,
+            "documents": documents_data,
+            "pagination": {
+                "page": page,
+                "limit": limit,
+                "total": total_count,
+                "pages": total_pages
+            }
+        }
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+# ================= ADMIN - UPDATE DOCUMENT STATUS =================
+
+class DocumentStatusUpdate(BaseModel):
+    document_id: int
+    status: str
+    rejection_reason: Optional[str] = ""
+    admin_username: str
+
+@router.post("/api/v1/admin/documents/update-status")
+async def update_document_status(
+    request: DocumentStatusUpdate,
+    db: Session = Depends(get_db)
+):
+    """Update document status (approve/reject/restore/soft-delete)"""
+    try:
+        document = db.query(DocumentVerification).filter(DocumentVerification.id == request.document_id).first()
+        
+        if not document:
+            raise HTTPException(404, "Document not found")
+        
+        # Update based on status
+        if request.status == "approved":
+            document.status = "approved"
+            document.rejection_reason = None
+            document.is_deleted = False
+        elif request.status == "rejected":
+            document.status = "rejected"
+            document.rejection_reason = request.rejection_reason
+            document.is_deleted = False
+        elif request.status == "deleted":
+            document.is_deleted = True
+            document.status = "deleted"
+        elif request.status == "pending":
+            document.is_deleted = False
+            document.status = "pending"
+        
+        document.updated_at = datetime.now(timezone.utc)
+        db.commit()
+        
+        return {
+            "success": True,
+            "message": f"Document {request.status} successfully"
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, str(e))
+
+
+# ================= ADMIN - PERMANENT DELETE =================
+
+class PermanentDeleteRequest(BaseModel):
+    document_id: int
+
+@router.delete("/api/v1/admin/documents/permanent-delete")
+async def permanent_delete_document(
+    request: PermanentDeleteRequest,
+    db: Session = Depends(get_db)
+):
+    """Permanently delete document from database"""
+    try:
+        document = db.query(Document).filter(Document.id == request.document_id).first()
+        
+        if not document:
+            raise HTTPException(404, "Document not found")
+        
+        db.delete(document)
+        db.commit()
+        
+        return {
+            "success": True,
+            "message": "Document permanently deleted"
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, str(e))
+
+
+# ================= ADMIN - GET DOCUMENT STATISTICS =================
+
+@router.get("/api/v1/admin/documents/stats")
+async def get_document_stats(
+    time_range: str = Query("all", description="all, today, week, month"),
+    db: Session = Depends(get_db)
+):
+    """Get document statistics for admin dashboard"""
+    try:
+        now = datetime.now(timezone.utc)
+        
+        # Base queries
+        total = db.query(DocumentVerification).filter(DocumentVerification.is_deleted == False).count()
+        pending = db.query(DocumentVerification).filter(DocumentVerification.status == "pending", DocumentVerification.is_deleted == False).count()
+        approved = db.query(DocumentVerification).filter(DocumentVerification.status == "approved", DocumentVerification.is_deleted == False).count()
+        rejected = db.query(DocumentVerification).filter(DocumentVerification.status == "rejected", DocumentVerification.is_deleted == False).count()
+        deleted = db.query(DocumentVerification).filter(DocumentVerification.is_deleted == True).count()
+        expired = db.query(DocumentVerification).filter(
+            DocumentVerification.expiry_date < now,
+            DocumentVerification.is_deleted == False
+        ).count()
+        
+        return {
+            "success": True,
+            "stats": {
+                "total": total,
+                "pending": pending,
+                "approved": approved,
+                "rejected": rejected,
+                "deleted": deleted,
+                "expired": expired
+            }
+        }
+    except Exception as e:
+        raise HTTPException(500, str(e))
