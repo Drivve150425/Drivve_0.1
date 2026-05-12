@@ -791,7 +791,7 @@ async def search_documents(
 
 @router.get("/api/v1/admin/documents/all")
 async def get_all_documents(
-    status: str = Query("all", description="all, pending, approved, rejected, deleted, expired"),
+    status: str = Query("all"),
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
     userId: Optional[str] = Query(None),
@@ -805,7 +805,7 @@ async def get_all_documents(
         # Build base query
         query = db.query(DocumentVerification)
         
-        # Apply status filters
+        # Apply status filters (keep your existing code)
         if status == "pending":
             query = query.filter(DocumentVerification.status == "pending", DocumentVerification.is_deleted == False)
         elif status == "approved":
@@ -822,16 +822,27 @@ async def get_all_documents(
         else:  # all
             query = query.filter(DocumentVerification.is_deleted == False)
         
-        # 🔧 FIX: Convert userId to integer if it's a valid number
+        # 🔧 FIX: Handle both integer ID and string user_id
         if userId and userId != "all" and userId != "null":
+            # Try as integer ID first
             try:
-                user_id_int = int(userId)  # Convert string to integer
+                user_id_int = int(userId)
                 query = query.filter(DocumentVerification.user_id == user_id_int)
             except ValueError:
-                # If userId is not a number (like 'D-SV2310'), ignore the filter
-                print(f"Invalid userId format: {userId}, ignoring filter")
+                # If not an integer, treat as user_id string field
+                # First find the user by their user_id
+                user = db.query(User).filter(User.user_id == userId).first()
+                if user:
+                    query = query.filter(DocumentVerification.user_id == user.id)
+                else:
+                    # Invalid user_id, return empty results
+                    return {
+                        "success": True,
+                        "documents": [],
+                        "pagination": {"page": page, "limit": limit, "total": 0, "pages": 0}
+                    }
         
-        # Search functionality
+        # Search functionality (keep your existing code)
         if search:
             query = query.join(User).filter(
                 or_(
@@ -852,7 +863,6 @@ async def get_all_documents(
         for doc in documents:
             user = db.query(User).filter(User.id == doc.user_id).first()
             
-            # Check if expired
             is_expired = False
             if doc.expiry_date:
                 is_expired = doc.expiry_date < datetime.now(timezone.utc)
@@ -888,7 +898,7 @@ async def get_all_documents(
             }
         }
     except Exception as e:
-        print(f"Error: {str(e)}")
+        print(f"Error in get_all_documents: {str(e)}")
         raise HTTPException(500, str(e))
 
 
