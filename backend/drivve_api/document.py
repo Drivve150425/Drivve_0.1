@@ -946,7 +946,7 @@ async def permanent_delete_document(
 ):
     """Permanently delete document from database"""
     try:
-        document = db.query(Document).filter(Document.id == request.document_id).first()
+        document = db.query(DocumentVerification).filter(DocumentVerification.id == request.document_id).first()
         
         if not document:
             raise HTTPException(404, "Document not found")
