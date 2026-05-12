@@ -218,7 +218,6 @@ async def create_user_profile(profile_data: dict, db: Session = Depends(get_db))
     
     
 # ================= ADMIN - GET ALL USERS =================
-
 @router.get("/api/v1/admin/users/list")
 async def get_all_users(db: Session = Depends(get_db)):
     """Get all users for admin filter dropdown"""
@@ -231,11 +230,10 @@ async def get_all_users(db: Session = Depends(get_db)):
         users_data = []
         for user in users:
             users_data.append({
-                "id": user.id,
+                "user_id": user.user_id,  # Only send the string user_id
                 "name": user.full_name or f"{user.first_name} {user.last_name or ''}".strip(),
                 "phone": user.phone_number,
-                "email": user.email or "",
-                "user_id": user.user_id
+                "email": user.email or ""
             })
         
         return {
@@ -243,7 +241,5 @@ async def get_all_users(db: Session = Depends(get_db)):
             "users": users_data
         }
     except Exception as e:
+        print(f"❌ Error: {str(e)}")
         raise HTTPException(500, str(e))
-
-
-# ================= ADMIN - GET ALL DOCUMENTS WITH FILTERS =================
