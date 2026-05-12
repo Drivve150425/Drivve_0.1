@@ -822,9 +822,14 @@ async def get_all_documents(
         else:  # all
             query = query.filter(DocumentVerification.is_deleted == False)
         
-        # Filter by user
-        if userId and userId != "all":
-            query = query.filter(DocumentVerification.user_id == int(userId))
+        # 🔧 FIX: Convert userId to integer if it's a valid number
+        if userId and userId != "all" and userId != "null":
+            try:
+                user_id_int = int(userId)  # Convert string to integer
+                query = query.filter(DocumentVerification.user_id == user_id_int)
+            except ValueError:
+                # If userId is not a number (like 'D-SV2310'), ignore the filter
+                print(f"Invalid userId format: {userId}, ignoring filter")
         
         # Search functionality
         if search:
@@ -883,6 +888,7 @@ async def get_all_documents(
             }
         }
     except Exception as e:
+        print(f"Error: {str(e)}")
         raise HTTPException(500, str(e))
 
 
