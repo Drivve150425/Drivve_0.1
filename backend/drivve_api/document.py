@@ -788,31 +788,48 @@ async def search_documents(
             status_code=500,
             detail=f"Failed to search documents: {str(e)}"
         )
+# ================= ADMIN - GET ALL USERS =================
+
+
+
+# ================= ADMIN - GET ALL DOCUMENTS =================
 
 @router.get("/api/v1/admin/documents/all")
 async def get_all_documents(
-    status: str = Query("all"),
+    status: str = Query("all", description="all, pending, approved, rejected, deleted, expired"),
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
     userId: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
     db: Session = Depends(get_db)
 ):
+    """Get all documents with filtering for admin panel"""
     try:
         offset = (page - 1) * limit
+        
+        # Build base query
         query = db.query(DocumentVerification)
         
-        # Apply status filters
+        # Apply status filters based on your schema
         if status == "pending":
-            query = query.filter(DocumentVerification.status == "pending", DocumentVerification.is_deleted == False)
+            query = query.filter(
+                DocumentVerification.status == "pending",
+                DocumentVerification.is_deleted == False
+            )
         elif status == "approved":
-            query = query.filter(DocumentVerification.status == "approved", DocumentVerification.is_deleted == False)
+            query = query.filter(
+                DocumentVerification.status == "approved",
+                DocumentVerification.is_deleted == False
+            )
         elif status == "rejected":
-            query = query.filter(DocumentVerification.status == "rejected", DocumentVerification.is_deleted == False)
+            query = query.filter(
+                DocumentVerification.status == "rejected",
+                DocumentVerification.is_deleted == False
+            )
         elif status == "deleted":
             query = query.filter(DocumentVerification.is_deleted == True)
         elif status == "expired":
-            # 🔧 FIX: Convert to date for comparison
+            # expiry_date is DATE type, so use date() comparison
             today = datetime.now(timezone.utc).date()
             query = query.filter(
                 DocumentVerification.expiry_date < today,
@@ -821,12 +838,13 @@ async def get_all_documents(
         else:  # all
             query = query.filter(DocumentVerification.is_deleted == False)
         
-        # Filter by user_id (string)
+        # Filter by user_id (string/VARCHAR)
         if userId and userId != "all" and userId != "null" and userId.strip():
             query = query.filter(DocumentVerification.user_id == userId)
         
-        # Search functionality
+        # Search functionality - search by user name, phone, or document number
         if search:
+            # Join with User table using user_id (string)
             query = query.join(User, User.user_id == DocumentVerification.user_id).filter(
                 or_(
                     User.full_name.ilike(f"%{search}%"),
@@ -844,9 +862,10 @@ async def get_all_documents(
         
         documents_data = []
         for doc in documents:
+            # Get user by user_id (string)
             user = db.query(User).filter(User.user_id == doc.user_id).first()
             
-            # 🔧 FIX: Check expired using date comparison
+            # Check if expired using date comparison
             is_expired = False
             if doc.expiry_date:
                 today = datetime.now(timezone.utc).date()
@@ -854,17 +873,17 @@ async def get_all_documents(
             
             documents_data.append({
                 "id": doc.id,
-                "document_type": doc.document_type,
+                "document_type": doc.document_type.value if hasattr(doc.document_type, 'value') else str(doc.document_type),
                 "document_number": doc.document_number,
                 "document_name": doc.document_name,
-                "status": doc.status,
+                "status": doc.status.value if hasattr(doc.status, 'value') else str(doc.status),
                 "rejection_reason": doc.rejection_reason,
                 "user_id": doc.user_id,
                 "user_name": user.full_name if user else "Unknown",
-                "phone_number": user.phone_number if user else "N/A",
-                "front_image_url": doc.front_image_url,
-                "back_image_url": doc.back_image_url,
-                "selfie_image_url": doc.selfie_image_url,
+                "phone_number": user.phone_number if user else doc.phone_number,
+                "front_image_url": doc.front_image_path,
+                "back_image_url": doc.back_image_path,
+                "selfie_image_url": doc.selfie_image_path,
                 "issue_date": doc.issue_date.isoformat() if doc.issue_date else None,
                 "expiry_date": doc.expiry_date.isoformat() if doc.expiry_date else None,
                 "submitted_at": doc.submitted_at.isoformat() if doc.submitted_at else None,
@@ -883,7 +902,7 @@ async def get_all_documents(
             }
         }
     except Exception as e:
-        print(f"❌ Error: {str(e)}")
+        print(f"❌ Error in get_all_documents: {str(e)}")
         raise HTTPException(500, str(e))
 
 
@@ -912,10 +931,14 @@ async def update_document_status(
             document.status = "approved"
             document.rejection_reason = None
             document.is_deleted = False
+            document.verified_by = request.admin_username
+            document.verified_at = datetime.now(timezone.utc)
         elif request.status == "rejected":
             document.status = "rejected"
             document.rejection_reason = request.rejection_reason
             document.is_deleted = False
+            document.verified_by = request.admin_username
+            document.verified_at = datetime.now(timezone.utc)
         elif request.status == "deleted":
             document.is_deleted = True
             document.status = "deleted"
@@ -965,22 +988,33 @@ async def permanent_delete_document(
 
 
 # ================= ADMIN - GET DOCUMENT STATISTICS =================
+
 @router.get("/api/v1/admin/documents/stats")
 async def get_document_stats(
-    time_range: str = Query("all"),
+    time_range: str = Query("all", description="all, today, week, month"),
     db: Session = Depends(get_db)
 ):
+    """Get document statistics for admin dashboard"""
     try:
-        # 🔧 FIX: Use date() for comparison
         today = datetime.now(timezone.utc).date()
         
+        # Base queries matching your schema
         total = db.query(DocumentVerification).filter(DocumentVerification.is_deleted == False).count()
-        pending = db.query(DocumentVerification).filter(DocumentVerification.status == "pending", DocumentVerification.is_deleted == False).count()
-        approved = db.query(DocumentVerification).filter(DocumentVerification.status == "approved", DocumentVerification.is_deleted == False).count()
-        rejected = db.query(DocumentVerification).filter(DocumentVerification.status == "rejected", DocumentVerification.is_deleted == False).count()
+        pending = db.query(DocumentVerification).filter(
+            DocumentVerification.status == "pending", 
+            DocumentVerification.is_deleted == False
+        ).count()
+        approved = db.query(DocumentVerification).filter(
+            DocumentVerification.status == "approved", 
+            DocumentVerification.is_deleted == False
+        ).count()
+        rejected = db.query(DocumentVerification).filter(
+            DocumentVerification.status == "rejected", 
+            DocumentVerification.is_deleted == False
+        ).count()
         deleted = db.query(DocumentVerification).filter(DocumentVerification.is_deleted == True).count()
         
-        # 🔧 FIX: Compare date with date
+        # Count expired documents (expiry_date < today)
         expired = db.query(DocumentVerification).filter(
             DocumentVerification.expiry_date < today,
             DocumentVerification.is_deleted == False
@@ -998,5 +1032,5 @@ async def get_document_stats(
             }
         }
     except Exception as e:
-        print(f"❌ Error: {str(e)}")
+        print(f"❌ Error in get_document_stats: {str(e)}")
         return {"success": False, "message": str(e), "stats": {}}
