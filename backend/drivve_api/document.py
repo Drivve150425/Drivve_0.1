@@ -813,17 +813,17 @@ async def get_all_documents(
         # Apply status filters based on your schema
         if status == "pending":
             query = query.filter(
-                DocumentVerification.status == "pending",
+                DocumentVerification.status == "PENDING",
                 DocumentVerification.is_deleted == False
             )
         elif status == "approved":
             query = query.filter(
-                DocumentVerification.status == "approved",
+                DocumentVerification.status == "APPROVED",
                 DocumentVerification.is_deleted == False
             )
         elif status == "rejected":
             query = query.filter(
-                DocumentVerification.status == "rejected",
+                DocumentVerification.status == "REJECTED",
                 DocumentVerification.is_deleted == False
             )
         elif status == "deleted":
@@ -928,23 +928,23 @@ async def update_document_status(
         
         # Update based on status
         if request.status == "approved":
-            document.status = "approved"
+            document.status = "APPROVED"
             document.rejection_reason = None
             document.is_deleted = False
             document.verified_by = request.admin_username
             document.verified_at = datetime.now(timezone.utc)
         elif request.status == "rejected":
-            document.status = "rejected"
+            document.status = "REJECTED"
             document.rejection_reason = request.rejection_reason
             document.is_deleted = False
             document.verified_by = request.admin_username
             document.verified_at = datetime.now(timezone.utc)
         elif request.status == "deleted":
             document.is_deleted = True
-            document.status = "deleted"
+            document.status = "DELETED"
         elif request.status == "pending":
             document.is_deleted = False
-            document.status = "pending"
+            document.status = "PENDING"
         
         document.updated_at = datetime.now(timezone.utc)
         db.commit()
@@ -1001,15 +1001,15 @@ async def get_document_stats(
         # Base queries matching your schema
         total = db.query(DocumentVerification).filter(DocumentVerification.is_deleted == False).count()
         pending = db.query(DocumentVerification).filter(
-            DocumentVerification.status == "pending", 
+            DocumentVerification.status == "PENDING", 
             DocumentVerification.is_deleted == False
         ).count()
         approved = db.query(DocumentVerification).filter(
-            DocumentVerification.status == "approved", 
+            DocumentVerification.status == "APPROVED", 
             DocumentVerification.is_deleted == False
         ).count()
         rejected = db.query(DocumentVerification).filter(
-            DocumentVerification.status == "rejected", 
+            DocumentVerification.status == "REJECTED", 
             DocumentVerification.is_deleted == False
         ).count()
         deleted = db.query(DocumentVerification).filter(DocumentVerification.is_deleted == True).count()
