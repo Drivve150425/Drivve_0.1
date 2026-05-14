@@ -20,70 +20,35 @@ import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
 import { Colors, Typography } from "../constants/Colors";
 import DatabaseService from "../services/addvehicle_ds";
+import myvehcileDatabaseService from "../services/myvehicle_ds";
+
 import { useAuth } from "../context/AuthContext";
 import CustomAlert from '../components/CustomAlert';
 import LottieView from "lottie-react-native";
 
 /* ================= DATA ================= */
-const VEHICLE_TYPES = ["Car", "Bike"];
-const BODY_TYPES: Record<string, string[]> = {
-  Car: ["Hatchback", "Sedan", "SUV", "Coupe", "Convertible", "MUV", "Wagon"],
-  Bike: ["Sports", "Cruiser", "Commuter", "Scooter", "Dirt Bike", "Touring"],
-};
-const FUEL_TYPES = ["Petrol", "Diesel", "CNG", "Electric", "Hybrid"];
 
-const VEHICLE_MASTER: Record<string, Record<string, string[]>> = {
-  Car: {
-    Toyota: ["Camry", "Corolla", "Innova", "Fortuner", "Land Cruiser"],
-    Honda: ["City", "Amaze", "Civic", "CR-V", "Accord"],
-    Hyundai: ["i10", "i20", "Creta", "Verna", "Tucson", "Venue"],
-    Tata: ["Nexon", "Punch", "Harrier", "Safari", "Tiago", "Altroz"],
-    Maruti: ["Swift", "Dzire", "Baleno", "Vitara Brezza", "Ertiga"],
-    Mahindra: ["XUV700", "Thar", "Scorpio", "XUV300"],
-    Kia: ["Seltos", "Sonet", "Carnival"],
-    Ford: ["EcoSport", "Endeavour", "Figo", "Aspire"],
-    Volkswagen: ["Polo", "Vento", "Tiguan"],
-    BMW: ["3 Series", "5 Series", "X1", "X3"],
-    Mercedes: ["C-Class", "E-Class", "GLC", "GLE"],
-    Audi: ["A4", "A6", "Q3", "Q5"],
-  },
-  Bike: {
-    Hero: ["Splendor", "Passion", "Glamour", "Xtreme"],
-    Honda: ["Unicorn", "Shine", "CBR", "Activa"],
-    Bajaj: ["Pulsar", "Discover", "Avenger", "Dominar"],
-    TVS: ["Apache", "Jupiter", "Ntorq", "Radeon"],
-    RoyalEnfield: ["Bullet", "Classic", "Himalayan", "Meteor"],
-    Yamaha: ["FZ", "R15", "MT-15", "Fascino"],
-    Suzuki: ["Access", "Gixxer", "Burgman"],
-    KTM: ["Duke", "RC"],
-    Kawasaki: ["Ninja", "Z900"],
-  },
-};
-
-const SEATS_MAP: Record<string, string> = {
-  Hatchback: "5",
-  Sedan: "5",
-  SUV: "7",
-  Coupe: "4",
-  Convertible: "4",
-  MUV: "8",
-  Wagon: "5",
-  Sports: "2",
-  Cruiser: "2",
-  Commuter: "2",
-  Scooter: "2",
-  "Dirt Bike": "2",
-  Touring: "2",
-};
-
-type ModalType = "vehicle" | "body" | "fuel" | "make" | "model" | null;
-import { API_BASE_URL } from "../config/config_ip";
+type ModalType =
+  | "vehicle"
+  | "body"
+  | "fuel"
+  | "make"
+  | "model"
+  | "seats"
+  | null;
+  import { API_BASE_URL } from "../config/config_ip";
 
 export default function AddNewVehicleScreen({ navigation, route }) {
   const { user } = useAuth();
   const phoneNumber = user?.phone_number;
   const editingVehicle = route?.params?.vehicle || null;
   const isEdit = !!editingVehicle;
+  const [vehicleTypes, setVehicleTypes] = useState<string[]>([]);
+  const [bodyTypes, setBodyTypes] = useState<string[]>([]);
+  const [fuelTypes, setFuelTypes] = useState<string[]>([]);
+  const [makeOptions, setMakeOptions] = useState<string[]>([]);
+  const [modelOptions, setModelOptions] = useState<string[]>([]);
+  const [dbListData, setDbListData] = useState<any[]>([]);
 
   /* ================= STATE ================= */
   const [vehicleType, setVehicleType] = useState("");
@@ -95,6 +60,7 @@ export default function AddNewVehicleScreen({ navigation, route }) {
   const [registration, setRegistration] = useState("");
   const [color, setColor] = useState("");
   const [maxSeats, setMaxSeats] = useState("");
+  const [seatOptions, setSeatOptions] = useState<string[]>([]);
   const [notes, setNotes] = useState("");
   const [photos, setPhotos] = useState<string[]>([]);
   const [activeModal, setActiveModal] = useState<ModalType>(null);
@@ -116,7 +82,78 @@ export default function AddNewVehicleScreen({ navigation, route }) {
     iconColor: "#10B981",
     buttons: []
   });
+  useEffect(() => {
+  loadDropdowns();
+}, []);
 
+const loadDropdowns = async () => {
+  try {
+    const result = await myvehcileDatabaseService.getDbList({
+      limit: 5000,
+    });
+
+    const data = result?.data || [];
+
+    setDbListData(data);
+
+    // Vehicle Types
+    const vehicleTypeSet = new Set<string>();
+
+    data.forEach((item: any) => {
+      if (item.vehicle_type) {
+        vehicleTypeSet.add(item.vehicle_type);
+      }
+    });
+
+    setVehicleTypes(Array.from(vehicleTypeSet));
+
+    // // Fuel Types
+    // const fuelSet = new Set<string>();
+
+    // data.forEach((item: any) => {
+    //   if (item.fuel_type) {
+    //     fuelSet.add(item.fuel_type);
+    //   }
+    // });
+
+    // setFuelTypes(Array.from(fuelSet));
+
+  } catch (e) {
+    console.log("Dropdown Load Error", e);
+  }
+};
+const getFuelTypes = () => {
+  if (!vehicleType || !make || !model) return [];
+
+  const filtered = dbListData.filter(
+    (item: any) =>
+      item.vehicle_type === vehicleType &&
+      item.make_company_name === make &&
+      item.model_name === model
+  );
+
+  const fuelSet = new Set<string>();
+
+  filtered.forEach((item: any) => {
+    if (!item.fuel_type) return;
+
+    // Split fuel types
+    const fuels = item.fuel_type
+      .split(/[\/,+]/) // split by / , +
+      .map((f: string) =>
+        f
+          .replace(/\(.*?\)/g, "") // remove brackets text
+          .trim()
+      )
+      .filter(Boolean);
+
+    fuels.forEach((fuel: string) => {
+      fuelSet.add(fuel);
+    });
+  });
+
+  return Array.from(fuelSet);
+};
   const showCustomAlert = (title, message, type = 'success') => {
     let icon = "check-circle";
     let iconColor = "#10B981";
@@ -181,30 +218,77 @@ export default function AddNewVehicleScreen({ navigation, route }) {
   );
 
   // Update max seats when body type changes (only for new entries, not during edit load)
-  useEffect(() => {
-    if (!isInitialLoad && bodyType && SEATS_MAP[bodyType]) {
-      setMaxSeats(SEATS_MAP[bodyType]);
-    } else if (!isInitialLoad && !bodyType) {
+useEffect(() => {
+  if (!vehicleType || !make || !model) {
+    setMaxSeats("");
+    setSeatOptions([]);
+    return;
+  }
+
+  const selectedVehicle = dbListData.find(
+    (item: any) =>
+      item.vehicle_type === vehicleType &&
+      item.make_company_name === make &&
+      item.model_name === model
+  );
+
+  if (selectedVehicle?.seating_capacity) {
+
+    const rawSeats = String(selectedVehicle.seating_capacity);
+
+    // Example: "4,5"
+    const seats = rawSeats
+      .split(",")
+      .map((s: string) => s.trim())
+      .filter(Boolean);
+
+    setSeatOptions(seats);
+
+    // Single value auto select
+    if (seats.length === 1) {
+      setMaxSeats(seats[0]);
+    } else {
+      // Multiple values => show dropdown
       setMaxSeats("");
     }
-  }, [bodyType, isInitialLoad]);
 
+  } else {
+    setSeatOptions([]);
+    setMaxSeats("");
+  }
+}, [vehicleType, make, model, dbListData]);
   // Reset dependent fields when vehicle type changes (only for new entries)
-  useEffect(() => {
-    if (!isInitialLoad && !isEdit) {
-      setBodyType("");
-      setMake("");
-      setModel("");
-    }
-  }, [vehicleType, isInitialLoad, isEdit]);
-
+useEffect(() => {
+  if (!isInitialLoad) {
+    setBodyType("");
+    setMake("");
+    setModel("");
+    setFuelType("");
+    setMaxSeats("");
+    setSeatOptions([]);
+  }
+}, [vehicleType]);
   // Reset model when make changes (only for new entries)
-  useEffect(() => {
-    if (!isInitialLoad && !isEdit) {
-      setModel("");
-    }
-  }, [make, isInitialLoad, isEdit]);
-
+useEffect(() => {
+  if (!isInitialLoad) {
+    setModel("");
+    setFuelType("");
+    setMaxSeats("");
+    setSeatOptions([]);
+  }
+}, [make]);
+useEffect(() => {
+  if (!isInitialLoad) {
+    setFuelType("");
+    setMaxSeats("");
+    setSeatOptions([]);
+  }
+}, [bodyType]);
+useEffect(() => {
+  if (!isInitialLoad) {
+    setFuelType("");
+  }
+}, [model]);
   // Load editing vehicle data
   useEffect(() => {
     if (!editingVehicle) {
@@ -384,6 +468,14 @@ export default function AddNewVehicleScreen({ navigation, route }) {
       showCustomAlert("Error", "Please select Model", "error");
       return;
     }
+    if (!maxSeats) {
+  showCustomAlert(
+    "Error",
+    "Please select Number of Seats",
+    "error"
+  );
+  return;
+}
     if (!fuelType) {
       showCustomAlert("Error", "Please select Fuel Type", "error");
       return;
@@ -628,21 +720,46 @@ export default function AddNewVehicleScreen({ navigation, route }) {
     </Modal>
   );
 
-  const getBodyTypes = () => {
-    if (!vehicleType) return [];
-    return BODY_TYPES[vehicleType] || [];
-  };
+const getBodyTypes = () => {
+  if (!vehicleType) return [];
 
-  const getMakes = () => {
-    if (!vehicleType) return [];
-    return Object.keys(VEHICLE_MASTER[vehicleType] || {});
-  };
+  const filtered = dbListData.filter(
+    (item: any) => item.vehicle_type === vehicleType
+  );
 
-  const getModels = () => {
-    if (!vehicleType || !make) return [];
-    return VEHICLE_MASTER[vehicleType]?.[make] || [];
-  };
+  return [...new Set(filtered.map((i: any) => i.body_type).filter(Boolean))];
+};
+const getMakes = () => {
+  if (!vehicleType || !bodyType) return [];
 
+  const filtered = dbListData.filter(
+    (item: any) =>
+      item.vehicle_type === vehicleType &&
+      item.body_type === bodyType
+  );
+
+  return [
+    ...new Set(
+      filtered.map((i: any) => i.make_company_name).filter(Boolean)
+    ),
+  ];
+};
+const getModels = () => {
+  if (!vehicleType || !bodyType || !make) return [];
+
+  const filtered = dbListData.filter(
+    (item: any) =>
+      item.vehicle_type === vehicleType &&
+      item.body_type === bodyType &&
+      item.make_company_name === make
+  );
+
+  return [
+    ...new Set(
+      filtered.map((i: any) => i.model_name).filter(Boolean)
+    ),
+  ];
+};
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
@@ -725,11 +842,24 @@ export default function AddNewVehicleScreen({ navigation, route }) {
           />
 
           <Selector
-            label="Fuel Type"
-            value={fuelType}
-            onPress={() => setActiveModal("fuel")}
-            required
-          />
+  label="Fuel Type"
+  value={fuelType}
+  onPress={() =>
+    getFuelTypes().length > 0 &&
+    setActiveModal("fuel")
+  }
+  required
+  disabled={!vehicleType || !make || !model}
+  disabledText={
+    !vehicleType
+      ? "Select Vehicle Type first"
+      : !make
+      ? "Select Make first"
+      : !model
+      ? "Select Model first"
+      : ""
+  }
+/>
 
           {/* Year */}
           <View style={styles.inputBox}>
@@ -784,22 +914,43 @@ export default function AddNewVehicleScreen({ navigation, route }) {
           </View>
 
           {/* Number of Seats */}
-          <View style={styles.inputBox}>
-            <Text style={styles.label}>Number of Seats</Text>
-            <View style={styles.seatsContainer}>
-              <TextInput
-                style={styles.seatsInput}
-                value={maxSeats}
-                editable={false}
-                placeholder="Auto-detected"
-                placeholderTextColor="#9CA3AF"
-              />
-            </View>
-            {bodyType && maxSeats && (
-              <Text style={styles.seatsHint}>Based on {bodyType}</Text>
-            )}
-          </View>
-            
+         <View style={styles.inputBox}>
+<Text style={styles.label}>
+  Number of Seats <Text style={styles.requiredStar}>*</Text>
+</Text>
+  <TouchableOpacity
+    style={styles.selector}
+    onPress={() => {
+      if (seatOptions.length > 1) {
+        setActiveModal("seats");
+      }
+    }}
+    disabled={seatOptions.length <= 1}
+  >
+    <Text
+      style={[
+        styles.selectorValue,
+        !maxSeats && styles.placeholderText,
+      ]}
+    >
+      {maxSeats || "Select Seats"}
+    </Text>
+
+    {seatOptions.length > 1 && (
+      <MaterialIcons
+        name="arrow-drop-down"
+        size={24}
+        color={Colors.primary}
+      />
+    )}
+  </TouchableOpacity>
+
+  {bodyType && (
+    <Text style={styles.seatsHint}>
+      Based on {bodyType}
+    </Text>
+  )}
+</View>
           {/* Notes */}
           <View style={styles.inputBox}>
             <Text style={styles.label}>Notes</Text>
@@ -828,15 +979,27 @@ export default function AddNewVehicleScreen({ navigation, route }) {
 
       {/* MODALS */}
       {activeModal === "vehicle" &&
-        renderModal("Vehicle Type", VEHICLE_TYPES, vehicleType, setVehicleType)}
+        renderModal("Vehicle Type", vehicleTypes, vehicleType, setVehicleType)}
       {activeModal === "body" &&
         renderModal("Body Type", getBodyTypes(), bodyType, setBodyType, !vehicleType)}
       {activeModal === "make" &&
         renderModal("Make", getMakes(), make, setMake, !vehicleType)}
       {activeModal === "model" &&
         renderModal("Model", getModels(), model, setModel, !vehicleType || !make)}
+        {activeModal === "seats" &&
+  renderModal(
+    "Select Seats",
+    seatOptions,
+    maxSeats,
+    setMaxSeats
+  )}
       {activeModal === "fuel" &&
-        renderModal("Fuel Type", FUEL_TYPES, fuelType, setFuelType)}
+  renderModal(
+    "Fuel Type",
+    getFuelTypes(),
+    fuelType,
+    setFuelType
+  )}
       {renderYearModal()}
       {renderPhotoOptionsModal()}
 

@@ -43,7 +43,7 @@ export default function NotificationSettingsScreen({ navigation, route }) {
     const loadSettings = async () => {
       try {
         setLoading(true);
-        const res = await GETDatabaseService.getNotifications(phoneNumber);
+        const res = await DatabaseService.getNotificationSettings(phoneNumber);
         if (res?.notifications) {
           setNotifications(res.notifications);
         }
