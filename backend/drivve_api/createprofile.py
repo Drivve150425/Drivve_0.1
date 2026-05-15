@@ -7,10 +7,10 @@ import random
 import string
 from typing import Dict
 import uuid
+import smtplib
 
 import requests
 from user_id_generator import generate_user_id
-import aiosmtplib
 from pydantic import BaseModel, EmailStr
 from models import User, UserStatus
 from database import get_db
@@ -65,26 +65,42 @@ EMAIL_FROM = os.getenv("EMAIL_FROM", "DRIVVE <noreply@drivve.com>")
 def generate_otp():
     return ''.join(random.choices(string.digits, k=6))
 
-
 async def send_email(to_email: str, otp: str):
+
     message = MIMEMultipart("alternative")
     message["From"] = EMAIL_FROM
     message["To"] = to_email
     message["Subject"] = "DRIVVE - Email Verification Code"
 
-    html_part = MIMEText(get_email_html(otp), "html")
-    message.attach(html_part)
+    html = f"""
+    <h2>Your OTP: {otp}</h2>
+    """
 
-    await aiosmtplib.send(
-        message,
-        hostname="smtp.gmail.com",
-        port=465,
-        username=EMAIL_USER,
-        password=EMAIL_PASSWORD,
-        use_tls=True,
-        timeout=60
-    )
+    message.attach(MIMEText(html, "html"))
 
+    try:
+        server = smtplib.SMTP("smtp.gmail.com", 587)
+        server.starttls()
+
+        server.login(
+            EMAIL_USER,
+            EMAIL_PASSWORD
+        )
+
+        server.sendmail(
+            EMAIL_USER,
+            to_email,
+            message.as_string()
+        )
+
+        server.quit()
+
+    except Exception as e:
+        print("EMAIL ERROR:", str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=f"Email send failed: {str(e)}"
+        )
 
 def get_email_html(otp: str) -> str:
     return f"<h2>Your OTP: {otp}</h2>"
