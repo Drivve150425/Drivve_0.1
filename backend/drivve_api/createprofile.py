@@ -8,7 +8,8 @@ import string
 from typing import Dict
 import uuid
 import smtplib
-
+import aiosmtplib
+import resend
 import requests
 from user_id_generator import generate_user_id
 from pydantic import BaseModel, EmailStr
@@ -64,42 +65,31 @@ EMAIL_FROM = os.getenv("EMAIL_FROM", "DRIVVE <noreply@drivve.com>")
 
 def generate_otp():
     return ''.join(random.choices(string.digits, k=6))
-
 async def send_email(to_email: str, otp: str):
-
+    """Send email using aiosmtplib"""
     message = MIMEMultipart("alternative")
     message["From"] = EMAIL_FROM
     message["To"] = to_email
     message["Subject"] = "DRIVVE - Email Verification Code"
-
-    html = f"""
-    <h2>Your OTP: {otp}</h2>
-    """
-
-    message.attach(MIMEText(html, "html"))
-
+   
+    html_part = MIMEText(get_email_html(otp), "html")
+    message.attach(html_part)
+   
     try:
-        server = smtplib.SMTP("smtp.gmail.com", 587)
-        server.starttls()
-
-        server.login(
-            EMAIL_USER,
-            EMAIL_PASSWORD
+        await aiosmtplib.send(
+            message,
+            hostname="smtp.gmail.com",
+            port=587,
+            username=EMAIL_USER,
+            password=EMAIL_PASSWORD,
+            start_tls=True,
         )
-
-        server.sendmail(
-            EMAIL_USER,
-            to_email,
-            message.as_string()
-        )
-
-        server.quit()
-
+        print(f"✅ Email sent successfully to {to_email}")
     except Exception as e:
-        print("EMAIL ERROR:", str(e))
+        print(f"❌ Email send error: {str(e)}")
         raise HTTPException(
             status_code=500,
-            detail=f"Email send failed: {str(e)}"
+            detail=f"Failed to send email: {str(e)}"
         )
 
 def get_email_html(otp: str) -> str:
