@@ -9,7 +9,6 @@ from typing import Dict
 import uuid
 import smtplib
 import aiosmtplib
-import resend
 import requests
 from user_id_generator import generate_user_id
 from pydantic import BaseModel, EmailStr
