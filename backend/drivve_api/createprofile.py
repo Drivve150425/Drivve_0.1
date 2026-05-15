@@ -65,27 +65,38 @@ EMAIL_FROM = os.getenv("EMAIL_FROM", "DRIVVE <noreply@drivve.com>")
 def generate_otp():
     return ''.join(random.choices(string.digits, k=6))
 async def send_email(to_email: str, otp: str):
-    """Send email using aiosmtplib"""
+
     message = MIMEMultipart("alternative")
     message["From"] = EMAIL_FROM
     message["To"] = to_email
     message["Subject"] = "DRIVVE - Email Verification Code"
-   
+
     html_part = MIMEText(get_email_html(otp), "html")
     message.attach(html_part)
-   
+
     try:
-        await aiosmtplib.send(
-            message,
+
+        smtp = aiosmtplib.SMTP(
             hostname="smtp.gmail.com",
-            port=587,
-            username=EMAIL_USER,
-            password=EMAIL_PASSWORD,
-            start_tls=True,
+            port=465,
+            use_tls=True,
+            timeout=30
         )
+
+        await smtp.connect()
+
+        await smtp.login(EMAIL_USER, EMAIL_PASSWORD)
+
+        await smtp.send_message(message)
+
+        await smtp.quit()
+
         print(f"✅ Email sent successfully to {to_email}")
+
     except Exception as e:
+
         print(f"❌ Email send error: {str(e)}")
+
         raise HTTPException(
             status_code=500,
             detail=f"Failed to send email: {str(e)}"
