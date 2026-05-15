@@ -1,14 +1,12 @@
 import base64
 from datetime import datetime, timedelta, timezone
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
+
 import os
 import random
 import string
 from typing import Dict
 import uuid
-import smtplib
-import aiosmtplib
+
 import requests
 from user_id_generator import generate_user_id
 from pydantic import BaseModel, EmailStr
@@ -16,7 +14,7 @@ from models import User, UserStatus
 from database import get_db
 from sqlalchemy.orm import Session
 from fastapi import Depends, HTTPException, APIRouter
-
+from gotrue import SyncGoTrueClient
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -47,6 +45,15 @@ def upload_to_supabase(file_bytes, file_path):
 
 
 # ================= EMAIL OTP =================
+SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
+SUPABASE_KEY = os.getenv("SUPABASE_SERVICE")
+
+auth_client = SyncGoTrueClient(
+    url=f"{SUPABASE_URL}/auth/v1",
+    headers={
+        "apikey": SUPABASE_ANON_KEY
+    }
+)
 
 class EmailOTPRequest(BaseModel):
     email: EmailStr
@@ -54,86 +61,60 @@ class EmailOTPRequest(BaseModel):
 class EmailOTPVerify(BaseModel):
     email: EmailStr
     otp: str
-
 email_otp_store: Dict[str, Dict] = {}
 
-EMAIL_USER = os.getenv("EMAIL_USER")
-EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
-EMAIL_FROM = os.getenv("EMAIL_FROM", "DRIVVE <noreply@drivve.com>")
 
 
 def generate_otp():
     return ''.join(random.choices(string.digits, k=6))
-async def send_email(to_email: str, otp: str):
-
-    message = MIMEMultipart("alternative")
-    message["From"] = EMAIL_FROM
-    message["To"] = to_email
-    message["Subject"] = "DRIVVE - Email Verification Code"
-
-    html_part = MIMEText(get_email_html(otp), "html")
-    message.attach(html_part)
-
-    try:
-
-        smtp = aiosmtplib.SMTP(
-            hostname="smtp.gmail.com",
-            port=465,
-            use_tls=True,
-            timeout=30
-        )
-
-        await smtp.connect()
-
-        await smtp.login(EMAIL_USER, EMAIL_PASSWORD)
-
-        await smtp.send_message(message)
-
-        await smtp.quit()
-
-        print(f"✅ Email sent successfully to {to_email}")
-
-    except Exception as e:
-
-        print(f"❌ Email send error: {str(e)}")
-
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to send email: {str(e)}"
-        )
-
-def get_email_html(otp: str) -> str:
-    return f"<h2>Your OTP: {otp}</h2>"
-
 
 @router.post("/auth/send-email-otp")
 async def send_email_otp(request: EmailOTPRequest):
-    email = request.email.lower()
-    otp = generate_otp()
 
-    email_otp_store[email] = {
-        "otp": otp,
-        "expires_at": datetime.now(timezone.utc) + timedelta(minutes=5)
-    }
+    try:
 
-    await send_email(email, otp)
+        auth_client.sign_in_with_otp({
+            "email": request.email
+        })
 
-    return {"success": True}
+        return {
+            "success": True,
+            "message": "OTP sent successfully"
+        }
+
+    except Exception as e:
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
 
 
 @router.post("/auth/verify-email-otp")
 async def verify_email_otp(request: EmailOTPVerify):
-    email = request.email.lower()
 
-    if email not in email_otp_store:
-        raise HTTPException(404, "OTP not found")
+    try:
 
-    if email_otp_store[email]["otp"] != request.otp:
-        raise HTTPException(400, "Invalid OTP")
+        auth_client.verify_otp({
+            "email": request.email,
+            "token": request.otp,
+            "type": "email"
+        })
 
-    del email_otp_store[email]
+        return {
+            "success": True,
+            "message": "Email verified successfully"
+        }
 
-    return {"success": True}
+    except Exception:
+
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid OTP"
+        )
+
+def get_email_html(otp: str) -> str:
+    return f"<h2>Your OTP: {otp}</h2>"
 
 
 # ================= CREATE PROFILE =================
