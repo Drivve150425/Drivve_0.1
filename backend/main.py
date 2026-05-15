@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 import uvicorn
 
 from drivve_api.app_config import create_app
-from drivve_api.createprofile import EMAIL_USER, send_email
+from drivve_api.createprofile import EMAIL_USER
 from database import engine, get_db, Base
 
 # =========================
