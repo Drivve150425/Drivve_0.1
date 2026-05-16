@@ -776,3 +776,12 @@ class DBList(Base):
     seating_capacity = Column(String)
 
     created_at = Column(DateTime)
+# Add this class to your models.py file
+
+class BlockedUser(Base):
+    __tablename__ = "blocked_users"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    blocker_phone = Column(String(20), nullable=False, index=True)
+    blocked_phone = Column(String(20), nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

@@ -11,7 +11,7 @@ from typing import Optional, List
 from datetime import datetime, timezone
 
 from database import get_db
-from models import User, Conversation, ChatMessage
+from models import User, Conversation, ChatMessage,BlockedUser
 
 router = APIRouter()
 
@@ -438,3 +438,118 @@ def report_message(
     """Report a specific message"""
     print(f"User {x_phone_number} reported message {data.get('message_id')}")
     return {"success": True, "message": "Message reported"}
+# Add these to your existing chat router
+
+# ==================== BLOCK USER ENDPOINTS ====================
+
+class BlockUserRequest(BaseModel):
+    blocked_phone: str
+
+@router.post("/api/chat/block-user")
+def block_user(
+    data: BlockUserRequest,
+    x_phone_number: Optional[str] = Header(None, alias="X-Phone-Number"),
+    db: Session = Depends(get_db),
+):
+    """Block a user"""
+    if not x_phone_number:
+        raise HTTPException(status_code=401, detail="X-Phone-Number header required")
+    
+    blocker = normalize_phone(x_phone_number)
+    blocked = normalize_phone(data.blocked_phone)
+    
+    if blocker == blocked:
+        raise HTTPException(status_code=400, detail="Cannot block yourself")
+    
+    # Check if already blocked
+    existing = db.query(BlockedUser).filter(
+        BlockedUser.blocker_phone == blocker,
+        BlockedUser.blocked_phone == blocked
+    ).first()
+    
+    if existing:
+        return {"success": True, "message": "User already blocked"}
+    
+    # Create block record
+    block_record = BlockedUser(
+        blocker_phone=blocker,
+        blocked_phone=blocked
+    )
+    db.add(block_record)
+    db.commit()
+    
+    return {"success": True, "message": "User blocked successfully"}
+
+
+@router.post("/api/chat/unblock-user")
+def unblock_user(
+    data: BlockUserRequest,
+    x_phone_number: Optional[str] = Header(None, alias="X-Phone-Number"),
+    db: Session = Depends(get_db),
+):
+    """Unblock a user"""
+    if not x_phone_number:
+        raise HTTPException(status_code=401, detail="X-Phone-Number header required")
+    
+    blocker = normalize_phone(x_phone_number)
+    blocked = normalize_phone(data.blocked_phone)
+    
+    result = db.query(BlockedUser).filter(
+        BlockedUser.blocker_phone == blocker,
+        BlockedUser.blocked_phone == blocked
+    ).delete()
+    
+    db.commit()
+    
+    if result:
+        return {"success": True, "message": "User unblocked successfully"}
+    else:
+        return {"success": False, "message": "User was not blocked"}
+
+
+@router.get("/api/chat/blocked-users")
+def get_blocked_users(
+    x_phone_number: Optional[str] = Header(None, alias="X-Phone-Number"),
+    db: Session = Depends(get_db),
+):
+    """Get list of blocked users"""
+    if not x_phone_number:
+        raise HTTPException(status_code=401, detail="X-Phone-Number header required")
+    
+    blocker = normalize_phone(x_phone_number)
+    
+    blocked_records = db.query(BlockedUser).filter(
+        BlockedUser.blocker_phone == blocker
+    ).all()
+    
+    blocked_users = []
+    for record in blocked_records:
+        user = db.query(User).filter(User.phone_number == record.blocked_phone).first()
+        blocked_users.append({
+            "phone": record.blocked_phone,
+            "name": user.full_name or user.first_name or f"User {record.blocked_phone[-4:]}" if user else f"User {record.blocked_phone[-4:]}",
+            "blocked_at": record.created_at.isoformat() if record.created_at else None
+        })
+    
+    return {"success": True, "blocked_users": blocked_users}
+
+
+@router.get("/api/chat/is-blocked/{other_phone}")
+def check_is_blocked(
+    other_phone: str,
+    x_phone_number: Optional[str] = Header(None, alias="X-Phone-Number"),
+    db: Session = Depends(get_db),
+):
+    """Check if a user is blocked"""
+    if not x_phone_number:
+        raise HTTPException(status_code=401, detail="X-Phone-Number header required")
+    
+    blocker = normalize_phone(x_phone_number)
+    blocked = normalize_phone(other_phone)
+    
+    is_blocked = db.query(BlockedUser).filter(
+        BlockedUser.blocker_phone == blocker,
+        BlockedUser.blocked_phone == blocked
+    ).first() is not None
+    
+    return {"success": True, "is_blocked": is_blocked}
