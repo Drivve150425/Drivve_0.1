@@ -11,7 +11,7 @@ from typing import Optional, List
 from datetime import datetime, timezone
 
 from database import get_db
-from models import User, Conversation, ChatMessage,BlockedUser
+from models import User, Conversation, ChatMessage,BlockedUsers
 
 router = APIRouter()
 
