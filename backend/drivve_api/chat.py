@@ -487,9 +487,9 @@ def block_user(
         raise HTTPException(status_code=400, detail="Cannot block yourself")
     
     # Check if already blocked
-    existing = db.query(BlockedUser).filter(
-        BlockedUser.blocker_phone == blocker,
-        BlockedUser.blocked_phone == blocked
+    existing = db.query(BlockedUsers).filter(
+        BlockedUsers.blocker_phone == blocker,
+        BlockedUsers.blocked_phone == blocked
     ).first()
     
     if existing:
@@ -497,7 +497,7 @@ def block_user(
     
     # Create block record
     try:
-        block_record = BlockedUser(
+        block_record = BlockedUsers(
             blocker_phone=blocker,
             blocked_phone=blocked
         )
@@ -528,9 +528,9 @@ def unblock_user(
     print(f"Unblock user request - Blocker: {blocker}, Blocked: {blocked}")  # Debug log
     
     # Delete block record
-    result = db.query(BlockedUser).filter(
-        BlockedUser.blocker_phone == blocker,
-        BlockedUser.blocked_phone == blocked
+    result = db.query(BlockedUsers).filter(
+        BlockedUsers.blocker_phone == blocker,
+        BlockedUsers.blocked_phone == blocked
     ).delete()
     
     db.commit()
@@ -559,9 +559,9 @@ def check_is_blocked(
     
     print(f"Check blocked - Blocker: {blocker}, Blocked: {blocked}")  # Debug log
     
-    is_blocked = db.query(BlockedUser).filter(
-        BlockedUser.blocker_phone == blocker,
-        BlockedUser.blocked_phone == blocked
+    is_blocked = db.query(BlockedUsers).filter(
+        BlockedUsers.blocker_phone == blocker,
+        BlockedUsers.blocked_phone == blocked
     ).first() is not None
     
     return {"success": True, "is_blocked": is_blocked}
