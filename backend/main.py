@@ -164,19 +164,19 @@ class SupportEmailRequest(BaseModel):
     message: str
 #admin
 
-@app.post("/api/v1/support/email")
-async def send_support_email(data: SupportEmailRequest):
-    try:
-        await send_email(
-            to_email="support@drivve.com",
-            otp=f"Support Request\n\nFrom: {data.email}\n\n{data.message}"
-        )
-        return {
-            "success": True,
-            "message": "Support request sent successfully"
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+# @app.post("/api/v1/support/email")
+# async def send_support_email(data: SupportEmailRequest):
+#     try:
+#         await send_email(
+#             to_email="support@drivve.com",
+#             otp=f"Support Request\n\nFrom: {data.email}\n\n{data.message}"
+#         )
+#         return {
+#             "success": True,
+#             "message": "Support request sent successfully"
+#         }
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/v1/users/{user_id}/rating")

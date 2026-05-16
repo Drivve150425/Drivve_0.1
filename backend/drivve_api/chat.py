@@ -354,3 +354,87 @@ def unread_count(
     ).count()
 
     return {"success": True, "unread_count": count}
+# Add these endpoints to your chat router
+
+@router.post("/api/chat/conversations/{conversation_id}/clear")
+def clear_chat(
+    conversation_id: int,
+    x_phone_number: Optional[str] = Header(None, alias="X-Phone-Number"),
+    db: Session = Depends(get_db),
+):
+    """Clear all messages in a conversation for the user"""
+    if not x_phone_number:
+        raise HTTPException(status_code=401, detail="X-Phone-Number header required")
+    
+    me = normalize_phone(x_phone_number)
+    
+    conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    
+    if me not in (conv.participant_1_phone, conv.participant_2_phone):
+        raise HTTPException(status_code=403, detail="Not a participant")
+    
+    # Soft delete or hard delete messages
+    db.query(ChatMessage).filter(
+        ChatMessage.conversation_id == conversation_id
+    ).delete()
+    
+    # Reset conversation last message
+    conv.last_message = None
+    conv.last_message_time = None
+    conv.last_message_type = None
+    
+    db.commit()
+    
+    return {"success": True, "message": "Chat cleared successfully"}
+
+
+@router.delete("/api/chat/messages/{message_id}")
+def delete_message(
+    message_id: int,
+    x_phone_number: Optional[str] = Header(None, alias="X-Phone-Number"),
+    db: Session = Depends(get_db),
+):
+    """Delete a specific message"""
+    if not x_phone_number:
+        raise HTTPException(status_code=401, detail="X-Phone-Number header required")
+    
+    me = normalize_phone(x_phone_number)
+    
+    msg = db.query(ChatMessage).filter(ChatMessage.id == message_id).first()
+    if not msg:
+        raise HTTPException(status_code=404, detail="Message not found")
+    
+    # Only sender can delete their own messages
+    if msg.sender_phone != me:
+        raise HTTPException(status_code=403, detail="Can only delete your own messages")
+    
+    db.delete(msg)
+    db.commit()
+    
+    return {"success": True, "message": "Message deleted"}
+
+
+@router.post("/api/chat/report-user")
+def report_user(
+    data: dict,
+    x_phone_number: Optional[str] = Header(None, alias="X-Phone-Number"),
+    db: Session = Depends(get_db),
+):
+    """Report a user"""
+    # Store report in database (create a reports table)
+    # For now, just log and return success
+    print(f"User {x_phone_number} reported user {data.get('reported_user_phone')}")
+    return {"success": True, "message": "User reported"}
+
+
+@router.post("/api/chat/report-message")
+def report_message(
+    data: dict,
+    x_phone_number: Optional[str] = Header(None, alias="X-Phone-Number"),
+    db: Session = Depends(get_db),
+):
+    """Report a specific message"""
+    print(f"User {x_phone_number} reported message {data.get('message_id')}")
+    return {"success": True, "message": "Message reported"}
