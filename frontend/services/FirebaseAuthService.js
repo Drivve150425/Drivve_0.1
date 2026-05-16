@@ -42,10 +42,21 @@ class FirebaseAuthService {
     if (this._authInstance) return this._authInstance;
     if (Platform.OS === 'web') return null;
 
-    // Expo Go does not support RNFirebase native modules.
-    // Always return null on iOS/Android so we never load @react-native-firebase/auth.
-    return null;
+    try {
+      // Prefer native Firebase Phone Auth (works in EAS/standalone builds).
+      // Expo Go typically cannot load RNFirebase native modules.
+      const { getAuth } = require('@react-native-firebase/auth');
+      // @react-native-firebase/auth exports getAuth() which uses the native module.
+      this._authInstance = getAuth();
+      return this._authInstance;
+    } catch (e) {
+      // Important: avoid crashing the app in Expo Go.
+      console.warn('⚠️ RNFirebase auth not available, falling back to backend OTP:', e?.message || e);
+      this._authInstance = null;
+      return null;
+    }
   }
+
 
 
   /**
@@ -62,6 +73,7 @@ class FirebaseAuthService {
 
         const { signInWithPhoneNumber } = require('@react-native-firebase/auth');
         const confirmation = await signInWithPhoneNumber(authInstance, fullPhoneNumber);
+
 
         this.confirmationResult = confirmation;
         console.log('✅ Firebase Phone Auth: OTP sent via Firebase SMS (client-side)');
