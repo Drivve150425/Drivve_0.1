@@ -38,19 +38,44 @@ class MarkReadRequest(BaseModel):
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
-
 def normalize_phone(phone: str) -> str:
+    """Normalize phone number to a standard format (+91XXXXXXXXXX)"""
     if not phone:
         return phone
-    phone = phone.replace(" ", "").replace("-", "")
+    
+    # Remove any URL encoding
+    from urllib.parse import unquote
+    phone = unquote(phone)
+    
+    # Remove spaces, hyphens, etc.
+    phone = phone.replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+    
+    # Remove any 'tel:' prefix if present
+    if phone.startswith("tel:"):
+        phone = phone[4:]
+    
+    # If it already starts with +91, return as is
     if phone.startswith("+91"):
         return phone
+    
+    # If it starts with 91 and length is 12
     if phone.startswith("91") and len(phone) == 12:
         return f"+{phone}"
+    
+    # If it starts with 0, replace with +91
+    if phone.startswith("0"):
+        return f"+91{phone[1:]}"
+    
+    # If it's a 10-digit number, add +91
+    if len(phone) == 10 and phone.isdigit():
+        return f"+91{phone}"
+    
+    # If it starts with +, return as is
     if phone.startswith("+"):
         return phone
+    
+    # Default: add +91 prefix
     return f"+91{phone}"
-
 
 def get_or_create_conversation(db: Session, phone_a: str, phone_b: str, ride_id: Optional[int] = None):
     """
@@ -438,9 +463,7 @@ def report_message(
     """Report a specific message"""
     print(f"User {x_phone_number} reported message {data.get('message_id')}")
     return {"success": True, "message": "Message reported"}
-# Add these to your existing chat router
-
-# ==================== BLOCK USER ENDPOINTS ====================
+# Fix these endpoints in your chat router
 
 class BlockUserRequest(BaseModel):
     blocked_phone: str
@@ -458,6 +481,8 @@ def block_user(
     blocker = normalize_phone(x_phone_number)
     blocked = normalize_phone(data.blocked_phone)
     
+    print(f"Block user request - Blocker: {blocker}, Blocked: {blocked}")  # Debug log
+    
     if blocker == blocked:
         raise HTTPException(status_code=400, detail="Cannot block yourself")
     
@@ -468,15 +493,21 @@ def block_user(
     ).first()
     
     if existing:
-        return {"success": True, "message": "User already blocked"}
+        return {"success": True, "message": "User already blocked", "already_blocked": True}
     
     # Create block record
-    block_record = BlockedUser(
-        blocker_phone=blocker,
-        blocked_phone=blocked
-    )
-    db.add(block_record)
-    db.commit()
+    try:
+        block_record = BlockedUser(
+            blocker_phone=blocker,
+            blocked_phone=blocked
+        )
+        db.add(block_record)
+        db.commit()
+        print(f"Successfully blocked {blocked} by {blocker}")  # Debug log
+    except Exception as e:
+        db.rollback()
+        print(f"Error blocking user: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
     
     return {"success": True, "message": "User blocked successfully"}
 
@@ -494,6 +525,9 @@ def unblock_user(
     blocker = normalize_phone(x_phone_number)
     blocked = normalize_phone(data.blocked_phone)
     
+    print(f"Unblock user request - Blocker: {blocker}, Blocked: {blocked}")  # Debug log
+    
+    # Delete block record
     result = db.query(BlockedUser).filter(
         BlockedUser.blocker_phone == blocker,
         BlockedUser.blocked_phone == blocked
@@ -502,36 +536,10 @@ def unblock_user(
     db.commit()
     
     if result:
+        print(f"Successfully unblocked {blocked} by {blocker}")  # Debug log
         return {"success": True, "message": "User unblocked successfully"}
     else:
         return {"success": False, "message": "User was not blocked"}
-
-
-@router.get("/api/chat/blocked-users")
-def get_blocked_users(
-    x_phone_number: Optional[str] = Header(None, alias="X-Phone-Number"),
-    db: Session = Depends(get_db),
-):
-    """Get list of blocked users"""
-    if not x_phone_number:
-        raise HTTPException(status_code=401, detail="X-Phone-Number header required")
-    
-    blocker = normalize_phone(x_phone_number)
-    
-    blocked_records = db.query(BlockedUser).filter(
-        BlockedUser.blocker_phone == blocker
-    ).all()
-    
-    blocked_users = []
-    for record in blocked_records:
-        user = db.query(User).filter(User.phone_number == record.blocked_phone).first()
-        blocked_users.append({
-            "phone": record.blocked_phone,
-            "name": user.full_name or user.first_name or f"User {record.blocked_phone[-4:]}" if user else f"User {record.blocked_phone[-4:]}",
-            "blocked_at": record.created_at.isoformat() if record.created_at else None
-        })
-    
-    return {"success": True, "blocked_users": blocked_users}
 
 
 @router.get("/api/chat/is-blocked/{other_phone}")
@@ -545,7 +553,11 @@ def check_is_blocked(
         raise HTTPException(status_code=401, detail="X-Phone-Number header required")
     
     blocker = normalize_phone(x_phone_number)
-    blocked = normalize_phone(other_phone)
+    # The other_phone comes URL encoded, we need to decode it properly
+    from urllib.parse import unquote
+    blocked = normalize_phone(unquote(other_phone))
+    
+    print(f"Check blocked - Blocker: {blocker}, Blocked: {blocked}")  # Debug log
     
     is_blocked = db.query(BlockedUser).filter(
         BlockedUser.blocker_phone == blocker,
