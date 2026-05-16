@@ -510,8 +510,6 @@ def block_user(
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
     
     return {"success": True, "message": "User blocked successfully"}
-
-
 @router.post("/api/chat/unblock-user")
 def unblock_user(
     data: BlockUserRequest,
@@ -519,28 +517,58 @@ def unblock_user(
     db: Session = Depends(get_db),
 ):
     """Unblock a user"""
+
     if not x_phone_number:
-        raise HTTPException(status_code=401, detail="X-Phone-Number header required")
-    
+        raise HTTPException(
+            status_code=401,
+            detail="X-Phone-Number header required"
+        )
+
     blocker = normalize_phone(x_phone_number)
     blocked = normalize_phone(data.blocked_phone)
-    
-    print(f"Unblock user request - Blocker: {blocker}, Blocked: {blocked}")  # Debug log
-    
-    # Delete block record
-    result = db.query(BlockedUsers).filter(
+
+    print("========== UNBLOCK USER ==========")
+    print("Blocker:", blocker)
+    print("Blocked:", blocked)
+
+    # FIND RECORD FIRST
+    block_record = db.query(BlockedUsers).filter(
         BlockedUsers.blocker_phone == blocker,
         BlockedUsers.blocked_phone == blocked
-    ).delete()
-    
-    db.commit()
-    
-    if result:
-        print(f"Successfully unblocked {blocked} by {blocker}")  # Debug log
-        return {"success": True, "message": "User unblocked successfully"}
-    else:
-        return {"success": False, "message": "User was not blocked"}
+    ).first()
 
+    print("FOUND RECORD:", block_record)
+
+    if not block_record:
+        return {
+            "success": False,
+            "message": "User was not blocked"
+        }
+
+    try:
+
+        db.delete(block_record)
+
+        db.commit()
+
+        print("UNBLOCK SUCCESS")
+
+        return {
+            "success": True,
+            "message": "User unblocked successfully",
+            "is_blocked": False
+        }
+
+    except Exception as e:
+
+        db.rollback()
+
+        print("UNBLOCK ERROR:", str(e))
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
 
 @router.get("/api/chat/is-blocked/{other_phone}")
 def check_is_blocked(
