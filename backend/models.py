@@ -778,7 +778,7 @@ class DBList(Base):
     created_at = Column(DateTime)
 # Add this class to your models.py file
 
-class BlockedUser(Base):
+class BlockedUsers(Base):
     __tablename__ = "blocked_users"
     
     id = Column(Integer, primary_key=True, index=True)
