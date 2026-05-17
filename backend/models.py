@@ -728,7 +728,8 @@ class Conversation(Base):
     last_message = Column(Text, nullable=True)
     last_message_time = Column(DateTime(timezone=True), nullable=True)
     last_message_type = Column(String(20), default="text")
-
+    hidden_for_user_1 = Column(Boolean, default=False)
+    hidden_for_user_2 = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 

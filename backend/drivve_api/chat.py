@@ -142,6 +142,17 @@ def list_conversations(
 
     result = []
     for conv in convs:
+        if (
+            conv.participant_1_phone == me
+            and conv.hidden_for_user_1
+        ):
+            continue
+
+        if (
+            conv.participant_2_phone == me
+            and conv.hidden_for_user_2
+        ):
+            continue
         other_phone = conv.participant_2_phone if conv.participant_1_phone == me else conv.participant_1_phone
 
         unread_count = db.query(ChatMessage).filter(
@@ -302,7 +313,8 @@ def send_message(
     conv.last_message = data.text
     conv.last_message_time = msg.created_at
     conv.last_message_type = data.type
-
+    conv.hidden_for_user_1 = False
+    conv.hidden_for_user_2 = False
     db.commit()
     db.refresh(msg)
 
@@ -659,3 +671,46 @@ def delete_conversation(
             status_code=500,
             detail=str(e)
         )
+@router.post("/api/chat/conversations/{conversation_id}/hide")
+def hide_chat(
+    conversation_id: int,
+    x_phone_number: Optional[str] = Header(None, alias="X-Phone-Number"),
+    db: Session = Depends(get_db),
+):
+
+    if not x_phone_number:
+        raise HTTPException(
+            status_code=401,
+            detail="X-Phone-Number header required"
+        )
+
+    me = normalize_phone(x_phone_number)
+
+    conv = db.query(Conversation).filter(
+        Conversation.id == conversation_id
+    ).first()
+
+    if not conv:
+        raise HTTPException(
+            status_code=404,
+            detail="Conversation not found"
+        )
+
+    if me == conv.participant_1_phone:
+        conv.hidden_for_user_1 = True
+
+    elif me == conv.participant_2_phone:
+        conv.hidden_for_user_2 = True
+
+    else:
+        raise HTTPException(
+            status_code=403,
+            detail="Not participant"
+        )
+
+    db.commit()
+
+    return {
+        "success": True,
+        "message": "Chat hidden"
+    }
