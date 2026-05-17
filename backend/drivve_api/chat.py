@@ -593,3 +593,69 @@ def check_is_blocked(
     ).first() is not None
     
     return {"success": True, "is_blocked": is_blocked}
+# ─────────────────────────────────────────────────────────────────────────────
+# DELETE /api/chat/conversations/{conversation_id}
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.delete("/api/chat/conversations/{conversation_id}")
+def delete_conversation(
+    conversation_id: int,
+    x_phone_number: Optional[str] = Header(None, alias="X-Phone-Number"),
+    db: Session = Depends(get_db),
+):
+    """Delete entire conversation"""
+
+    if not x_phone_number:
+        raise HTTPException(
+            status_code=401,
+            detail="X-Phone-Number header required"
+        )
+
+    me = normalize_phone(x_phone_number)
+
+    # Find conversation
+    conv = db.query(Conversation).filter(
+        Conversation.id == conversation_id
+    ).first()
+
+    if not conv:
+        raise HTTPException(
+            status_code=404,
+            detail="Conversation not found"
+        )
+
+    # Verify participant
+    if me not in (
+        conv.participant_1_phone,
+        conv.participant_2_phone
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Not a participant"
+        )
+
+    try:
+
+        # Delete all messages first
+        db.query(ChatMessage).filter(
+            ChatMessage.conversation_id == conversation_id
+        ).delete()
+
+        # Delete conversation
+        db.delete(conv)
+
+        db.commit()
+
+        return {
+            "success": True,
+            "message": "Conversation deleted successfully"
+        }
+
+    except Exception as e:
+
+        db.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
