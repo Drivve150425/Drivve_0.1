@@ -156,11 +156,13 @@ def verify_otp(payload: dict, db: Session = Depends(get_db)):
         user.is_phone_verified = True
         user.status = UserStatus.ACTIVE
         db.commit()
-            # ✅ CREATE JWT TOKENS
+        access_token = create_access_token(
+            user.id
+        )
 
-        access_token = create_access_token(user.id)
-
-        refresh_token = create_refresh_token(user.id)
+        refresh_token = create_refresh_token(
+            user.id
+        )
     # ✅ register device
     if device_name and device_type:
         db.query(UserDevice).filter(
