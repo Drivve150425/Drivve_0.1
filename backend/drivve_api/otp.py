@@ -8,7 +8,11 @@ from database import get_db
 from sqlalchemy.orm import Session
 from fastapi import Depends, HTTPException
 from fastapi import APIRouter
-
+from utils.jwt_helper import (
+    create_access_token,
+    create_refresh_token,
+    decode_token
+)
 # Firebase Admin (optional — falls back gracefully if service account missing)
 try:
     from configapp.firebase_admin import init_firebase_admin, verify_firebase_token, send_sms
@@ -152,7 +156,11 @@ def verify_otp(payload: dict, db: Session = Depends(get_db)):
         user.is_phone_verified = True
         user.status = UserStatus.ACTIVE
         db.commit()
+            # ✅ CREATE JWT TOKENS
 
+        access_token = create_access_token(user.id)
+
+        refresh_token = create_refresh_token(user.id)
     # ✅ register device
     if device_name and device_type:
         db.query(UserDevice).filter(
@@ -184,8 +192,27 @@ def verify_otp(payload: dict, db: Session = Depends(get_db)):
     print("📱 Device:", device_name, device_type)
 
     return {
+
         "success": True,
-        "message": "OTP verified successfully"
+
+        "message":
+            "OTP verified successfully",
+
+        "user": {
+            "id": user.id,
+
+            "first_name":
+                user.first_name,
+
+            "phone_number":
+                user.phone_number,
+        },
+
+        "accessToken":
+            access_token,
+
+        "refreshToken":
+            refresh_token
     }
 
 
@@ -247,3 +274,48 @@ def check_user_exists(user_check: dict, db: Session = Depends(get_db)):
     except Exception as e:
         print("❌ USERS CHECK ERROR:", str(e))
         raise HTTPException(status_code=500, detail="User check failed")
+@router.post("/auth/refresh")
+def refresh_token(
+    payload: dict
+):
+
+    refresh_token =payload.get(
+            "refreshToken"
+        )
+
+    if not refresh_token:
+
+        raise HTTPException(
+            401,
+            "No refresh token"
+        )
+
+    decoded = decode_token(
+            refresh_token
+        )
+
+    if not decoded:
+
+        raise HTTPException(
+            401,
+            "Invalid refresh token"
+        )
+
+    if decoded["type"] != "refresh":
+
+        raise HTTPException(
+            401,
+            "Wrong token type"
+        )
+
+    new_access_token = create_access_token(
+            decoded["user_id"]
+        )
+
+    return {
+
+        "success": True,
+
+        "accessToken":
+            new_access_token
+    }
