@@ -62,7 +62,7 @@ class EmailOTPVerify(BaseModel):
     email: EmailStr
     otp: str
 email_otp_store: Dict[str, Dict] = {}
-EMAIL_USER =" os.getenv("EMAIL_USER")"
+EMAIL_USER =os.getenv("EMAIL_USER")
 EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD") 
 EMAIL_FROM = os.getenv("EMAIL_FROM")
 
