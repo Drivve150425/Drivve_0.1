@@ -102,8 +102,7 @@ async def send_email_otp(request: EmailOTPRequest):
 
         msg.attach(MIMEText(html, "html"))
 
-        server = smtplib.SMTP("smtp.gmail.com", 587)
-        server.starttls()
+        server = smtplib.SMTP("smtp.gmail.com", 465)
         server.login(EMAIL_USER, EMAIL_PASSWORD)
         server.sendmail(
             EMAIL_USER,
