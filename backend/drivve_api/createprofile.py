@@ -62,22 +62,55 @@ class EmailOTPVerify(BaseModel):
     email: EmailStr
     otp: str
 email_otp_store: Dict[str, Dict] = {}
-EMAIL_USER = os.getenv("EMAIL_USER")
+EMAIL_USER =" os.getenv("EMAIL_USER")"
 EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD") 
-EMAIL_FROM = os.getenv("EMAIL_FROM", "DRIVVE <noreply@drivve.com>")
+EMAIL_FROM = os.getenv("EMAIL_FROM")
 
 
 def generate_otp():
     return ''.join(random.choices(string.digits, k=6))
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+
 
 @router.post("/auth/send-email-otp")
 async def send_email_otp(request: EmailOTPRequest):
 
     try:
+        otp = generate_otp()
 
-        auth_client.sign_in_with_otp({
-            "email": request.email
-        })
+        # Store OTP for 5 mins
+        email_otp_store[request.email] = {
+            "otp": otp,
+            "expires": datetime.utcnow() + timedelta(minutes=5)
+        }
+
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = "DRIVVE Email Verification OTP"
+        msg["From"] = EMAIL_FROM
+        msg["To"] = request.email
+
+        html = f"""
+        <div style="font-family: Arial;">
+            <h2>DRIVVE Email Verification</h2>
+            <p>Your OTP is:</p>
+            <h1>{otp}</h1>
+            <p>Valid for 5 minutes.</p>
+        </div>
+        """
+
+        msg.attach(MIMEText(html, "html"))
+
+        server = smtplib.SMTP("smtp.gmail.com", 587)
+        server.starttls()
+        server.login(EMAIL_USER, EMAIL_PASSWORD)
+        server.sendmail(
+            EMAIL_USER,
+            request.email,
+            msg.as_string()
+        )
+        server.quit()
 
         return {
             "success": True,
@@ -85,35 +118,41 @@ async def send_email_otp(request: EmailOTPRequest):
         }
 
     except Exception as e:
-
         raise HTTPException(
             status_code=500,
             detail=str(e)
         )
-
-
 @router.post("/auth/verify-email-otp")
 async def verify_email_otp(request: EmailOTPVerify):
 
-    try:
+    data = email_otp_store.get(request.email)
 
-        auth_client.verify_otp({
-            "email": request.email,
-            "token": request.otp,
-            "type": "email"
-        })
+    if not data:
+        raise HTTPException(
+            status_code=400,
+            detail="OTP not found"
+        )
 
-        return {
-            "success": True,
-            "message": "Email verified successfully"
-        }
+    if datetime.utcnow() > data["expires"]:
+        del email_otp_store[request.email]
 
-    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail="OTP expired"
+        )
 
+    if data["otp"] != request.otp:
         raise HTTPException(
             status_code=400,
             detail="Invalid OTP"
         )
+
+    del email_otp_store[request.email]
+
+    return {
+        "success": True,
+        "message": "Email verified successfully"
+    }
 
 def get_email_html(otp: str) -> str:
     return f"<h2>Your OTP: {otp}</h2>"
