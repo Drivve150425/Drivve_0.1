@@ -8,6 +8,7 @@ from typing import Dict
 import uuid
 
 import requests
+import resend
 from user_id_generator import generate_user_id
 from pydantic import BaseModel, EmailStr
 from models import User, UserStatus
@@ -86,10 +87,6 @@ async def send_email_otp(request: EmailOTPRequest):
             "expires": datetime.utcnow() + timedelta(minutes=5)
         }
 
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = "DRIVVE Email Verification OTP"
-        msg["From"] = EMAIL_FROM
-        msg["To"] = request.email
 
         html = f"""
         <div style="font-family: Arial;">
@@ -100,16 +97,16 @@ async def send_email_otp(request: EmailOTPRequest):
         </div>
         """
 
-        msg.attach(MIMEText(html, "html"))
 
-        server = smtplib.SMTP_SSL("smtp.gmail.com", 465)
-        server.login(EMAIL_USER, EMAIL_PASSWORD)
-        server.sendmail(
-            EMAIL_USER,
-            request.email,
-            msg.as_string()
-        )
-        server.quit()
+        
+        resend.api_key = os.getenv("RESEND_API_KEY")
+
+        resend.Emails.send({
+            "from": EMAIL_FROM,
+            "to": [request.email],
+            "subject": "DRIVVE Email Verification OTP",
+            "html": html
+        })
 
         return {
             "success": True,
