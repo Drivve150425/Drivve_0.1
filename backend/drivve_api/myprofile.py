@@ -361,6 +361,7 @@ class UpdateProfileRequest(BaseModel):
     first_name:         Optional[str] = None
     last_name:          Optional[str] = None
     email:              Optional[str] = None
+    email_verified:     Optional[bool] = None
     gender:             Optional[str] = None
     date_of_birth:      Optional[str] = None
     state:              Optional[str] = None
@@ -377,7 +378,7 @@ async def update_user_profile(data: UpdateProfileRequest, db: Session = Depends(
 
     payload = data.dict(exclude_unset=True)
 
-    for field in ["first_name", "last_name", "email", "gender", "state", "city", "bio"]:
+    for field in ["first_name", "last_name", "email","email_verified", "gender", "state", "city", "bio"]:
         if payload.get(field) is not None:
             setattr(user, field, payload[field])
 
