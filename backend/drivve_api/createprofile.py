@@ -18,7 +18,10 @@ from fastapi import Depends, HTTPException, APIRouter
 from gotrue import SyncGoTrueClient
 from dotenv import load_dotenv
 load_dotenv()
-
+from utils.jwt_helper import (
+    create_access_token,
+    create_refresh_token
+)
 router = APIRouter()
 
 BASE_URL = os.getenv("BASE_URLS")
@@ -239,12 +242,25 @@ async def create_user_profile(profile_data: dict, db: Session = Depends(get_db))
 
         db.commit()
         db.refresh(user)
-
+        access_token = create_access_token(user.id)
+        refresh_token = create_refresh_token(user.id)
         return {
-            "success": True,
-            "message": "Profile created successfully ✅",
-            "user_id": user.user_id,
-            "profile_picture": user.profile_picture
+                "success": True,
+                "message": "Profile created successfully ✅",
+                "user_id": user.user_id,
+                "profile_picture": user.profile_picture,
+
+                "accessToken": access_token,
+                "refreshToken": refresh_token,
+
+                "user": {
+                    "id": user.id,
+                    "user_id": user.user_id,
+                    "phone_number": user.phone_number,
+                    "first_name": user.first_name,
+                    "last_name": user.last_name,
+                    "email": user.email,
+                }
         }
 
     except Exception as e:
