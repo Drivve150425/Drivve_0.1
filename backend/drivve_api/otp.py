@@ -151,6 +151,8 @@ def verify_otp(payload: dict, db: Session = Depends(get_db)):
         raise HTTPException(400, "OTP code or firebase_id_token required")
 
     # ✅ update user if exists
+    access_token = None
+    refresh_token = None
     user = db.query(User).filter(User.phone_number == phone).first()
     if user:
         user.is_phone_verified = True
@@ -192,29 +194,20 @@ def verify_otp(payload: dict, db: Session = Depends(get_db)):
 
     print("✅ OTP VERIFIED")
     print("📱 Device:", device_name, device_type)
-
     return {
-
         "success": True,
-
-        "message":
-            "OTP verified successfully",
+        "message": "OTP verified successfully",
 
         "user": {
-            "id": user.id,
-
-            "first_name":
-                user.first_name,
-
-            "phone_number":
-                user.phone_number,
+            "id": user.id if user else None,
+            "first_name": user.first_name if user else None,
+            "phone_number": user.phone_number if user else phone,
         },
 
-        "accessToken":
-            access_token,
+        "accessToken": access_token if user else None,
+        "refreshToken": refresh_token if user else None,
 
-        "refreshToken":
-            refresh_token
+        "is_new_user": user is None
     }
 
 
