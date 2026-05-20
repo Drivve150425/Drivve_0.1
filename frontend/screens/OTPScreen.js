@@ -252,8 +252,14 @@ const backendData = JSON.parse(responseText);
         setBackendTokens(tokens);
         
         // Also store in AsyncStorage for persistence
-        await AsyncStorage.setItem('auth_tokens', JSON.stringify(tokens));
-        
+await AsyncStorage.setItem(
+  'auth',
+  JSON.stringify({
+    accessToken: tokens.accessToken,
+    refreshToken: tokens.refreshToken,
+    user: backendData.user,
+  })
+);        
         console.log('✅ User authenticated:', backendData.user?.id);
         console.log('📱 Phone number:', fullNumber);
 
@@ -320,9 +326,14 @@ const handleSuccessAnimationComplete = async () => {
     if (!tokens?.accessToken) {
       // Try AsyncStorage
       try {
-        const storedTokens = await AsyncStorage.getItem('auth_tokens');
+        const storedTokens = await AsyncStorage.getItem('auth');
         if (storedTokens) {
-          tokens = JSON.parse(storedTokens);
+const parsed = JSON.parse(storedTokens);
+
+tokens = {
+  accessToken: parsed.accessToken,
+  refreshToken: parsed.refreshToken,
+};
           console.log('🔑 Retrieved tokens from storage:', tokens);
         }
       } catch (e) {}

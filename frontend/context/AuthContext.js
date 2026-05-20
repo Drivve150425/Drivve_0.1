@@ -84,11 +84,13 @@ export const AuthProvider = ({ children }) => {
     const data = await response.json();
 
     if (response.ok) {
-      const updatedAuth = {
-        ...authData,
-        accessToken: data.accessToken,
-        lastUsed: Date.now(),
-      };
+     const updatedAuth = {
+  ...authData,
+  accessToken: data.accessToken,
+  refreshToken:
+    data.refreshToken || authData.refreshToken,
+  lastUsed: Date.now(),
+};
 
       await AsyncStorage.setItem("auth", JSON.stringify(updatedAuth));
 
