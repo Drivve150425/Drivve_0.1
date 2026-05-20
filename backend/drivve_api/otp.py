@@ -308,9 +308,7 @@ def refresh_token(
         )
 
     return {
-
         "success": True,
-
-        "accessToken":
-            new_access_token
+        "accessToken": new_access_token,
+        "refreshToken": refresh_token
     }
