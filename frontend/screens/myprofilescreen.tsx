@@ -93,6 +93,8 @@ export default function MyProfileScreen({ navigation, route })  {
   };
   
   const handleEmailOTPVerification = async (otp: string) => {
+    setEmailVerificationSuccess(false);
+  setEmailVerificationError('');
     if (!otp || otp.length !== 6) {
       setEmailVerificationError("Enter valid 6-digit OTP");
       return;
@@ -235,11 +237,12 @@ export default function MyProfileScreen({ navigation, route })  {
                 })
               : prev.joinDate,
           }));
-
+          setIsEmailVerified(u.email_verified || false);
           // Set formatted DOB for date picker
           if (u.date_of_birth) {
             setFormattedDOB(new Date(u.date_of_birth));
           }
+          
         }
       } catch (err) {
         console.log("❌ Profile fetch error:", err);
@@ -318,20 +321,28 @@ export default function MyProfileScreen({ navigation, route })  {
     const centerModalFields = ["firstName", "lastName", "bio", "emailID"];
 
     // Email editable ONLY if empty
-    if (field === "emailID" && !isEmpty(profileData.emailID)) {
-      return;
-    }
+    // if (field === "emailID" && !isEmpty(profileData.emailID)) {
+    //   return;
+    // }
 
     setCurrentField(field);
     setEditLabel(label);
     setCurrentValue(value ?? "");
 
-    if (field === "emailID") {
-      setCenterEditModalVisible(true);
-      return;
-    }
+   if (field === "emailID") {
+  setCurrentValue(value ?? "");
+
+  // keep verified status for saved email
+  setIsEmailVerified(
+    value?.trim() === profileData.emailID?.trim()
+  );
+
+  setCenterEditModalVisible(true);
+  return;
+}
 
     if (centerModalFields.includes(field)) {
+
       setCenterEditModalVisible(true);
     } else {
       setEditModalVisible(true);
@@ -818,7 +829,7 @@ export default function MyProfileScreen({ navigation, route })  {
             label="Email ID"
             value={profileData.emailID}
             field="emailID"
-            editable={isEmpty(profileData.emailID)}
+          editable={true}
           />
           <InfoField label="Gender" value={profileData.gender} field="gender" />
           <InfoField
@@ -836,25 +847,31 @@ export default function MyProfileScreen({ navigation, route })  {
           />
 
           {/* About Me */}
-          <TouchableOpacity
-            style={styles.aboutCard}
-            onPress={() => openEditModal("bio", profileData.bio, "About Me")}
-            activeOpacity={0.7}
-          >
-            <View style={styles.aboutContent}>
-              <Text style={styles.infoLabel}>About Me</Text>
-              {profileData.bio ? (
-                <Text style={styles.aboutText} numberOfLines={3} ellipsizeMode="tail">
-                  {profileData.bio}
-                </Text>
-              ) : (
-                <View style={styles.emptyBioContainer}>
-                  <Text style={styles.emptyBioText}>Share something about yourself...</Text>
-                </View>
-              )}
-            </View>
-            <MaterialIcons name="chevron-right" size={28} color={Colors.primary} />
-          </TouchableOpacity>
+        <TouchableOpacity
+  style={styles.aboutCard}
+  onPress={() => openEditModal("bio", profileData.bio, "About Me")}
+  activeOpacity={0.7}
+>
+  <View style={styles.aboutContent}>
+    <Text style={styles.infoLabel}>About Me</Text>
+
+    <Text
+      style={styles.aboutText}
+      numberOfLines={3}
+      ellipsizeMode="tail"
+    >
+      {profileData.bio?.trim()
+        ? profileData.bio
+        : "I'm happy to share the ride. Let's Drivve!"}
+    </Text>
+  </View>
+
+  <MaterialIcons
+    name="chevron-right"
+    size={28}
+    color={Colors.primary}
+  />
+</TouchableOpacity>
         </Animated.ScrollView>
       </KeyboardAvoidingView>
 
@@ -952,7 +969,10 @@ export default function MyProfileScreen({ navigation, route })  {
                   <TextInput
                     style={[styles.modalInput, styles.textArea]}
                     value={currentValue}
-                    onChangeText={setCurrentValue}
+                    onChangeText={(text) => {
+  setCurrentValue(text);
+  setIsEmailVerified(false);
+}}
                     placeholder={
                       profileData.bio === ""
                         ? "Tell others about yourself...\n\n• Your interests\n• What you enjoy\n• Your personality\n• Anything you'd like to share!"
@@ -1027,20 +1047,94 @@ export default function MyProfileScreen({ navigation, route })  {
                 <MaterialIcons name="mail" size={20} color={Colors.gray} />
 
                 <TextInput
-                  style={styles.modernInput}
-                  value={currentValue}
-                  onChangeText={setCurrentValue}
-                  placeholder="your@email.com"
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                />
+  style={styles.modernInput}
+  value={currentValue}
+  onChangeText={(text) => {
+    setCurrentValue(text);
 
-                {!isEmailVerified && isValidEmail(currentValue.trim()) && (
-                  <TouchableOpacity onPress={handleEmailVerification}>
-                    <Text style={styles.verifyButtonInlineText}>Verify</Text>
-                  </TouchableOpacity>
-                )}
+    // if email changed → reset verification
+    if (text.trim() !== profileData.emailID.trim()) {
+      setIsEmailVerified(false);
+    } else {
+      setIsEmailVerified(true);
+    }
+  }}
+  placeholder="your@email.com"
+  keyboardType="email-address"
+  autoCapitalize="none"
+/>
+          {isValidEmail(currentValue.trim()) && (
+  <View
+    style={{
+      flexDirection: "row",
+      alignItems: "center",
+      marginLeft: 8,
+    }}
+  >
+    {isEmailVerified ? (
+      // VERIFIED
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+        }}
+      >
+       
+        <Text
+          style={{
+            color: "#10B981",
+            fontSize: 13,
+            fontWeight: "700",
+            marginLeft: 4,
+          }}
+        >
+          Verified
+        </Text>
+      </View>
+    ) : (
+      // NOT VERIFIED
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+        }}
+      >
+        <MaterialIcons
+          name="cancel"
+          size={18}
+          color="#EF4444"
+        />
 
+        <Text
+          style={{
+            color: "#EF4444",
+            fontSize: 12,
+            fontWeight: "600",
+            marginLeft: 4,
+          }}
+        >
+          Not Verified
+        </Text>
+
+        <TouchableOpacity
+          onPress={handleEmailVerification}
+          style={{ marginLeft: 8 }}
+        >
+          <Text
+            style={{
+              color: Colors.primary,
+              fontSize: 13,
+              fontWeight: "700",
+              textDecorationLine: "underline",
+            }}
+          >
+            Verify
+          </Text>
+        </TouchableOpacity>
+      </View>
+    )}
+  </View>
+)}
                 {isEmailVerified && (
                   <MaterialIcons name="check-circle" size={22} color="#10B981" />
                 )}
@@ -1053,8 +1147,14 @@ export default function MyProfileScreen({ navigation, route })  {
                     currentField === "bio" && styles.centerTextArea,
                   ]}
                   value={currentValue}
-                  onChangeText={setCurrentValue}
-                  placeholder={`Enter ${editLabel.toLowerCase()}...`}
+onChangeText={(text) => {
+  setCurrentValue(text);
+
+  // reset verification when email changes
+  if (text.trim() !== profileData.emailID.trim()) {
+    setIsEmailVerified(false);
+  }
+}}         placeholder={`Enter ${editLabel.toLowerCase()}...`}
                   multiline={currentField === "bio"}
                   numberOfLines={currentField === "bio" ? 5 : 1}
                   maxLength={currentField === "bio" ? 300 : undefined}
@@ -1078,10 +1178,20 @@ export default function MyProfileScreen({ navigation, route })  {
 
               <TouchableOpacity
                 style={[styles.modalButton, styles.saveButton]}
-                onPress={() => {
-                  handleSaveEdit();
-                  setCenterEditModalVisible(false);
-                }}
+              onPress={() => {
+
+  if (
+    currentField === "emailID" &&
+    !isEmailVerified
+  ) {
+    setAlertMessage("Please verify your email first");
+    setShowErrorAlert(true);
+    return;
+  }
+
+  handleSaveEdit();
+  setCenterEditModalVisible(false);
+}}
               >
                 <Text style={styles.saveButtonText}>
                   {currentField === "bio" && profileData.bio === "" ? "Add" : "Save"}

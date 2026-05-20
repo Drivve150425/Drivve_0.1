@@ -122,38 +122,7 @@ const loadDropdowns = async () => {
     console.log("Dropdown Load Error", e);
   }
 };
-const getFuelTypes = () => {
-  if (!vehicleType || !make || !model) return [];
 
-  const filtered = dbListData.filter(
-    (item: any) =>
-      item.vehicle_type === vehicleType &&
-      item.make_company_name === make &&
-      item.model_name === model
-  );
-
-  const fuelSet = new Set<string>();
-
-  filtered.forEach((item: any) => {
-    if (!item.fuel_type) return;
-
-    // Split fuel types
-    const fuels = item.fuel_type
-      .split(/[\/,+]/) // split by / , +
-      .map((f: string) =>
-        f
-          .replace(/\(.*?\)/g, "") // remove brackets text
-          .trim()
-      )
-      .filter(Boolean);
-
-    fuels.forEach((fuel: string) => {
-      fuelSet.add(fuel);
-    });
-  });
-
-  return Array.from(fuelSet);
-};
   const showCustomAlert = (title, message, type = 'success') => {
     let icon = "check-circle";
     let iconColor = "#10B981";
@@ -279,6 +248,8 @@ useEffect(() => {
 }, [make]);
 useEffect(() => {
   if (!isInitialLoad) {
+    setMake("");
+    setModel("");
     setFuelType("");
     setMaxSeats("");
     setSeatOptions([]);
@@ -727,8 +698,13 @@ const getBodyTypes = () => {
     (item: any) => item.vehicle_type === vehicleType
   );
 
-  return [...new Set(filtered.map((i: any) => i.body_type).filter(Boolean))];
+  return [...new Set(
+    filtered
+      .map((i: any) => i.body_type)
+      .filter(Boolean)
+  )].sort();
 };
+
 const getMakes = () => {
   if (!vehicleType || !bodyType) return [];
 
@@ -738,12 +714,13 @@ const getMakes = () => {
       item.body_type === bodyType
   );
 
-  return [
-    ...new Set(
-      filtered.map((i: any) => i.make_company_name).filter(Boolean)
-    ),
-  ];
+  return [...new Set(
+    filtered
+      .map((i: any) => i.make_company_name)
+      .filter(Boolean)
+  )].sort();
 };
+
 const getModels = () => {
   if (!vehicleType || !bodyType || !make) return [];
 
@@ -754,11 +731,41 @@ const getModels = () => {
       item.make_company_name === make
   );
 
-  return [
-    ...new Set(
-      filtered.map((i: any) => i.model_name).filter(Boolean)
-    ),
-  ];
+  return [...new Set(
+    filtered
+      .map((i: any) => i.model_name)
+      .filter(Boolean)
+  )].sort();
+};
+
+const getFuelTypes = () => {
+  if (!vehicleType || !make || !model) return [];
+
+  const filtered = dbListData.filter(
+    (item: any) =>
+      item.vehicle_type === vehicleType &&
+      item.make_company_name === make &&
+      item.model_name === model
+  );
+
+  const fuelSet = new Set<string>();
+
+  filtered.forEach((item: any) => {
+    if (!item.fuel_type) return;
+
+    const fuels = item.fuel_type
+      .split(/[\/,+]/)
+      .map((f: string) =>
+        f.replace(/\(.*?\)/g, "").trim()
+      )
+      .filter(Boolean);
+
+    fuels.forEach((fuel: string) => {
+      fuelSet.add(fuel);
+    });
+  });
+
+  return Array.from(fuelSet).sort();
 };
   return (
     <SafeAreaView style={styles.container}>

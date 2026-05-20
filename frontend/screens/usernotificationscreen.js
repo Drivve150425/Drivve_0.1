@@ -143,7 +143,7 @@ export default function NotificationScreen({ navigation, route }) {
     }
 
     showConfirmationAlert(
-      'Clear All Notifications',
+      'Delete All Notifications',
       `Are you sure you want to clear all ${notifications.length} notification${notifications.length > 1 ? 's' : ''}? This action cannot be undone.`,
       async () => {
         setClearing(true);
@@ -160,7 +160,7 @@ export default function NotificationScreen({ navigation, route }) {
           setClearing(false);
         }
       },
-      'Clear All'
+      'Delete All'
     );
   };
 
@@ -202,24 +202,18 @@ export default function NotificationScreen({ navigation, route }) {
     <SafeAreaView style={styles.container}>
       <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
 
-      <CommonHeader
-        title="Notifications"
-        showBackButton={true}
-        rightIcon={
-          notifications.length > 0 && !clearing ? (
-            <Text style={{ 
-              color: Colors.orange1, 
-              fontWeight: "700",
-              fontSize: moderateScale(14)
-            }}>
-              Clear
-            </Text>
-          ) : clearing ? (
-            <ActivityIndicator size="small" color={Colors.orange1} />
-          ) : null
-        }
-        onRightPress={clearAll}
-      />
+<CommonHeader
+  title="Notifications"
+  showBack={true}
+  rightIcon={
+    notifications.length > 0
+      ? "delete-outline"
+      : null
+  }
+  rightIconColor={Colors.orange1}
+  onRightPress={clearAll}
+/>
+      
 
       {/* ================= CONTENT ================= */}
       {notifications.length === 0 ? (

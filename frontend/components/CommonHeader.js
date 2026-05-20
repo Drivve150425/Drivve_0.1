@@ -15,6 +15,8 @@ export default function CommonHeader({
   showBack = true,
   rightIcon = null,
   onRightPress,
+    rightIconColor = Colors.orange1,
+
 }) {
   const navigation = useNavigation();
 
@@ -48,7 +50,11 @@ export default function CommonHeader({
           style={styles.iconButton}
           onPress={onRightPress}
         >
-          {rightIcon}
+         <MaterialIcons
+  name={rightIcon}
+  size={28}
+  color={rightIconColor}
+/>
         </TouchableOpacity>
       ) : (
         <View style={styles.side} />

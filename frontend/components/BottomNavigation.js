@@ -217,7 +217,7 @@ import { useAuth } from '../context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/Colors';
 import { Image } from 'react-native';
-
+import { SvgCssUri } from "react-native-svg/css";
 import {
   scale,
   verticalScale,
@@ -238,6 +238,8 @@ const BottomNavigation = ({
   onNavigate,
   unreadCount = 0,
   profileImage,
+    profileRefreshKey,
+
   navigation
 }) => {
   const { isAuthenticated, user } = useAuth() || { isAuthenticated: false, user: {} };
@@ -245,12 +247,12 @@ const BottomNavigation = ({
   const indicatorX = useRef(new Animated.Value(0)).current;
   const [containerWidth, setContainerWidth] = useState(0);
 
-  const INDICATOR_SIZE = scale(28);
+  const INDICATOR_SIZE = scale(32);
 
   /**
    * Move indicator
    */
- useEffect(() => {
+useEffect(() => {
   if (!containerWidth) return;
 
   const activeIndex = NAV_ITEMS.findIndex(
@@ -259,10 +261,10 @@ const BottomNavigation = ({
 
   const tabWidth = containerWidth / NAV_ITEMS.length;
 
+  // PERFECT CENTER
   const left =
-    tabWidth * activeIndex +
-    tabWidth / 2 -
-    INDICATOR_SIZE / 2;
+    activeIndex * tabWidth +
+    (tabWidth - INDICATOR_SIZE) / 2;
 
   Animated.spring(indicatorX, {
     toValue: left,
@@ -272,7 +274,6 @@ const BottomNavigation = ({
   }).start();
 
 }, [activeTab, containerWidth]);
-
   return (
     <View style={styles.wrapper}>
 
@@ -301,66 +302,95 @@ const BottomNavigation = ({
         {NAV_ITEMS.map(item => {
 
           const isActive = item.key === activeTab;
+return (
+  <TouchableOpacity
+    key={item.key}
+    style={styles.tabButton}
+    activeOpacity={0.85}
+    onPress={() => onNavigate?.(item.key)}
+  >
 
-          return (
-            <TouchableOpacity
-              key={item.key}
-              style={styles.tabButton}
-              activeOpacity={0.85}
-              onPress={() => onNavigate?.(item.key)}
-            >
+    <View style={styles.iconContainer}>
 
-              <View style={styles.iconContainer}>
-                {item.key === 'profile' && profileImage ? (
+     {item.key === 'profile' ? (
 
-  <Image
-    source={{ uri: profileImage }}
-    style={[
-      styles.profileDp,
-      {
-        borderColor: isActive
-          ? Colors.primary
-          : 'transparent'
-      }
-    ]}
-  />
+  profileImage ? (
+
+    profileImage
+      ?.toLowerCase()
+      ?.includes('.svg') ? (
+
+      <SvgCssUri
+        key={profileRefreshKey}
+        width="28"
+        height="28"
+        uri={profileImage}
+      />
+
+    ) : (
+
+      <Image
+        key={profileRefreshKey}
+        source={{ uri: profileImage }}
+        resizeMode="cover"
+        style={[
+          styles.profileDp,
+          {
+            borderColor: isActive
+              ? Colors.primary
+              : "transparent",
+          },
+        ]}
+      />
+
+    )
+
+  ) : (
+
+    <Ionicons
+      name={item.icon}
+      size={moderateScale(22)}
+      color={isActive ? Colors.white : Colors.gray}
+    />
+
+  )
 
 ) : (
 
-  <Ionicons
-    name={item.icon}
-    size={moderateScale(22)}
-    color={isActive ? Colors.white : Colors.gray}
-  />
+        <Ionicons
+          name={item.icon}
+          size={moderateScale(22)}
+          color={isActive ? Colors.white : Colors.gray}
+        />
 
-)}
+      )}
 
+      {/* {item.key === 'alert' && unreadCount > 0 && (
+        <View style={styles.badge}>
+          <Text style={styles.badgeText}>
+            {unreadCount > 9 ? '9+' : unreadCount}
+          </Text>
+        </View>
+      )} */}
 
-                {/* {item.key === 'alert' && unreadCount > 0 && (
-                  <View style={styles.badge}>
-                    <Text style={styles.badgeText}>
-                      {unreadCount > 9 ? '9+' : unreadCount}
-                    </Text>
-                  </View>
-                )} */}
-              </View>
+    </View>
 
-              <Text
-                style={[
-                  styles.label,
-                  {
-                    color: isActive
-                      ? Colors.primary
-                      : Colors.gray,
-                    fontWeight: isActive ? '600' : '400',
-                  }
-                ]}
-              >
-                {item.label}
-              </Text>
+    <Text
+      style={[
+        styles.label,
+        {
+          color: isActive
+            ? Colors.primary
+            : Colors.gray,
+          fontWeight: isActive ? '600' : '400',
+        }
+      ]}
+    >
+      {item.label}
+    </Text>
 
-            </TouchableOpacity>
-          );
+  </TouchableOpacity>
+);
         })}
       </View>
     </View>
@@ -389,8 +419,8 @@ const styles = StyleSheet.create({
  navBar: {
     height: verticalScale(56),
     position: 'absolute',
-    bottom: verticalScale(18),
-    backgroundColor: Platform.OS === 'ios' ? '#ffffffc5' : '#c2bfbf80',//'#dfdada38' ,//'#ffffffc5' , //Colors.white,
+    bottom: Platform.OS === 'ios' ? 30 : 40,
+     backgroundColor: Platform.OS === 'ios' ? '#ffffffc5' : '#c2bfbf80',//'#dfdada38' ,//'#ffffffc5' , //Colors.white,
     borderRadius: moderateScale(40),
     borderColor: Platform.OS === 'ios' ? Colors.gray : '#c2bfbf95',
     flexDirection: 'row',
@@ -410,7 +440,7 @@ const styles = StyleSheet.create({
 
   indicator: {
     position: 'absolute',
-    top: verticalScale(8),
+    top: verticalScale(7),
     backgroundColor: Colors.primary,
     zIndex: 1,
   },

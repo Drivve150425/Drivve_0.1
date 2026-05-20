@@ -14,6 +14,8 @@ import {
   Image,
   Animated,
   ActivityIndicator,
+  Keyboard,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
@@ -38,7 +40,7 @@ import { useAuth } from '../context/AuthContext';
 
 export default function CreateProfileScreen({ navigation, route }) {
   const params = route?.params || {};
- const { login } = useAuth();
+  const { login } = useAuth();
   const { phoneNumber, fullPhoneNumber, countryCode, isNewUser } = params;
 
   // Form states
@@ -179,9 +181,12 @@ export default function CreateProfileScreen({ navigation, route }) {
 
     if (!firstName.trim()) newErrors.firstName = 'First name is required';
     if (email && !isValidEmail(email)) newErrors.email = 'Invalid email';
+    if (email && !isEmailVerified) {
+      newErrors.email = 'Please verify your email address';
+    }
     if (!gender) newErrors.gender = 'Gender is required';
-    if (!selectedState) newErrors.state = 'State is required';
-    if (!selectedCity) newErrors.city = 'City is required';
+    // if (!selectedState) newErrors.state = 'State is required';
+    // if (!selectedCity) newErrors.city = 'City is required';
 
     // Require profile photo or avatar
     if (!profileImage && !selectedAvatar) newErrors.photo = 'Profile photo is required';
@@ -343,6 +348,11 @@ export default function CreateProfileScreen({ navigation, route }) {
         if (Platform.OS !== 'web') {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }
+        
+        // Close modal after successful verification
+        setTimeout(() => {
+          setShowEmailOTPModal(false);
+        }, 1500);
       } else {
         console.log('❌ Verification failed:', result.message);
         setEmailVerificationError(result.message || 'Invalid verification code. Please try again');
@@ -425,7 +435,8 @@ export default function CreateProfileScreen({ navigation, route }) {
 
       if (createResult && createResult.success) {
         const returnedUserId = createResult.userId || generatedUserId;
-        setSuccessData({ userId: returnedUserId, age: calculateAge(dateOfBirth), profileData: createResult.userData || profileData });
+        setSuccessData({ userId: returnedUserId, age: calculateAge(dateOfBirth), profileData: createResult.userData || profileData, accessToken: createResult.accessToken,
+  refreshToken: createResult.refreshToken, });
         setShowSuccessAlert(true);
       } else {
         const msg = (createResult && createResult.message) || 'Failed to create profile. Please try again';
@@ -530,435 +541,426 @@ export default function CreateProfileScreen({ navigation, route }) {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
-      
-      <KeyboardAvoidingView
-        style={styles.keyboardAvoidingView}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
-      >
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.modernBackButton} onPress={handleBackPress}>
-            <MaterialIcons name="arrow-back-ios" size={28} color={Colors.secondary} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Create Profile</Text>
-          <View style={styles.headerSpacer} />
-        </View>
-
-        <Animated.ScrollView 
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          style={{
-            opacity: fadeAnim,
-            transform: [{ translateY: slideAnim }],
-          }}
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+      <SafeAreaView style={styles.container}>
+        <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
+        
+        <KeyboardAvoidingView
+          style={styles.keyboardAvoidingView}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'undefined'}
         >
-          {/* Subtitle */}
-          <Text style={styles.subtitle}>Setup your profile and introduce yourself</Text>
-
-          {/* Profile Image Section */}
-          <View style={styles.profileImageSection}>
-            <TouchableOpacity 
-              style={styles.profileImageContainer} 
-              onPress={showImagePickerOptions}
-              activeOpacity={0.8}
-            >
-              {(!profileImage && !selectedAvatar) ? (
-                <LinearGradient
-                  colors={[Colors.blue,  Colors.primary, '#414A6C', '#4D4D66', '#5D505E', '#6C5457',
-                    '#A3613C', '#CC6B28', Colors.orange1, Colors.secondary]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.modernProfileImageCircle}
-                >
-                  {renderProfileImage()}
-                </LinearGradient>
-              ) : (
-                <View style={[styles.modernProfileImageCircle, { backgroundColor: 'transparent' }]}>
-                  {renderProfileImage()}
-                </View>
-              )}
+          {/* Header */}
+          <View style={styles.header}>
+            <TouchableOpacity style={styles.modernBackButton} onPress={handleBackPress}>
+              <MaterialIcons name="arrow-back-ios" size={28} color={Colors.secondary} />
             </TouchableOpacity>
-            <Text style={styles.tapToChangeText}>Profile Photo</Text>
+            <Text style={styles.headerTitle}>Create Profile</Text>
+            <View style={styles.headerSpacer} />
           </View>
 
-          {/* Form Fields */}
-          <View style={styles.formContainer}>
-            {/* Name Row */}
-            <View style={styles.nameRow}>
-              <View style={styles.nameField}>
-                <Text style={styles.label}>First Name <Text style={styles.required}>*</Text></Text>
-                <View style={[styles.modernInputContainer, errors.firstName && styles.inputErrorContainer]}>
-                  <MaterialIcons name="person" size={20} color={Colors.gray} style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.modernInput}
-                    placeholder="First Name"
-                    placeholderTextColor={Colors.gray}
-                    value={firstName}
-                    onChangeText={setFirstName}
-                    autoCapitalize="words"
-                  />
-                </View>
-                {errors.firstName && <Text style={styles.errorText}>{errors.firstName}</Text>}
-              </View>
-              
-              <View style={styles.nameField}>
-                <Text style={styles.label}>Last Name</Text>
-                <View style={styles.modernInputContainer}>
-                  <MaterialIcons name="person-outline" size={20} color={Colors.gray} style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.modernInput}
-                    placeholder="Last Name"
-                    placeholderTextColor={Colors.gray}
-                    value={lastName}
-                    onChangeText={setLastName}
-                    autoCapitalize="words"
-                  />
-                </View>
-              </View>
-            </View>
+          <Animated.ScrollView 
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            style={{
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }],
+            }}
+          >
+            {/* Subtitle */}
+            <Text style={styles.subtitle}>Setup your profile and introduce yourself</Text>
 
-            {/* Email with Verify */}
-            <View style={styles.fieldContainer}>
-              <Text style={styles.label}>Email</Text>
-              <View style={[styles.modernInputContainer, errors.email && styles.inputErrorContainer]}>
-                <MaterialIcons name="mail" size={20} color={Colors.gray} style={styles.inputIcon} />
-                <TextInput
-                  style={[styles.modernInput, { flex: 1 }]}
-                  placeholder="your@email.com"
-                  placeholderTextColor={Colors.gray}
-                  value={email}
-                  onChangeText={setEmail}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                />
-                
-                {email && isValidEmail(email) && !isEmailVerified && (
-                  <TouchableOpacity 
-                    style={styles.verifyButtonInline}
-                    onPress={handleEmailVerification}
-                    disabled={isEmailLoading}
+            {/* Profile Image Section */}
+            <View style={styles.profileImageSection}>
+              <TouchableOpacity 
+                style={styles.profileImageContainer} 
+                onPress={showImagePickerOptions}
+                activeOpacity={0.8}
+              >
+                {(!profileImage && !selectedAvatar) ? (
+                  <LinearGradient
+                    colors={[Colors.blue,  Colors.primary, '#414A6C', '#4D4D66', '#5D505E', '#6C5457',
+                      '#A3613C', '#CC6B28', Colors.orange1, Colors.secondary]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.modernProfileImageCircle}
                   >
-                    <Text style={styles.verifyButtonInlineText}>
-                      {isEmailLoading ? 'Sending...' : 'Verify'}
-                    </Text>
-                  </TouchableOpacity>
-                )}
-                
-                {isEmailVerified && (
-                  <View style={styles.verifiedBadgeInline}>
-                    <MaterialIcons name="check-circle" size={22} color="#10B981" />
+                    {renderProfileImage()}
+                  </LinearGradient>
+                ) : (
+                  <View style={[styles.modernProfileImageCircle, { backgroundColor: 'transparent' }]}>
+                    {renderProfileImage()}
                   </View>
                 )}
-              </View>
-              {errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
+              </TouchableOpacity>
+              <Text style={styles.tapToChangeText}>Profile Photo</Text>
             </View>
 
-
-            {/* Date of Birth */}
-            <View style={styles.fieldContainer}>
-              <Text style={styles.label}>Date of Birth <Text style={styles.required}>*</Text></Text>
-              <TouchableOpacity
-                style={[styles.modernInputContainer, errors.dateOfBirth && styles.inputErrorContainer]}
-                onPress={() => setShowDatePicker(true)}
-              >
-                <Ionicons name="calendar" size={20} color={Colors.gray} style={styles.inputIcon} />
-                <Text style={styles.modernDateText}>{formatDate(dateOfBirth)}</Text>
-                <View style={styles.ageTag}>
-                  <Text style={styles.ageTagText}>Age {calculateAge(dateOfBirth)}</Text>
+            {/* Form Fields */}
+            <View style={styles.formContainer}>
+              {/* Name Row */}
+              <View style={styles.nameRow}>
+                <View style={styles.nameField}>
+                  <Text style={styles.label}>First Name <Text style={styles.required}>*</Text></Text>
+                  <View style={[styles.modernInputContainer, errors.firstName && styles.inputErrorContainer]}>
+                    <MaterialIcons name="person" size={20} color={Colors.gray} style={styles.inputIcon} />
+                    <TextInput
+                      style={styles.modernInput}
+                      placeholder="First Name"
+                      placeholderTextColor={Colors.gray}
+                      value={firstName}
+                      onChangeText={setFirstName}
+                      autoCapitalize="words"
+                    />
+                  </View>
+                  {errors.firstName && <Text style={styles.errorText}>{errors.firstName}</Text>}
                 </View>
-              </TouchableOpacity>
-              {errors.dateOfBirth && <Text style={styles.errorText}>{errors.dateOfBirth}</Text>}
-            </View>
-
-            {/* Gender */}
-            <View style={styles.fieldContainer}>
-              <Text style={styles.label}>Gender <Text style={styles.required}>*</Text></Text>
-              <TouchableOpacity
-                style={[styles.modernInputContainer, errors.gender && styles.inputErrorContainer]}
-                onPress={() => setShowGenderModal(true)}
-              >
-                <MaterialIcons name="wc" size={20} color={Colors.gray} style={styles.inputIcon} />
-                <Text style={[styles.modernDropdownText, !gender && styles.placeholder]}>
-                  {gender || 'Select Gender'}
-                </Text>
-                <MaterialIcons name="expand-more" size={20} color={Colors.gray} />
-              </TouchableOpacity>
-              {errors.gender && <Text style={styles.errorText}>{errors.gender}</Text>}
-            </View>
-
-            {/* State */}
-            <View style={styles.fieldContainer}>
-              <Text style={styles.label}>State <Text style={styles.required}>*</Text></Text>
-              <TouchableOpacity
-                style={[styles.modernInputContainer, errors.state && styles.inputErrorContainer]}
-                onPress={() => setShowStateModal(true)}
-              >
-                <MaterialIcons name="location-on" size={20} color={Colors.gray} style={styles.inputIcon} />
-                <Text style={[styles.modernDropdownText, !selectedState && styles.placeholder]}>
-                  {selectedState || 'Select State'}
-                </Text>
-                <MaterialIcons name="expand-more" size={20} color={Colors.gray} />
-              </TouchableOpacity>
-              {errors.state && <Text style={styles.errorText}>{errors.state}</Text>}
-            </View>
-
-            {/* City */}
-            <View style={styles.fieldContainer}>
-              <Text style={styles.label}>City <Text style={styles.required}>*</Text></Text>
-              <TouchableOpacity
-                style={[styles.modernInputContainer, errors.city && styles.inputErrorContainer]}
-                onPress={() => {
-                  if (!selectedState) {
-                    setShowStateFirstAlert(true);
-                    return;
-                  }
-                  setShowCityModal(true);
-                }}
-              >
-                <MaterialIcons name="location-city" size={20} color={Colors.gray} style={styles.inputIcon} />
-                <Text style={[styles.modernDropdownText, !selectedCity && styles.placeholder]}>
-                  {selectedCity || 'Select City'}
-                </Text>
-                <MaterialIcons name="expand-more" size={20} color={Colors.gray} />
-              </TouchableOpacity>
-              {errors.city && <Text style={styles.errorText}>{errors.city}</Text>}
-            </View>
-
-            {/* Referral Code */}
-            <View style={styles.fieldContainer}>
-              <Text style={styles.label}>Referral Code</Text>
-              <View style={styles.modernInputContainer}>
-                <MaterialIcons name="card-giftcard" size={20} color={Colors.gray} style={styles.inputIcon} />
-                <TextInput
-                  style={styles.modernInput}
-                  placeholder="Optional referral code"
-                  placeholderTextColor={Colors.gray}
-                  value={referralCode}
-                  onChangeText={setReferralCode}
-                  autoCapitalize="characters"
-                />
+                
+                <View style={styles.nameField}>
+                  <Text style={styles.label}>Last Name</Text>
+                  <View style={styles.modernInputContainer}>
+                    <MaterialIcons name="person-outline" size={20} color={Colors.gray} style={styles.inputIcon} />
+                    <TextInput
+                      style={styles.modernInput}
+                      placeholder="Last Name"
+                      placeholderTextColor={Colors.gray}
+                      value={lastName}
+                      onChangeText={setLastName}
+                      autoCapitalize="words"
+                    />
+                  </View>
+                </View>
               </View>
-            </View>
 
-            {/* Continue Button */}
-            <TouchableOpacity
-              style={[styles.modernContinueButton, isLoading && styles.buttonDisabled]}
-              onPress={handleSubmit}
-              disabled={isLoading}
-              activeOpacity={0.9}
-            >
-              <LinearGradient
-                colors={[Colors.primary, '#0D3A6F']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.gradientButtonContent}
+              {/* Email with Verify */}
+              <View style={styles.fieldContainer}>
+                <Text style={styles.label}>Email</Text>
+                <View style={[styles.modernInputContainer, errors.email && styles.inputErrorContainer]}>
+                  <MaterialIcons name="mail" size={20} color={Colors.gray} style={styles.inputIcon} />
+                  <TextInput
+                    style={[styles.modernInput, { flex: 1 }]}
+                    placeholder="your@email.com"
+                    placeholderTextColor={Colors.gray}
+                    value={email}
+                    onChangeText={setEmail}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                  />
+                  
+                  {email && isValidEmail(email) && !isEmailVerified && (
+                    <TouchableOpacity 
+                      style={styles.verifyButtonInline}
+                      onPress={handleEmailVerification}
+                      disabled={isEmailLoading}
+                    >
+                      <Text style={styles.verifyButtonInlineText}>
+                        {isEmailLoading ? 'Sending...' : 'Verify'}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                  
+                  {isEmailVerified && (
+                    <View style={styles.verifiedBadgeInline}>
+                      <MaterialIcons name="check-circle" size={22} color="#10B981" />
+                    </View>
+                  )}
+                </View>
+                {errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
+              </View>
+
+
+              {/* Date of Birth */}
+              <View style={styles.fieldContainer}>
+                <Text style={styles.label}>Date of Birth <Text style={styles.required}>*</Text></Text>
+                <TouchableOpacity
+                  style={[styles.modernInputContainer, errors.dateOfBirth && styles.inputErrorContainer]}
+                  onPress={() => setShowDatePicker(true)}
+                >
+                  <Ionicons name="calendar" size={20} color={Colors.gray} style={styles.inputIcon} />
+                  <Text style={styles.modernDateText}>{formatDate(dateOfBirth)}</Text>
+                  <View style={styles.ageTag}>
+                    <Text style={styles.ageTagText}>Age {calculateAge(dateOfBirth)}</Text>
+                  </View>
+                </TouchableOpacity>
+                {errors.dateOfBirth && <Text style={styles.errorText}>{errors.dateOfBirth}</Text>}
+              </View>
+
+              {/* Gender */}
+              <View style={styles.fieldContainer}>
+                <Text style={styles.label}>Gender <Text style={styles.required}>*</Text></Text>
+                <TouchableOpacity
+                  style={[styles.modernInputContainer, errors.gender && styles.inputErrorContainer]}
+                  onPress={() => setShowGenderModal(true)}
+                >
+                  <MaterialIcons name="wc" size={20} color={Colors.gray} style={styles.inputIcon} />
+                  <Text style={[styles.modernDropdownText, !gender && styles.placeholder]}>
+                    {gender || 'Select Gender'}
+                  </Text>
+                  <MaterialIcons name="expand-more" size={20} color={Colors.gray} />
+                </TouchableOpacity>
+                {errors.gender && <Text style={styles.errorText}>{errors.gender}</Text>}
+              </View>
+
+              {/* State */}
+              <View style={styles.fieldContainer}>
+                <Text style={styles.label}>State </Text>
+                <TouchableOpacity
+                  style={[styles.modernInputContainer, errors.state && styles.inputErrorContainer]}
+                  onPress={() => setShowStateModal(true)}
+                >
+                  <MaterialIcons name="location-on" size={20} color={Colors.gray} style={styles.inputIcon} />
+                  <Text style={[styles.modernDropdownText, !selectedState && styles.placeholder]}>
+                    {selectedState || 'Select State'}
+                  </Text>
+                  <MaterialIcons name="expand-more" size={20} color={Colors.gray} />
+                </TouchableOpacity>
+                {errors.state && <Text style={styles.errorText}>{errors.state}</Text>}
+              </View>
+
+              {/* City */}
+              <View style={styles.fieldContainer}>
+                <Text style={styles.label}>City </Text>
+                <TouchableOpacity
+                  style={[styles.modernInputContainer, errors.city && styles.inputErrorContainer]}
+                  onPress={() => {
+                    if (!selectedState) {
+                      setShowStateFirstAlert(true);
+                      return;
+                    }
+                    setShowCityModal(true);
+                  }}
+                >
+                  <MaterialIcons name="location-city" size={20} color={Colors.gray} style={styles.inputIcon} />
+                  <Text style={[styles.modernDropdownText, !selectedCity && styles.placeholder]}>
+                    {selectedCity || 'Select City'}
+                  </Text>
+                  <MaterialIcons name="expand-more" size={20} color={Colors.gray} />
+                </TouchableOpacity>
+                {errors.city && <Text style={styles.errorText}>{errors.city}</Text>}
+              </View>
+
+              {/* Continue Button */}
+              <TouchableOpacity
+                style={[styles.modernContinueButton, isLoading && styles.buttonDisabled]}
+                onPress={handleSubmit}
+                disabled={isLoading}
+                activeOpacity={0.9}
               >
-                <Text style={styles.modernContinueButtonText}>
-                  {isLoading ? 'Creating Profile...' : 'Continue'}
-                </Text>
-              </LinearGradient>
-            </TouchableOpacity>
-          </View>
-        </Animated.ScrollView>
-      </KeyboardAvoidingView>
+                <LinearGradient
+                  colors={[Colors.primary, '#0D3A6F']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.gradientButtonContent}
+                >
+                  <Text style={styles.modernContinueButtonText}>
+                    {isLoading ? 'Creating Profile...' : 'Continue'}
+                  </Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+          </Animated.ScrollView>
+        </KeyboardAvoidingView>
 
-      {/* Modals */}
-      <ModernModal
-        visible={showGenderModal}
-        onClose={() => setShowGenderModal(false)}
-        title="Select Gender"
-        data={['Male', 'Female', 'Prefer Not To Say']}
-        onSelect={setGender}
-        selectedValue={gender}
-      />
+        {/* Modals */}
+        <ModernModal
+          visible={showGenderModal}
+          onClose={() => setShowGenderModal(false)}
+          title="Select Gender"
+          data={['Male', 'Female', 'Prefer Not To Say']}
+          onSelect={setGender}
+          selectedValue={gender}
+        />
 
-      <ModernModal
-        visible={showStateModal}
-        onClose={() => setShowStateModal(false)}
-        title="Select State"
-        data={STATES}
-        onSelect={(state) => {
-          setSelectedState(state);
-          setSelectedCity('');
-        }}
-        selectedValue={selectedState}
-      />
+        <ModernModal
+          visible={showStateModal}
+          onClose={() => setShowStateModal(false)}
+          title="Select State"
+          data={STATES}
+          onSelect={(state) => {
+            setSelectedState(state);
+            setSelectedCity('');
+          }}
+          selectedValue={selectedState}
+        />
 
-      <ModernModal
-        visible={showCityModal}
-        onClose={() => setShowCityModal(false)}
-        title="Select City"
-        data={getCitiesByState(selectedState)}
-        onSelect={setSelectedCity}
-        selectedValue={selectedCity}
-      />
+        <ModernModal
+          visible={showCityModal}
+          onClose={() => setShowCityModal(false)}
+          title="Select City"
+          data={getCitiesByState(selectedState)}
+          onSelect={setSelectedCity}
+          selectedValue={selectedCity}
+        />
 
-      {/* Email OTP Modal */}
-      <EmailOTPModal
-        visible={showEmailOTPModal}
-        email={email}
-        onClose={() => {
-          console.log('🚪 EmailOTPModal closed');
-          setShowEmailOTPModal(false);
-          setEmailOTP('');
-          setEmailVerificationError('');
-          setEmailVerificationSuccess(false);
-        }}
-        onVerify={handleEmailOTPVerification}
-        isLoading={isEmailLoading}
-        verificationSuccess={emailVerificationSuccess}
-        verificationError={emailVerificationError}
-      />
+        {/* Email OTP Modal - Blocks keyboard and screen */}
+        <EmailOTPModal
+          visible={showEmailOTPModal}
+          email={email}
+          onClose={() => {
+            console.log('🚪 EmailOTPModal closed');
+            setShowEmailOTPModal(false);
+            setEmailOTP('');
+            setEmailVerificationError('');
+            setEmailVerificationSuccess(false);
+          }}
+          onVerify={handleEmailOTPVerification}
+          isLoading={isEmailLoading}
+          verificationSuccess={emailVerificationSuccess}
+          verificationError={emailVerificationError}
+        />
 
-      {/* Avatar Picker */}
-      <AvatarPicker
-        visible={showAvatarPicker}
-        onClose={() => setShowAvatarPicker(false)}
-        onSelect={async (avatar) => {
-          setSelectedAvatar(avatar);
-          setProfileImage(null);
-        }}
-        selectedAvatar={selectedAvatar}
-      />
+        {/* Avatar Picker */}
+        <AvatarPicker
+          visible={showAvatarPicker}
+          onClose={() => setShowAvatarPicker(false)}
+          onSelect={async (avatar) => {
+            setSelectedAvatar(avatar);
+            setProfileImage(null);
+          }}
+          selectedAvatar={selectedAvatar}
+        />
 
-      {/* Date Picker Modal */}
-      <DatePickerModal
-        visible={showDatePicker}
-        value={dateOfBirth}
-        onClose={() => setShowDatePicker(false)}
-        onConfirm={(date) => setDateOfBirth(date)}
-        minimumDate={new Date(1950, 0, 1)}
-        maximumDate={new Date()}
-      />
+        {/* Date Picker Modal */}
+        <DatePickerModal
+          visible={showDatePicker}
+          value={dateOfBirth}
+          onClose={() => setShowDatePicker(false)}
+          onConfirm={(date) => setDateOfBirth(date)}
+          minimumDate={new Date(1950, 0, 1)}
+          maximumDate={new Date()}
+        />
 
-      {/* Custom Alerts */}
-      <CustomAlert
-        visible={showLogoutAlert}
-        title="Go Back"
-        message="Are you sure you want to go back to login screen?"
-        icon="logout"
-        iconColor="#EF4444"
-        buttons={[
-          { text: 'Cancel', style: 'cancel', onPress: () => setShowLogoutAlert(false) },
-          { 
-            text: 'Yes', 
-            style: 'Primary', 
-            onPress: () => {
-              setShowLogoutAlert(false);
-              navigation.navigate('Login');
+        {/* Custom Alerts */}
+        <CustomAlert
+          visible={showLogoutAlert}
+          title="Go Back"
+          message="Are you sure you want to go back to login screen?"
+          icon="logout"
+          iconColor="#EF4444"
+          buttons={[
+            { text: 'Cancel', style: 'cancel', onPress: () => setShowLogoutAlert(false) },
+            { 
+              text: 'Yes', 
+              style: 'Primary', 
+              onPress: () => {
+                setShowLogoutAlert(false);
+                navigation.navigate('Login');
+              }
             }
-          }
-        ]}
-        onBackdropPress={() => setShowLogoutAlert(false)}
-      />
+          ]}
+          onBackdropPress={() => setShowLogoutAlert(false)}
+        />
 
-      <CustomAlert
-        visible={showValidationAlert}
-        title="Validation Error"
-        message="Please fill all required fields correctly"
-        icon="error-outline"
-        iconColor="#EF4444"
-        buttons={[
-          { text: 'OK', onPress: () => setShowValidationAlert(false) }
-        ]}
-        onBackdropPress={() => setShowValidationAlert(false)}
-      />
+        <CustomAlert
+          visible={showValidationAlert}
+          title="Validation Error"
+          message="Please fill all required fields correctly"
+          icon="error-outline"
+          iconColor="#EF4444"
+          buttons={[
+            { text: 'OK', onPress: () => setShowValidationAlert(false) }
+          ]}
+          onBackdropPress={() => setShowValidationAlert(false)}
+        />
 
-      <CustomAlert
-        visible={showSuccessAlert}
-        title="Profile Created Successfully!"
-        message={successData ? `Welcome to DRIVVE!\n\nYour User ID: ${successData.userId}\n\nAge: ${successData.age} years` : ''}
-        icon="check-circle"
-        iconColor="#10B981"
-        buttons={[
-          {
-            text: 'Continue',
-            onPress: () => {
-              setShowSuccessAlert(false);
-              login({
-                phone_number: fullPhoneNumber || (countryCode + phoneNumber),
-                id: successData?.userId,
-                ...successData?.profileData,
-              });
-              navigation.reset({
-                index: 0,
-                routes: [{ name: 'Home' }],
-              });
+        <CustomAlert
+          visible={showSuccessAlert}
+          title="Profile Created Successfully!"
+          message={successData ? `Welcome to DRIVVE!\n\nYour User ID: ${successData.userId}\n\nAge: ${successData.age} years` : ''}
+          icon="check-circle"
+          iconColor="#10B981"
+          buttons={[
+            {
+              text: 'Continue',
+              onPress: () => {
+                setShowSuccessAlert(false);
+                login({
+                  user: {
+                    phone_number: fullPhoneNumber || (countryCode + phoneNumber),
+                    id: successData?.userId,
+                    ...successData?.profileData,
+                  },
+
+                  accessToken: successData?.accessToken,
+                  refreshToken: successData?.refreshToken,
+                });
+                navigation.reset({
+                  index: 0,
+                  routes: [{ name: 'Home' }],
+                });
+              }
             }
-          }
-        ]}
-      />
+          ]}
+        />
 
-      <CustomAlert
-        visible={showStateFirstAlert}
-        title="Select State First"
-        message="Please select a state before choosing a city"
-        icon="location-on"
-        iconColor="#F59E0B"
-        buttons={[
-          { text: 'OK', onPress: () => setShowStateFirstAlert(false) }
-        ]}
-        onBackdropPress={() => setShowStateFirstAlert(false)}
-      />
+        <CustomAlert
+          visible={showStateFirstAlert}
+          title="Select State First"
+          message="Please select a state before choosing a city"
+          icon="location-on"
+          iconColor="#F59E0B"
+          buttons={[
+            { text: 'OK', onPress: () => setShowStateFirstAlert(false) }
+          ]}
+          onBackdropPress={() => setShowStateFirstAlert(false)}
+        />
 
-      <ProfilePictureModal
-        visible={showImagePickerAlert}
-        onClose={() => setShowImagePickerAlert(false)}
-        onCamera={takePhoto}
-        onGallery={selectFromGallery}
-        onAvatar={() => setShowAvatarPicker(true)}
-      />
+        <ProfilePictureModal
+          visible={showImagePickerAlert}
+          onClose={() => setShowImagePickerAlert(false)}
+          onCamera={takePhoto}
+          onGallery={selectFromGallery}
+          onAvatar={() => setShowAvatarPicker(true)}
+        />
 
-      <CustomAlert
-        visible={showPermissionAlert}
-        title="Permission Required"
-        message={alertMessage}
-        icon="lock"
-        iconColor="#F59E0B"
-        buttons={[
-          { text: 'OK', onPress: () => setShowPermissionAlert(false) }
-        ]}
-        onBackdropPress={() => setShowPermissionAlert(false)}
-      />
+        <CustomAlert
+          visible={showPermissionAlert}
+          title="Permission Required"
+          message={alertMessage}
+          icon="lock"
+          iconColor="#F59E0B"
+          buttons={[
+            { text: 'OK', onPress: () => setShowPermissionAlert(false) }
+          ]}
+          onBackdropPress={() => setShowPermissionAlert(false)}
+        />
 
-      <CustomAlert
-        visible={showEmailSentAlert}
-        title="OTP Sent!"
-        message={`Verification code sent to ${email}`}
-        icon="mark-email-read"
-        iconColor="#10B981"
-        buttons={[
-          { text: 'OK', onPress: () => setShowEmailSentAlert(false) }
-        ]}
-        onBackdropPress={() => setShowEmailSentAlert(false)}
-      />
+        <CustomAlert
+          visible={showEmailSentAlert}
+          title="OTP Sent!"
+          message={`Verification code sent to ${email}`}
+          icon="mark-email-read"
+          iconColor="#10B981"
+          buttons={[
+            { text: 'OK', onPress: () => setShowEmailSentAlert(false) }
+          ]}
+          onBackdropPress={() => setShowEmailSentAlert(false)}
+        />
 
-      <CustomAlert
-        visible={showEmailErrorAlert}
-        title="Error"
-        message={alertMessage}
-        icon="error"
-        iconColor="#EF4444"
-        buttons={[
-          { text: 'Try Again', onPress: () => setShowEmailErrorAlert(false) }
-        ]}
-        onBackdropPress={() => setShowEmailErrorAlert(false)}
-      />
+        <CustomAlert
+          visible={showEmailErrorAlert}
+          title="Error"
+          message={alertMessage}
+          icon="error"
+          iconColor="#EF4444"
+          buttons={[
+            { text: 'Try Again', onPress: () => setShowEmailErrorAlert(false) }
+          ]}
+          onBackdropPress={() => setShowEmailErrorAlert(false)}
+        />
 
-      {/* New CustomAlert Component */}
-      <CustomAlert
-        visible={alertVisible}
-        title={alertConfig.title}
-        message={alertConfig.message}
-        icon={alertConfig.icon}
-        iconColor={alertConfig.iconColor}
-        buttons={alertConfig.buttons}
-        onBackdropPress={() => setAlertVisible(false)}
-      />
-    </SafeAreaView>
+        {/* New CustomAlert Component */}
+        <CustomAlert
+          visible={alertVisible}
+          title={alertConfig.title}
+          message={alertConfig.message}
+          icon={alertConfig.icon}
+          iconColor={alertConfig.iconColor}
+          buttons={alertConfig.buttons}
+          onBackdropPress={() => setAlertVisible(false)}
+        />
+      </SafeAreaView>
+    </TouchableWithoutFeedback>
   );
 }
 

@@ -30,21 +30,21 @@ import { useAuth } from "../context/AuthContext";
 import { SvgCssUri } from 'react-native-svg/css';
 import LottieView from "lottie-react-native";
 import CustomAlert from '../components/CustomAlert'; // Import CustomAlert
-
+import { Linking, Share } from "react-native";
 const { width, height } = Dimensions.get('window');
 
-import { Linking } from "react-native";
 
 type RootStackParamList = {
   MyVehicleScreen: { phoneNumber: string };
   SavedAddressScreen: { phoneNumber: string };
   DocumentVerificationScreen: { phoneNumber: string };
+  // AdminDocumentApprovalScreen: { phoneNumber: string };
   MatchingPreferenceScreen: { phoneNumber: string };
   EmergencyContactsscreen: { phoneNumber: string };
   PaymentScreen: undefined;
-  DCoinScreen: { phoneNumber: string };
+  // DCoinScreen: { phoneNumber: string };
   ReferEarn: undefined;
-  ShareAppScreen: { phoneNumber: string };
+  // ShareAppScreen: { phoneNumber: string };
   AboutUsScreen: undefined;
   PromotionScreen: { phoneNumber: string };
   Settings: { phoneNumber: string };
@@ -60,10 +60,11 @@ type ScreensWithPhone =
   | "MyVehicleScreen"
   | "SavedAddressScreen"
   | "DocumentVerificationScreen"
+  // | "AdminDocumentApprovalScreen"
   | "MatchingPreferenceScreen"
   | "EmergencyContactsscreen"
-  | "DCoinScreen"
-  | "ShareAppScreen"
+  // | "DCoinScreen"
+  // | "ShareAppScreen"
   | "PromotionScreen"
   | "Settings"
   | "FeedbackScreen";
@@ -206,36 +207,50 @@ export default function ProfileScreen({ navigation, route }: Props) {
     { title: "My Vehicle", icon: "car-outline", screen: "MyVehicleScreen" },
     { title: "Saved Address", icon: "location-outline", screen: "SavedAddressScreen" },
     { title: "My Documents", icon: "document-text-outline", screen: "DocumentVerificationScreen" },
+    // { title:"Admin Documents", icon:"folder-open-outline", screen:"AdminDocumentApprovalScreen"},
+
     { title: "Matching Preferences", icon: "settings-outline", screen: "MatchingPreferenceScreen" },
     { title: "Emergency Contact", icon: "alert-circle-outline", screen: "EmergencyContactsscreen" },
   ];
 
-  const paymentItems: {
-    title: string;
-    icon: keyof typeof Ionicons.glyphMap;
-    screen: keyof RootStackParamList;
-  }[] = [
-    { title: "D-coins", icon: "diamond-outline", screen: "DCoinScreen" },
-  ];
+  // const paymentItems: {
+  //   title: string;
+  //   icon: keyof typeof Ionicons.glyphMap;
+  //   screen: keyof RootStackParamList;
+  // }[] = [
+  //   { title: "D-coins", icon: "diamond-outline", screen: "DCoinScreen" },
+  // ];
 
   const otherItems: {
     title: string;
     icon: keyof typeof Ionicons.glyphMap;
-    screen: keyof RootStackParamList;
+    screen?: keyof RootStackParamList;
+    action?: string;
   }[] = [
-    { title: "Refer & Earn", icon: "person-add-outline", screen: "ShareAppScreen" },
+    // { title: "Refer & Earn", icon: "person-add-outline", screen: "ShareAppScreen" },
+    { title: "Share App", icon: "share-social-outline", action: "shareApp" },
+
     { title: "About Us", icon: "information-circle-outline", screen: "AboutUsScreen" },
     { title: "Promotions & Offers", icon: "pricetags-outline", screen: "PromotionScreen" },
     { title: "Settings", icon: "cog-outline", screen: "Settings" },
     { title: "Help & Support", icon: "help-circle-outline", screen: "HelpSupportScreen" },
     { title: "Feedback", icon: "chatbubbles-outline", screen: "FeedbackScreen" },
   ];
-
+  const handleShareApp = async () => {
+  try {
+    await Share.share({
+      message:
+        "Download Drivve App now 🚗\n\nhttps://play.google.com/store/apps/details?id=com.yourapp.package",
+    });
+  } catch (error) {
+    console.log("Share error:", error);
+  }
+};
   const handleScroll = (event: any) => {
     const scrollY = event.nativeEvent.contentOffset.y;
     setShowScrollTop(scrollY > 200);
   };
-
+  
   const scrollToTop = () => {
     scrollViewRef.current?.scrollTo({ y: 0, animated: true });
   };
@@ -249,10 +264,11 @@ export default function ProfileScreen({ navigation, route }: Props) {
       "MyVehicleScreen",
       "SavedAddressScreen",
       "DocumentVerificationScreen",
+      // "AdminDocumentApprovalScreen",
       "MatchingPreferenceScreen",
       "EmergencyContactsscreen",
-      "DCoinScreen",
-      "ShareAppScreen",
+      // "DCoinScreen",
+      // "ShareAppScreen",
       "PromotionScreen",
       "Settings",
       "FeedbackScreen",
@@ -455,7 +471,7 @@ export default function ProfileScreen({ navigation, route }: Props) {
           <View style={styles.sectionsContainer}>
             {[
               ["My Information", infoItems],
-              ["Payment Information", paymentItems],
+              // ["Payment Information", paymentItems],
               ["Other Information", otherItems]
             ].map(([title, items]: any, i) => (
               <View style={styles.section} key={i}>
@@ -465,7 +481,13 @@ export default function ProfileScreen({ navigation, route }: Props) {
                     <TouchableOpacity
                       key={index}
                       style={styles.menuItem}
-                      onPress={() => handleMenuItemPress(item.screen)}
+onPress={() => {
+  if (item.action === "shareApp") {
+    handleShareApp();
+  } else if (item.screen) {
+    handleMenuItemPress(item.screen);
+  }
+}}
                     >
                       <View style={styles.menuItemLeft}>
                         <View style={styles.iconContainer}>

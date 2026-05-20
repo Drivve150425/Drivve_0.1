@@ -185,7 +185,8 @@ export default function MyVehicleScreen({ navigation, route }) {
         {/* TITLE + EDIT */}
         <View style={styles.rowBetween}>
           <Text style={styles.title}>
-            {v.make} {v.model}
+            {/* {v.make}  */}
+            {v.model}
           </Text>
 
           <TouchableOpacity

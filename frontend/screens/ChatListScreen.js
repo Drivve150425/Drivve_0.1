@@ -11,25 +11,25 @@ import {
   Dimensions,
   Platform,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
-import { Colors, Typography } from '../constants/Colors';
+import { Colors } from '../constants/Colors';
 import { useFocusEffect } from '@react-navigation/native';
 import CommonHeader from '../components/CommonHeader';
-import { API_BASE_URL } from "../config/config_ip";
 import { useAuth } from '../context/AuthContext';
 import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
 import LottieView from "lottie-react-native";
 import CustomAlert from '../components/CustomAlert';
-
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import ChatService from '../services/ChatService';
+import { SvgCssUri } from "react-native-svg/css";
 const { width, height } = Dimensions.get('window');
 
-// Guest auth guard
 const ChatListScreen = ({ navigation }) => {
-  const { user, isAuthenticated, isGuest, loading: authLoading } = useAuth();
+  const { user, isGuest } = useAuth();
 
-  // Custom Alert states
   const [alertVisible, setAlertVisible] = useState(false);
   const [alertConfig, setAlertConfig] = useState({
     title: "",
@@ -71,86 +71,111 @@ const ChatListScreen = ({ navigation }) => {
         'Please complete login to access chats.',
         'warning'
       );
-      return;
     }
-  }, [isGuest, navigation]);
+  }, [isGuest]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [chats, setChats] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [isReloading, setIsReloading] = useState(false);
-  
-  // Load conversations when screen comes into focus
-  useFocusEffect(
-    useCallback(() => {
-      loadConversations();
-    }, [])
-  );
+  const [blockedUsers, setBlockedUsers] = useState([]);
+  const [avatarRefreshKey, setAvatarRefreshKey] = useState(0);
+  const [selectedChats, setSelectedChats] = useState([]);
+const [selectionMode, setSelectionMode] = useState(false);
+ useFocusEffect(
+  useCallback(() => {
 
-  const loadConversations = async (showReloadIndicator = false) => {
+    // FORCE RE-RENDER
+    setAvatarRefreshKey(prev => prev + 1);
+
+    loadBlockedUsers();
+    loadConversations();
+
+  }, [])
+);
+
+  const loadBlockedUsers = async () => {
     try {
-      if (showReloadIndicator) {
-        setIsReloading(true);
-      } else {
-        setLoading(true);
-      }
-
-      // Use phone_number for auth (app doesn't use JWT tokens)
-      const myPhone = user?.phone_number;
-      if (!myPhone || myPhone === 'guest_mode') {
-        console.log('No phone - guest/demo mode');
-        
-        return;
-      }
-
-      const response = await fetch(`${API_BASE_URL}/api/chat/conversations`, {
-        method: 'GET',
-        headers: {
-          'X-Phone-Number': myPhone,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
-        const transformedChats = data.conversations.map(conv => ({
-          id: conv.id.toString(),
-          name: conv.other_user.name,
-          lastMessage: conv.last_message || 'No messages yet',
-          timestamp: formatTimestamp(conv.last_message_time),
-          unreadCount: conv.unread_count,
-          isOnline: false,
-          avatar: conv.other_user.avatar,
-          isPinned: false,
-          isVoiceMessage: conv.last_message_type === 'voice',
-          conversationId: conv.id,
-          otherUserId: conv.other_user.id,
-        }));
-
-        setChats(transformedChats);
-        // ❌ REMOVED success popup - only show error/warning
-      } else {
-        console.error('Failed to load conversations:', data);
-        showCustomAlert('Error', data.message || 'Failed to load conversations', 'error');
+      const blocked = await AsyncStorage.getItem('blocked_users');
+      if (blocked) {
+        setBlockedUsers(JSON.parse(blocked));
       }
     } catch (error) {
-      console.error('Load conversations error:', error);
-      showCustomAlert('Error', 'Network error. Please check your connection.', 'error');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-      setIsReloading(false);
+      console.error('Load blocked users error:', error);
     }
   };
 
+ // Add this to ChatListScreen.js
+
+const loadConversations = async (showReloadIndicator = false) => {
+  try {
+    if (showReloadIndicator) {
+      setIsReloading(true);
+    } else {
+      setLoading(true);
+    }
+
+    const myPhone = user?.phone_number;
+    if (!myPhone || myPhone === 'guest_mode') {
+      setLoading(false);
+      return;
+    }
+
+    // Get blocked users from backend
+    const blockedResult = await ChatService.getBlockedUsers(myPhone);
+    let backendBlockedList = [];
+    if (blockedResult.success) {
+      backendBlockedList = blockedResult.blocked_users.map(u => u.phone);
+    }
+    
+    // Also get local blocked list
+    const localBlocked = await AsyncStorage.getItem('blocked_users');
+    const localBlockedList = localBlocked ? JSON.parse(localBlocked) : [];
+    
+    // Merge both lists
+    const allBlocked = [...new Set([...backendBlockedList, ...localBlockedList])];
+    setBlockedUsers(allBlocked);
+
+    const result = await ChatService.getConversations(myPhone);
+
+    if (result.success) {
+      // Filter out blocked users
+    const transformedChats = result.conversations.map(conv => ({
+  id: conv.id.toString(),
+  name: conv.other_user.name,
+  lastMessage: conv.last_message || 'No messages yet',
+  timestamp: formatTimestamp(conv.last_message_time),
+  unreadCount: conv.unread_count || 0,
+  isOnline: false,
+  avatar: conv.other_user.avatar,
+  isPinned: false,
+  isVoiceMessage: conv.last_message_type === 'voice',
+  conversationId: conv.id,
+  otherUserId: conv.other_user.id,
+  otherUserPhone: conv.other_user.phone,
+
+  // ADD THIS
+  isBlocked: allBlocked.includes(conv.other_user.phone),
+
+}));
+
+setChats(transformedChats);
+      setChats(transformedChats);
+    }
+  } catch (error) {
+    console.error('Load conversations error:', error);
+  } finally {
+    setLoading(false);
+    setRefreshing(false);
+    setIsReloading(false);
+  }
+};
   const onRefresh = () => {
     setRefreshing(true);
     loadConversations();
   };
 
-  // Manual reload function
   const handleReload = () => {
     loadConversations(true);
   };
@@ -186,29 +211,144 @@ const ChatListScreen = ({ navigation }) => {
 
   const pinnedChats = filteredChats.filter(chat => chat.isPinned);
   const regularChats = filteredChats.filter(chat => !chat.isPinned);
+// In ChatListScreen.js - Fix handleChatPress
 
-  const handleChatPress = (chat) => {
-    // Navigate to ChatScreen with loading handling inside chat
-    navigation.navigate('ChatScreen', {
-      user: {
-        id: chat.otherUserId,
-        name: chat.name,
-        tripInfo: chat.tripInfo,
-        avatar: chat.avatar,
-      },
-      conversationId: chat.conversationId,
-    });
-  };
+const handleChatPress = (chat) => {
+  console.log('Opening chat with:', {
+    name: chat.name,
+    phone: chat.otherUserPhone,
+    conversationId: chat.conversationId
+  });
+  
+  navigation.navigate('ChatScreen', {
+    user: {
+      id: chat.otherUserId,
+      name: chat.name,
+      phone_number: chat.otherUserPhone,  // Make sure this is the partner's phone
+      profile_picture: chat.avatar,
+    },
+    conversationId: chat.conversationId,
+    receiverPhone: chat.otherUserPhone,    // Pass as backup
+  });
+};
+const handleLongPressChat = (chatId) => {
+  setSelectionMode(true);
+  setSelectedChats([chatId]);
+};
+
+const handleSelectChat = (chatId) => {
+  if (!selectionMode) return;
+
+  if (selectedChats.includes(chatId)) {
+    const updated = selectedChats.filter(id => id !== chatId);
+
+    setSelectedChats(updated);
+
+    if (updated.length === 0) {
+      setSelectionMode(false);
+    }
+  } else {
+    setSelectedChats([...selectedChats, chatId]);
+  }
+};
+
+const handleDeleteSelected = async () => {
+  try {
+
+    const myPhone = user?.phone_number;
+
+    for (const chatId of selectedChats) {
+
+      const selectedChat = chats.find(
+        c => c.id === chatId
+      );
+
+      if (selectedChat?.conversationId) {
+
+       const result = await ChatService.hideChat(
+  selectedChat.conversationId,
+  myPhone
+);
+
+console.log('DELETE RESULT:', result);
+      }
+      
+    }
+
+    const updatedChats = chats.filter(
+      chat => !selectedChats.includes(chat.id)
+    );
+
+    setChats(updatedChats);
+
+    setSelectedChats([]);
+    setSelectionMode(false);
+
+  } catch (error) {
+
+    console.error(
+      'Delete selected chats error:',
+      error
+    );
+  }
+};
+const renderAvatar = (item) => {
+
+  if (item.avatar) {
+
+    const isSvg = item.avatar
+      ?.toLowerCase()
+      ?.includes('.svg');
+
+    if (isSvg) {
+
+      return (
+       <SvgCssUri
+  key={`${item.avatar}-${avatarRefreshKey}`}
+  width="100%"
+  height="100%"
+  uri={item.avatar}
+/>
+      );
+
+    }
+
+    return (
+      <Image
+        source={{ uri: item.avatar }}
+        style={styles.avatarImage}
+      />
+    );
+  }
+
+  return (
+    <View style={styles.avatarPlaceholder}>
+      <Text style={styles.avatarText}>
+        {item.name?.charAt(0) || 'U'}
+      </Text>
+    </View>
+  );
+};
 
   const renderChatItem = ({ item }) => (
     <TouchableOpacity
-      style={styles.chatItem}
+style={[
+  styles.chatItem,
+  selectedChats.includes(item.id) && styles.selectedChatItem,
+]}
       activeOpacity={0.7}
-      onPress={() => handleChatPress(item)}>
+      onLongPress={() => handleLongPressChat(item.id)}
+      onPress={() => {
+  if (selectionMode) {
+    handleSelectChat(item.id);
+  } else {
+    handleChatPress(item);
+  }
+}}>
       
       <View style={styles.avatarContainer}>
         <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{item.name.charAt(0)}</Text>
+          {renderAvatar(item)}
         </View>
         {item.isOnline && <View style={styles.onlineIndicator} />}
       </View>
@@ -219,6 +359,11 @@ const ChatListScreen = ({ navigation }) => {
             <Text style={styles.chatName} numberOfLines={1}>
               {item.name}
             </Text>
+            {item.isBlocked && (
+  <View style={styles.blockedBadge}>
+    <Text style={styles.blockedText}>Blocked</Text>
+  </View>
+)}
             {item.isPinned && (
               <Icon 
                 name="pin" 
@@ -233,9 +378,6 @@ const ChatListScreen = ({ navigation }) => {
 
         <View style={styles.messageRow}>
           <View style={styles.messageContent}>
-            {/* <Text style={styles.tripInfo} numberOfLines={1}>
-              {item.tripInfo}
-            </Text> */}
             <View style={styles.lastMessageRow}>
               {item.isVoiceMessage && (
                 <Icon 
@@ -251,13 +393,15 @@ const ChatListScreen = ({ navigation }) => {
                   item.unreadCount > 0 && styles.unreadMessage,
                 ]}
                 numberOfLines={1}>
-                {item.lastMessage}
+                {item.lastMessage?.replace('🎤', '').trim() || 'No messages'}
               </Text>
             </View>
           </View>
           {item.unreadCount > 0 && (
             <View style={styles.unreadBadge}>
-              <Text style={styles.unreadCount}>{item.unreadCount}</Text>
+              <Text style={styles.unreadCount}>
+                {item.unreadCount > 99 ? '99+' : item.unreadCount}
+              </Text>
             </View>
           )}
         </View>
@@ -265,67 +409,74 @@ const ChatListScreen = ({ navigation }) => {
     </TouchableOpacity>
   );
 
-const renderEmptyState = () => (
-  <View style={styles.emptyContainer}>
-    <View style={styles.emptyIconContainer}>
-      <View style={{ opacity: 0.3 }}>
-        <Icon 
-          name="chatbubbles-outline" 
-          size={moderateScale(100)} 
-          color={Colors.primary} 
-        />
-      </View>
+  const renderEmptyState = () => (
+    <View style={styles.emptyContainer}>
+      <Icon 
+        name="chatbubbles-outline" 
+        size={moderateScale(100)} 
+        color={Colors.primary} 
+        style={{ opacity: 0.3 }}
+      />
+      <Text style={styles.emptyText}>No chats available</Text>
+      <Text style={styles.emptySubtext}>
+        Start a ride to connect with other users
+      </Text>
+      
+      <TouchableOpacity 
+        style={styles.reloadButton}
+        onPress={handleReload}
+        disabled={isReloading}>
+        {isReloading ? (
+          <ActivityIndicator size="small" color={Colors.white} />
+        ) : (
+          <>
+            <Icon name="refresh" size={moderateScale(18)} color={Colors.white} />
+            <Text style={styles.reloadButtonText}>Reload</Text>
+          </>
+        )}
+      </TouchableOpacity>
     </View>
-    <Text style={styles.emptyText}>No chats available</Text>
-    <Text style={styles.emptySubtext}>
-      Start a ride to connect with other users
-    </Text>
-    
-    {/* RELOAD BUTTON IN EMPTY STATE */}
-    <TouchableOpacity 
-      style={styles.reloadButton}
-      onPress={handleReload}
-      disabled={isReloading}>
-      {isReloading ? (
-        <ActivityIndicator size="small" color={Colors.white} />
-      ) : (
-        <>
-          <Icon name="refresh" size={moderateScale(18)} color={Colors.white} />
-          <Text style={styles.reloadButtonText}>Reload</Text>
-        </>
-      )}
-    </TouchableOpacity>
-  </View>
-);
+  );
+
   const renderSectionHeader = title => (
     <View style={styles.sectionHeader}>
       <Text style={styles.sectionTitle}>{title}</Text>
     </View>
   );
 
-  // ✅ LOADING STATE - ONLY LOTTIE, NO SUCCESS POPUP
   if (loading && chats.length === 0) {
     return (
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="dark-content" backgroundColor={Colors.white} />
-        <CommonHeader 
-          title="Chats" 
-          showBackButton={true}
-        />
+<CommonHeader
+  title={
+    selectionMode
+      ? `${selectedChats.length} Selected`
+      : "Chats"
+  }
+  showBackButton={true}
+  rightIcon={
+  selectionMode
+    ? "trash"
+    : null
+}
+  rightIconColor="#FF8800"
+  onRightPress={
+    selectionMode
+      ? handleDeleteSelected
+      : handleReload
+  }
+/>
         <View style={styles.loadingContainer}>
           <LottieView
             source={require("../assets/loading.json")}
             autoPlay
             loop
-            style={{ width: 300, height: 300 }}
+            style={{
+  width: width * 0.55,
+  height: width * 0.55,
+}}
           />
-          {/* <Text style={styles.loadingText}>Loading conversations...</Text>
-          <TouchableOpacity 
-            style={styles.reloadButton}
-            onPress={handleReload}>
-            <Icon name="refresh" size={moderateScale(18)} color={Colors.white} />
-            <Text style={styles.reloadButtonText}>Try Again</Text>
-          </TouchableOpacity> */}
         </View>
       </SafeAreaView>
     );
@@ -335,15 +486,44 @@ const renderEmptyState = () => (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.white} />
 
-      {/* REUSABLE COMMON HEADER WITH RELOAD */}
-      <CommonHeader 
-        title="Chats" 
-        showBackButton={true}
-        rightIcon={isReloading ? null : "refresh"}
-        onRightPress={handleReload}
-      />
+   <CommonHeader
+  title={
+    selectionMode
+      ? `${selectedChats.length} Selected`
+      : "Chats"
+  }
+  showBack={true}
+  rightIcon={
+    selectionMode
+      ? "delete-outline"
+      : null
+  }
+  rightIconColor="#FF8800"
+  onRightPress={() => {
+  setAlertConfig({
+    title: "Delete Chats",
+    message: `Delete ${selectedChats.length} selected chat(s)?`,
+    icon: "warning",
+    iconColor: "#F59E0B",
+    buttons: [
+      {
+        text: "Cancel",
+        onPress: () => setAlertVisible(false),
+      },
+      {
+        text: "Delete",
+        onPress: async () => {
+          setAlertVisible(false);
+          await handleDeleteSelected();
+        },
+      },
+    ],
+  });
 
-      {/* SHOW RELOADING INDICATOR IN HEADER */}
+  setAlertVisible(true);
+}}
+/>
+
       {isReloading && (
         <View style={styles.reloadingHeader}>
           <ActivityIndicator size="small" color={Colors.primary} />
@@ -351,7 +531,6 @@ const renderEmptyState = () => (
         </View>
       )}
 
-      {/* SEARCH BAR */}
       <View style={styles.searchContainer}>
         <Icon 
           name="search-outline" 
@@ -367,19 +546,12 @@ const renderEmptyState = () => (
           onChangeText={setSearchQuery}
         />
         {searchQuery.length > 0 && (
-          <TouchableOpacity 
-            onPress={() => setSearchQuery('')}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <Icon 
-              name="close-circle" 
-              size={moderateScale(18)} 
-              color={Colors.gray} 
-            />
+          <TouchableOpacity onPress={() => setSearchQuery('')}>
+            <Icon name="close-circle" size={moderateScale(18)} color={Colors.gray} />
           </TouchableOpacity>
         )}
       </View>
 
-      {/* CHAT LIST */}
       {filteredChats.length === 0 ? (
         renderEmptyState()
       ) : (
@@ -403,7 +575,6 @@ const renderEmptyState = () => (
         />
       )}
 
-      {/* CUSTOM ALERT - ONLY FOR ERRORS & WARNINGS */}
       <CustomAlert
         visible={alertVisible}
         title={alertConfig.title}
@@ -418,12 +589,7 @@ const renderEmptyState = () => (
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.white,
-  },
-  
-  // RELOADING HEADER INDICATOR
+  container: { flex: 1, backgroundColor: Colors.white },
   reloadingHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -434,15 +600,12 @@ const styles = StyleSheet.create({
     marginTop: verticalScale(8),
     borderRadius: moderateScale(8),
   },
-  
   reloadingText: {
     fontSize: moderateScale(14),
     color: Colors.primary,
     marginLeft: moderateScale(8),
     fontWeight: '500',
   },
-  
-  // SEARCH CONTAINER - Responsive
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -455,45 +618,26 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E0E0E0',
     elevation: 2,
-    shadowColor: Colors.black,
-    shadowOffset: { width: 0, height: verticalScale(1) },
-    shadowOpacity: 0.05,
-    shadowRadius: moderateScale(2),
   },
-  
-  searchIcon: {
-    marginRight: moderateScale(10),
-  },
-  
+  searchIcon: { marginRight: moderateScale(10) },
   searchInput: {
     flex: 1,
     fontSize: moderateScale(16),
     color: Colors.dark,
     paddingVertical: Platform.OS === 'ios' ? verticalScale(12) : verticalScale(8),
-    fontFamily: Typography.fontFamily?.regular || 'System',
   },
-  
-  // SECTION HEADER
   sectionHeader: {
     paddingHorizontal: moderateScale(16),
     paddingTop: verticalScale(8),
     paddingBottom: verticalScale(4),
   },
-  
   sectionTitle: {
     fontSize: moderateScale(13),
     fontWeight: '600',
     color: Colors.gray,
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
   },
-  
-  // CHAT LIST
-  chatList: {
-    paddingBottom: verticalScale(20),
-  },
-  
-  // CHAT ITEM - Responsive
+  chatList: { paddingBottom: verticalScale(20) },
   chatItem: {
     flexDirection: 'row',
     padding: moderateScale(14),
@@ -507,12 +651,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: moderateScale(3),
   },
-  
-  // AVATAR - Responsive
-  avatarContainer: {
-    position: 'relative',
-  },
-  
+  avatarContainer: { position: 'relative' },
   avatar: {
     width: moderateScale(52),
     height: moderateScale(52),
@@ -520,14 +659,11 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'hidden',
   },
-  
-  avatarText: {
-    fontSize: moderateScale(20),
-    fontWeight: '600',
-    color: Colors.white,
-  },
-  
+  avatarImage: { width: '100%', height: '100%', borderRadius: moderateScale(26) },
+  avatarPlaceholder: { width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' },
+  avatarText: { fontSize: moderateScale(20), fontWeight: '600', color: Colors.white },
   onlineIndicator: {
     position: 'absolute',
     bottom: verticalScale(2),
@@ -535,85 +671,22 @@ const styles = StyleSheet.create({
     width: moderateScale(14),
     height: moderateScale(14),
     borderRadius: moderateScale(7),
-    backgroundColor: Colors.success,
+    backgroundColor: '#10B981',
     borderWidth: moderateScale(2.5),
     borderColor: Colors.white,
   },
-  
-  // CHAT CONTENT
-  chatContent: {
-    flex: 1,
-    marginLeft: moderateScale(12),
-    justifyContent: 'center',
-  },
-  
-  chatHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: verticalScale(4),
-  },
-  
-  nameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    marginRight: moderateScale(8),
-  },
-  
-  chatName: {
-    fontSize: moderateScale(16),
-    fontWeight: '600',
-    color: Colors.dark,
-    flexShrink: 1,
-  },
-  
-  pinIcon: {
-    marginLeft: moderateScale(6),
-  },
-  
-  timestamp: {
-    fontSize: moderateScale(11),
-    color: Colors.gray,
-  },
-  
-  messageRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  
-  messageContent: {
-    flex: 1,
-  },
-  
-  tripInfo: {
-    fontSize: moderateScale(11),
-    color: Colors.secondary,
-    fontWeight: '600',
-    marginBottom: verticalScale(3),
-  },
-  
-  lastMessageRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  
-  voiceIcon: {
-    marginRight: moderateScale(5),
-  },
-  
-  lastMessage: {
-    fontSize: moderateScale(14),
-    color: Colors.gray,
-    flex: 1,
-  },
-  
-  unreadMessage: {
-    color: Colors.dark,
-    fontWeight: '600',
-  },
-  
+  chatContent: { flex: 1, marginLeft: moderateScale(12), justifyContent: 'center' },
+  chatHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: verticalScale(4) },
+  nameRow: { flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: moderateScale(8) },
+  chatName: { fontSize: moderateScale(16), fontWeight: '600', color: Colors.dark, flexShrink: 1 },
+  pinIcon: { marginLeft: moderateScale(6) },
+  timestamp: { fontSize: moderateScale(11), color: Colors.gray },
+  messageRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  messageContent: { flex: 1 },
+  lastMessageRow: { flexDirection: 'row', alignItems: 'center' },
+  voiceIcon: { marginRight: moderateScale(5) },
+  lastMessage: { fontSize: moderateScale(14), color: Colors.gray, flex: 1 },
+  unreadMessage: { color: Colors.dark, fontWeight: '600' },
   unreadBadge: {
     backgroundColor: Colors.secondary,
     borderRadius: moderateScale(10),
@@ -624,29 +697,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: moderateScale(6),
     marginLeft: moderateScale(8),
   },
-  
-  unreadCount: {
-    fontSize: moderateScale(11),
-    color: Colors.white,
-    fontWeight: '700',
-  },
-  
-  // LOADING STATE
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: moderateScale(40),
-  },
-  
-  loadingText: {
-    fontSize: moderateScale(16),
-    color: Colors.gray,
-    marginTop: verticalScale(16),
-    marginBottom: verticalScale(24),
-  },
-  
-  // RELOAD BUTTON STYLES
+  unreadCount: { fontSize: moderateScale(11), color: Colors.white, fontWeight: '700' },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   reloadButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -656,47 +708,27 @@ const styles = StyleSheet.create({
     paddingVertical: verticalScale(12),
     borderRadius: moderateScale(25),
     marginTop: verticalScale(24),
-    elevation: 2,
-    shadowColor: Colors.black,
-    shadowOffset: { width: 0, height: verticalScale(2) },
-    shadowOpacity: 0.1,
-    shadowRadius: moderateScale(3),
   },
-  
-  reloadButtonText: {
-    fontSize: moderateScale(16),
-    color: Colors.white,
-    fontWeight: '600',
-    marginLeft: moderateScale(8),
-  },
-  
-  // EMPTY STATE - Responsive
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: moderateScale(40),
-    marginTop: -verticalScale(50),
-  },
-  
-  emptyIconContainer: {
-    marginBottom: verticalScale(24),
-  },
-  
-  emptyText: {
-    fontSize: moderateScale(20),
-    fontWeight: '600',
-    color: Colors.dark,
-    marginBottom: verticalScale(8),
-  },
-  
-  emptySubtext: {
-    fontSize: moderateScale(14),
-    color: Colors.gray,
-    textAlign: 'center',
-    lineHeight: verticalScale(20),
-    paddingHorizontal: moderateScale(20),
-  },
+  reloadButtonText: { fontSize: moderateScale(16), color: Colors.white, fontWeight: '600', marginLeft: moderateScale(8) },
+  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: moderateScale(40) },
+  emptyText: { fontSize: moderateScale(20), fontWeight: '600', color: Colors.dark, marginTop: verticalScale(16), marginBottom: verticalScale(8) },
+  emptySubtext: { fontSize: moderateScale(14), color: Colors.gray, textAlign: 'center' },
+  blockedBadge: {
+  backgroundColor: '#FEE2E2',
+  paddingHorizontal: moderateScale(8),
+  paddingVertical: verticalScale(2),
+  borderRadius: moderateScale(10),
+  marginLeft: moderateScale(6),
+},
+
+blockedText: {
+  color: '#DC2626',
+  fontSize: moderateScale(10),
+  fontWeight: '600',
+},
+selectedChatItem: {
+  backgroundColor: '#E3F2FD',
+},
 });
 
 export default ChatListScreen;

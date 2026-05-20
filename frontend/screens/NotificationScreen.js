@@ -122,7 +122,7 @@ export default function NotificationSettingsScreen({ navigation, route }) {
         {/* CONTENT */}
         <ScrollView contentContainerStyle={styles.scrollContent}>
           {/* PUSH */}
-          <View style={styles.card}>
+          {/* <View style={styles.card}>
             <Text style={styles.cardTitle}>Push Notifications</Text>
 
             {[
@@ -152,7 +152,7 @@ export default function NotificationSettingsScreen({ navigation, route }) {
                 )}
               </View>
             ))}
-          </View>
+          </View> */}
 
           {/* EMAIL & SMS */}
           <View style={styles.card}>

@@ -28,7 +28,7 @@ const { width, height } = Dimensions.get('window');
 const DRAWER_HEIGHT = verticalScale(160);
 import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
 import { API_BASE_URL } from "../config/config_ip";
-
+import DatabaseService from "../services/myprofile_ds";
 export default function HomeScreen({ navigation }) {
   const { user, loading: authLoading, isAuthenticated } = useAuth();
   const [localLoading, setLocalLoading] = useState(true);
@@ -67,7 +67,7 @@ export default function HomeScreen({ navigation }) {
     });
     setAlertVisible(true);
   };
-
+  
   // 🔒 Improved Session Guard
   useEffect(() => {
     if (localLoading && authLoading) return; // Still loading
@@ -97,7 +97,7 @@ export default function HomeScreen({ navigation }) {
   const drawerTranslateY = useRef(new Animated.Value(-DRAWER_HEIGHT)).current;
   const drawerOpacity = useRef(new Animated.Value(0)).current;
   const contentTranslateY = useRef(new Animated.Value(0)).current;
-  
+  const [profileRefreshKey, setProfileRefreshKey] = useState(0);
   // Form states
   const [fromLocation, setFromLocation] = useState('');
   const [toLocation, setToLocation] = useState('');
@@ -108,6 +108,13 @@ export default function HomeScreen({ navigation }) {
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [seatCount, setSeatCount] = useState(1);
   const [unreadCount, setUnreadCount] = useState(0);
+const profileImageRef = useRef(
+  user?.profile_picture || null
+);
+
+const [profileImage, setProfileImage] = useState(
+  profileImageRef.current
+);
   const fetchNotificationsAndUnreadCount = async () => {
     try {
       if (!phoneNumber) {
@@ -134,6 +141,46 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
+useFocusEffect(
+  useCallback(() => {
+
+    let isActive = true;
+
+    const loadProfile = async () => {
+
+      try {
+
+        if (!phoneNumber) return;
+
+        const res = await DatabaseService.getUserProfile(phoneNumber);
+
+        if (
+          isActive &&
+          res?.success &&
+          res?.user?.profile_picture
+        ) {
+
+          setProfileImage(
+            res.user.profile_picture
+          );
+
+          setProfileRefreshKey(prev => prev + 1);
+
+        }
+
+      } catch (e) {
+        console.log("Profile refresh error:", e);
+      }
+    };
+
+    loadProfile();
+
+    return () => {
+      isActive = false;
+    };
+
+  }, [phoneNumber])
+);
   useEffect(() => {
     if (phoneNumber) {
       fetchNotificationsAndUnreadCount();
@@ -438,10 +485,38 @@ export default function HomeScreen({ navigation }) {
               <Text style={styles.earningTitle}>Total Earning</Text>
               <Text style={styles.earningAmount}>₹0</Text>
               <Text style={styles.earningSubtext}>CO₂ Saved: 0%</Text>
-            </View>
-          </Animated.View>
 
+
+            </View>
+          
+          </Animated.View>
+ <View
+  style={[
+    styles.swipeHintContainer,
+    {
+      top: isDrawerOpen ? 265 : 80,
+    },
+  ]}
+>
+  {!isDrawerOpen ? (
+    <LottieView
+      source={require("../assets/SwipeDown.json")}
+      autoPlay
+      loop
+      style={styles.swipeLottie}
+    />
+  ) : (
+    <LottieView
+      source={require("../assets/SwipeUp.json")}
+      autoPlay
+      loop
+      style={styles.swipeLottie}
+    />
+  )}
+</View>
           <Animated.View style={[styles.contentCard, { transform: [{ translateY: contentTranslateY }] }]}> 
+            
+
             <View style={styles.tabContainer}>
               <TouchableOpacity
                 style={[styles.tabButton, activeTab === 'ride' && styles.tabButtonActive]}
@@ -550,7 +625,8 @@ export default function HomeScreen({ navigation }) {
         activeTab={activeBottomTab}
         onNavigate={handleBottomNavigation}
         unreadCount={unreadCount}
-        profileImage={user?.profile_picture}
+        profileImage={profileImage}
+        profileRefreshKey={profileRefreshKey}
       />
       
       {/* Date/Time Pickers */}
@@ -558,17 +634,16 @@ export default function HomeScreen({ navigation }) {
         <DateTimePicker
           value={selectedDate}
           mode="date"
-          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          display={Platform.OS === 'ios' ? 'spinner' : 'spinner'}
           onChange={onDateChange}
           minimumDate={new Date()}
         />
       )}
-
       {showTimePicker && (
         <DateTimePicker
           value={selectedDate}
           mode="time"
-          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          display={Platform.OS === 'ios' ? 'spinner' : 'spinner'}
           onChange={onTimeChange}
         />
       )}
@@ -698,7 +773,7 @@ const styles = StyleSheet.create({
   },
   drawerContainer: {
     position: 'absolute',
-    top: Platform.OS === 'ios' ? 130 : 100,
+    top: Platform.OS === 'ios' ? 70 : 50,
     left: 0,
     right: 0,
     height: DRAWER_HEIGHT,
@@ -707,7 +782,7 @@ const styles = StyleSheet.create({
   },
   earningSection: {
     alignItems: 'center',
-    paddingVertical: 30,
+    paddingVertical: 80,
     paddingHorizontal: 20,
   },
   earningTitle: {
@@ -1006,4 +1081,18 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 16,
   },
+swipeHintContainer: {
+  position: 'absolute',
+  left: 0,
+  right: 0,
+  alignItems: 'center',
+  justifyContent: 'center',
+  
+},
+
+swipeLottie: {
+  width: scale(100),
+  height: verticalScale(60),
+},
+
 });

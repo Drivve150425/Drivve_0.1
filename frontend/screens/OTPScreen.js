@@ -15,7 +15,7 @@ import {
   Animated
 } from 'react-native';
 import * as Device from "expo-device";
-
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -65,13 +65,12 @@ export default function OTPScreen({ navigation, route }) {
 
   const [showVerificationErrorAlert, setShowVerificationErrorAlert] = useState(false);
   const [showNavigationErrorAlert, setShowNavigationErrorAlert] = useState(false);
- 
+  const [backendTokens, setBackendTokens] = useState(null);
   // Alert states
   const [showBackAlert, setShowBackAlert] = useState(false);
   const [showErrorAlert, setShowErrorAlert] = useState(false);
   const [showLimitAlert, setShowLimitAlert] = useState(false);
   const [showResendAlert, setShowResendAlert] = useState(false);
- 
   const timerRef = useRef(null);
   const scrollViewRef = useRef(null);
   const lottieRef = useRef(null);
@@ -83,7 +82,7 @@ export default function OTPScreen({ navigation, route }) {
   const slideAnim = useRef(new Animated.Value(50)).current;
   const scaleAnim = useRef(new Animated.Value(0.9)).current;
   const shakeAnim = useRef(new Animated.Value(0)).current;
-
+  const resultRef = useRef(null);
 
   // Entrance animation
   useEffect(() => {
@@ -201,172 +200,182 @@ export default function OTPScreen({ navigation, route }) {
     return phone;
   };
 
+const handleVerifyOTP = async () => {
+  if (otpValue.length !== 6) {
+    setOtpError('Please enter complete 6-digit OTP');
+    triggerShakeAnimation();
+    return;
+  }
 
-  const handleVerifyOTP = async () => {
-    if (otpValue.length !== 6) {
-      setOtpError('Please enter complete 6-digit OTP');
-      triggerShakeAnimation();
-      return;
-    }
+  setIsVerifying(true);
+  setOtpError('');
 
-    setIsVerifying(true);
-    setOtpError('');
+  if (Platform.OS !== 'web') {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  }
 
-    if (Platform.OS !== 'web') {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    }
-
-    try {
-      let result;
+  try {
+    let result;
+    
+    if (isBackendFlow) {
+      console.log('📲 Backend OTP verification:', otpValue);
       
-      if (isBackendFlow) {
-        // Backend verification (primary flow)
-        console.log('📲 Backend OTP verification:', otpValue);
-        result = await FirebaseAuthService.verifyOTP(fullNumber, otpValue, true);
-      } else {
-        // Legacy Firebase flow
-        console.log('🔥 Firebase OTP verification:', otpValue);
-        result = await FirebaseAuthService.verifyOTP(confirmationResult, otpValue);
-      }
-     
-      console.log('✅ Verification Result:', result.success ? 'SUCCESS' : 'FAILED');
-     
-      if (result.success) {
-        console.log('✅ User authenticated:', result.uid || result.user?.uid);
-        console.log('📱 Phone number:', result.phoneNumber);
+      // ✅ FIXED: Remove '/auth/' from the path
+      const response = await fetch(`${API_BASE_URL}/api/verify-otp`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          phone_number: fullNumber,
+          otp_code: otpValue,
+          device_name: `${Device.brand || "Unknown"} ${Device.modelName || "Device"}`,
+          device_type: Device.deviceType === Device.DeviceType.TABLET ? "tablet" : "mobile",
+        }),
+      });
+   const responseText = await response.text();
 
-        // 🔐 Backend device registration (always)
-        const deviceName = `${Device.brand || "Unknown"} ${Device.modelName || "Device"}`;
-        const deviceType = Device.deviceType === Device.DeviceType.TABLET ? "tablet" : "mobile";
+console.log("RAW RESPONSE:", responseText);
 
-        console.log("📱 Registering device:", deviceName, deviceType);
-
-        await fetch(`${API_BASE_URL}/api/verify-otp`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            phone_number: fullNumber,
-            device_name: deviceName,
-            device_type: deviceType,
-          }),
-        });
+const backendData = JSON.parse(responseText);
+      
+      if (backendData.success) {
+        // ✅ Store tokens directly from backend response
+        const tokens = {
+          accessToken: backendData.accessToken,
+          refreshToken: backendData.refreshToken,
+        };
+        
+        console.log('💾 Storing tokens from direct call:', tokens);
+        
+        resultRef.current = backendData;
+        setBackendTokens(tokens);
+        
+        // Also store in AsyncStorage for persistence
+        await AsyncStorage.setItem('auth_tokens', JSON.stringify(tokens));
+        
+        console.log('✅ User authenticated:', backendData.user?.id);
+        console.log('📱 Phone number:', fullNumber);
 
         if (Platform.OS !== 'web') {
           await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }
 
         setIsVerifying(false);
-        setShowSuccessAnimation(true);
+        setTimeout(() => {
+          setShowSuccessAnimation(true);
+        }, 300);
       } else {
-        setOtpError(result.message);
+        setOtpError(backendData.message || backendData.detail || 'Verification failed');
         setOtpValue('');
         setIsVerifying(false);
         triggerShakeAnimation();
-        setShowVerificationErrorAlert(true)
+        setShowVerificationErrorAlert(true);
       }
-    } catch (error) {
-      console.error('🚨 OTP Verification Error:', error);
-      setOtpError('Verification failed. Please try again.');
-      setOtpValue('');
-      setIsVerifying(false);
-      triggerShakeAnimation();
-      setShowVerificationErrorAlert(true);
+    } else {
+      // Legacy Firebase flow
+      console.log('🔥 Firebase OTP verification:', otpValue);
+      result = await FirebaseAuthService.verifyOTP(confirmationResult, otpValue);
+      
+      if (result.success) {
+        const tokens = {
+          accessToken: result.accessToken || result.token,
+          refreshToken: result.refreshToken || result.token,
+        };
+        setBackendTokens(tokens);
+        setIsVerifying(false);
+        setTimeout(() => {
+          setShowSuccessAnimation(true);
+        }, 300);
+      } else {
+        setOtpError(result.message || 'Verification failed');
+        setOtpValue('');
+        setIsVerifying(false);
+        triggerShakeAnimation();
+        setShowVerificationErrorAlert(true);
+      }
     }
-  };
+  } catch (error) {
+    console.error('🚨 OTP Verification Error:', error);
+    setOtpError('Verification failed. Please try again.');
+    setOtpValue('');
+    setIsVerifying(false);
+    triggerShakeAnimation();
+    setShowVerificationErrorAlert(true);
+  }
+};
 
+const handleSuccessAnimationComplete = async () => {
+  console.log('🎯 Success animation complete, checking user...');
+  setShowSuccessAnimation(false);
+  
+  try {
+    if (!fullNumber) {
+      console.error('❌ No phone number available');
+      return handleNavigationError();    
+    }
 
-  const handleSuccessAnimationComplete = async () => {
-    console.log('🎯 Success animation complete, checking user...');
-    setShowSuccessAnimation(false);
-   
-    // if (Platform.OS === 'ios') {
-    //   await new Promise(resolve => setTimeout(resolve, 300));
-    // }
-   
-    try {
-      if (!fullNumber) {
-        console.error('❌ No phone number available');
-        return handleNavigationError();    
-      }
+    let tokens = backendTokens;
+    
+    if (!tokens?.accessToken) {
+      // Try AsyncStorage
+      try {
+        const storedTokens = await AsyncStorage.getItem('auth_tokens');
+        if (storedTokens) {
+          tokens = JSON.parse(storedTokens);
+          console.log('🔑 Retrieved tokens from storage:', tokens);
+        }
+      } catch (e) {}
+    }
+    
+    if (!tokens?.accessToken) {
+      tokens = {
+        accessToken: resultRef.current?.accessToken,
+        refreshToken: resultRef.current?.refreshToken,
+      };
+    }
+    
+    console.log('🔑 Final tokens to use:', tokens);
 
-
-      console.log('🔍 Checking if user exists in database...');
-      const userCheck = await DatabaseService.checkUserExists(fullNumber);
-      console.log('📊 User check result:', userCheck);
+    console.log('🔍 Checking if user exists in database...');
+    const userCheck = await DatabaseService.checkUserExists(fullNumber);
+    console.log('📊 User check result:', userCheck);
      
     if (userCheck.exists && userCheck?.userData) {
-        console.log('✅ User found, setting session...');
-       
-// 🔥 SET GLOBAL SESSION HERE
-        login({
+      console.log('✅ User found, setting session...');
+      await login({
+        user: {
           phone_number: fullNumber,
           id: userCheck.userData.user_id,
           ...userCheck.userData,
-        });
+        },
+        accessToken: tokens?.accessToken,  // This should now have the value
+        refreshToken: tokens?.refreshToken, // This should now have the value
+      });
+      
+      console.log('🚀 Session stored globally');
 
-        console.log('🚀 Session stored globally');
-
-        navigation.reset({
-              index: 0,
-              routes: [{ name: 'Home' }],
-        });
-        return;
-      }
-
-        // setTimeout(() => {
-        //   try {
-        //     navigation.reset({
-        //       index: 0,
-        //       routes: [{ name: 'Home' }],
-            // navigation.replace('Home', {
-            //   firstName: userCheck.userData.first_name,
-            //   lastName: userCheck.userData.last_name,
-            //   userId: userCheck.userData.user_id,
-            //   userData: userCheck.userData,
-            //   phoneNumber: fullNumber, 
-            //   isReturningUser: true
-          //   });
-          // } catch (navError) {
-      //       console.error('❌ Home navigation error:', navError);
-      //       handleNavigationError();
-      //     }
-      //   }, Platform.OS === 'ios' ? 100 : 0);
-       
-      // } else {
-        console.log('📝 New user, navigating to CreateProfile...');
-
-       
-        // setTimeout(() => {
-        //   try {
-            navigation.replace('CreateProfile', {
-              phoneNumber: phoneNumber,
-              fullPhoneNumber: fullNumber,
-              countryCode: countryCode,
-              isNewUser: true
-            });
-    //         console.log('✅ Navigation to CreateProfile successful');
-    //       } catch (navError) {
-    //         console.error('❌ CreateProfile navigation error:', navError);
-           
-    //         Alert.alert(
-    //           'Navigation Issue',
-    //           'Profile creation screen unavailable. Please try logging in again.',
-    //           [
-    //             {
-    //               text: 'OK',
-    //               onPress: () => navigation.navigate('Login')
-    //             }
-    //           ]
-    //         );
-    //       }
-    //     }, Platform.OS === 'ios' ? 100 : 0);
-    //   // }
-    } catch (error) {
-      console.error('❌ Critical error in success handler:', error);
-      handleNavigationError();
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Home' }],
+      });
+      return;
+    } else {
+      console.log('📝 New user, navigating to CreateProfile...');
+      navigation.replace('CreateProfile', {
+        phoneNumber: phoneNumber,
+        fullPhoneNumber: fullNumber,
+        countryCode: countryCode,
+        isNewUser: true,
+        accessToken: tokens?.accessToken,
+        refreshToken: tokens?.refreshToken,
+      });
     }
-  };
-
+  } catch (error) {
+    console.error('❌ Critical error in success handler:', error);
+    handleNavigationError();
+  }
+};
 
   const handleNavigationError = () => {
     console.log('🚨 Handling navigation error - showing alert');
@@ -376,47 +385,58 @@ export default function OTPScreen({ navigation, route }) {
 
 
   const handleResendOTP = async () => {
-    if (!canResend || resendCount >= maxResendAttempts) return;
+  if (!canResend || resendCount >= maxResendAttempts) return;
 
-    if (Platform.OS !== 'web') {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    }
+  if (Platform.OS !== 'web') {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  }
 
-    try {
-      setIsVerifying(true);
-     
-      console.log('📲 Backend resend OTP');
-      const result = await FirebaseAuthService.sendOTP(phoneNumber, countryCode);
-     
-      if (result.success) {
-        setTimeLeft(30);
-        setCanResend(false);
-        setResendCount(resendCount + 1);
-        setOtpValue('');
-        setOtpError('');
-        setShowResendAlert(true);
-       
-        // Replay Lottie animation
-        if (lottieRef.current) {
-          lottieRef.current.play();
-        }
-       
-        if (Platform.OS !== 'web') {
-          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        }
-        console.log('✅ OTP resent');
-      } else {
-        console.error('❌ Resend failed:', result.message);
-        setShowErrorAlert(true);
+  try {
+    setIsVerifying(true);
+    
+    console.log('📲 Backend resend OTP');
+    
+    // Call the send-otp endpoint directly
+    const response = await fetch(`${API_BASE_URL}/api/send-otp`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        phone_number: fullNumber,
+      }),
+    });
+    
+    const result = await response.json();
+    
+    if (result.success) {
+      setTimeLeft(30);
+      setCanResend(false);
+      setResendCount(resendCount + 1);
+      setOtpValue('');
+      setOtpError('');
+      setShowResendAlert(true);
+      
+      // Replay Lottie animation
+      if (lottieRef.current) {
+        lottieRef.current.play();
       }
-    } catch (error) {
-      console.error('🚨 Resend error:', error);
+     
+      if (Platform.OS !== 'web') {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+      console.log('✅ OTP resent');
+    } else {
+      console.error('❌ Resend failed:', result.message);
       setShowErrorAlert(true);
-    } finally {
-      setIsVerifying(false);
     }
-  };
-
+  } catch (error) {
+    console.error('🚨 Resend error:', error);
+    setShowErrorAlert(true);
+  } finally {
+    setIsVerifying(false);
+  }
+};
 
   const handleMaxResendReached = () => {
     setShowLimitAlert(true);

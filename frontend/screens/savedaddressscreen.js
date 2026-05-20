@@ -13,7 +13,7 @@ import {
   Platform,
   TextInput,
   ActivityIndicator,
-  FlatList
+  FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
@@ -32,21 +32,17 @@ if (Platform.OS !== 'web') {
 }
 
 import * as Haptics from 'expo-haptics';
-
 import DatabaseService from '../services/savedaddress_ds';
 import { useAuth } from "../context/AuthContext";
 import CustomAlert from '../components/CustomAlert';
+import { GMAP_API_KEY } from '../config/config_ip';
 
 const { width, height } = Dimensions.get('window');
 
-// Google Places API Key - Replace with your actual API key
-const GOOGLE_PLACES_API_KEY = 'YOUR_GOOGLE_PLACES_API_KEY';
-
-// Type icons mapping with your color scheme
 const TYPE_ICONS = {
-  Home: { name: 'home', icon: MaterialIcons, color: '#ED7117' },
-  Work: { name: 'work', icon: MaterialIcons, color: '#2563EB' },
-  Others: { name: 'location-pin', icon: MaterialIcons, color: '#10B981' },
+  Home: { icon: MaterialIcons, name: 'home', color: '#ED7117' },
+  Work: { icon: MaterialIcons, name: 'work', color: '#184080' },
+  Others: { icon: Ionicons, name: 'location-outline', color: '#6B7280' },
 };
 
 const normalizeAddress = (a) => ({
@@ -61,10 +57,9 @@ const normalizeAddress = (a) => ({
 });
 
 export default function SavedAddressesScreen({ navigation, route }) {
- const { user } = useAuth();
+  const { user } = useAuth();
   const phoneNumber = user?.phone_number;
 
-  
   // States
   const [step, setStep] = useState(1);
   const [addresses, setAddresses] = useState([]);
@@ -93,7 +88,7 @@ export default function SavedAddressesScreen({ navigation, route }) {
   
   // Modal states
   const [modalVisible, setModalVisible] = useState(false);
-  const [modalType, setModalType] = useState(null); // 'edit', 'delete', 'success'
+  const [modalType, setModalType] = useState(null);
   const [selectedModalItem, setSelectedModalItem] = useState(null);
   
   // Custom Alert states
@@ -110,6 +105,7 @@ export default function SavedAddressesScreen({ navigation, route }) {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
   const searchRef = useRef(null);
+  const mapRef = useRef(null);
 
   const showCustomAlert = (title, message, type = 'success') => {
     let icon = "check-circle";
@@ -157,7 +153,6 @@ export default function SavedAddressesScreen({ navigation, route }) {
   useEffect(() => {
     loadAddresses();
     
-    // Entrance animation
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
@@ -184,7 +179,7 @@ export default function SavedAddressesScreen({ navigation, route }) {
       if (Array.isArray(res)) {
         const sorted = res
           .map(normalizeAddress)
-          .sort((a, b) => b.id - a.id); // DESC order (latest first)
+          .sort((a, b) => b.id - a.id);
 
         setAddresses(sorted);
       }
@@ -198,7 +193,7 @@ export default function SavedAddressesScreen({ navigation, route }) {
 
   // Search location using Google Places API
   const searchLocation = async (text) => {
-    if (!text.trim()) {
+    if (!text.trim() || text.length < 2) {
       setSearchResults([]);
       setShowSearchResults(false);
       return;
@@ -206,17 +201,20 @@ export default function SavedAddressesScreen({ navigation, route }) {
 
     setSearching(true);
     try {
-      // Using Google Places API
       const response = await fetch(
         `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(
           text
-        )}&key=${GOOGLE_PLACES_API_KEY}&components=country:in`
+        )}&key=${GMAP_API_KEY}&components=country:in&language=en`
       );
+      
       const data = await response.json();
       
       if (data.predictions) {
         setSearchResults(data.predictions);
         setShowSearchResults(true);
+      } else {
+        setSearchResults([]);
+        setShowSearchResults(false);
       }
     } catch (error) {
       console.error('Search error:', error);
@@ -227,62 +225,39 @@ export default function SavedAddressesScreen({ navigation, route }) {
 
   // Get place details and update map
   const selectPlace = async (placeId, description) => {
-    setSearching(true);
     try {
+      setSearching(true);
+      
       const response = await fetch(
-        `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&key=${GOOGLE_PLACES_API_KEY}`
+        `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&key=${GMAP_API_KEY}`
       );
+      
       const data = await response.json();
       
       if (data.result && data.result.geometry) {
         const { lat, lng } = data.result.geometry.location;
+        
+        setSelectedAddress(description);
+        setSearchText(description);
+        setShowSearchResults(false);
+
         const newRegion = {
           latitude: lat,
           longitude: lng,
           latitudeDelta: 0.01,
           longitudeDelta: 0.01,
         };
-        
+
         setMapRegion(newRegion);
-        setSelectedAddress(description);
-        setSearchText(description);
-        setShowSearchResults(false);
-        
-        // Update marker position
+
         if (MapView && mapRef.current) {
-          mapRef.current.animateToRegion(newRegion, 1000);
+          mapRef.current.animateToRegion(newRegion, 600);
         }
       }
     } catch (error) {
       console.error('Place details error:', error);
     } finally {
       setSearching(false);
-    }
-  };
-
-  const updateAddressFromMap = async (region) => {
-    try {
-      const { status } = await Location.getForegroundPermissionsAsync();
-      if (status !== 'granted') return;
-
-      const [geo] = await Location.reverseGeocodeAsync({
-        latitude: region.latitude,
-        longitude: region.longitude,
-      });
-
-      if (!geo) return;
-
-      const full = `
-${geo.name || ''} ${geo.street || ''},
-${geo.subregion || geo.district || ''},
-${geo.city || ''} ${geo.region || ''} ${geo.postalCode || ''},
-${geo.country || ''}
-`.replace(/\s+/g, ' ').trim();
-
-      setSelectedAddress(full);
-      setSearchText(full);
-    } catch (e) {
-      console.log('Reverse geocode error:', e);
     }
   };
 
@@ -304,7 +279,20 @@ ${geo.country || ''}
     };
 
     setMapRegion(newRegion);
-    updateAddressFromMap(newRegion);
+    
+    // Reverse geocode to get address
+    try {
+      const response = await fetch(
+        `https://maps.googleapis.com/maps/api/geocode/json?latlng=${loc.coords.latitude},${loc.coords.longitude}&key=${GMAP_API_KEY}`
+      );
+      const data = await response.json();
+      if (data.results && data.results.length > 0) {
+        setSelectedAddress(data.results[0].formatted_address);
+        setSearchText(data.results[0].formatted_address);
+      }
+    } catch (e) {
+      console.log('Reverse geocode error:', e);
+    }
     
     if (MapView && mapRef.current) {
       mapRef.current.animateToRegion(newRegion, 1000);
@@ -392,11 +380,6 @@ ${geo.country || ''}
     }
   };
 
-  const showSuccessModal = () => {
-    setModalType('success');
-    setModalVisible(true);
-  };
-
   const handleSave = async () => {
     if (!phoneNumber || !selectedAddress) {
       showCustomAlert('Error', 'Missing phone number or address', 'error');
@@ -436,9 +419,9 @@ ${geo.country || ''}
 
       await loadAddresses();
       resetForm();
-      showSuccessModal();
+      setStep(1);
     } catch (e) {
-      console.error('❌ Save failed', e);
+      console.error('Save failed', e);
       showCustomAlert('Error', 'Failed to save address', 'error');
     } finally {
       setSaving(false);
@@ -489,11 +472,8 @@ ${geo.country || ''}
     setShowSearchResults(false);
   };
 
-  const mapRef = useRef(null);
-
   const renderAddressCard = (address) => (
     <View key={address.id} style={styles.addressCard}>
-      {/* ... existing card rendering code ... */}
       <View style={styles.addressHeader}>
         <View style={styles.addressTypeContainer}>
           {getTypeIcon(address.type)}
@@ -553,15 +533,7 @@ ${geo.country || ''}
         ) : null}
       </View>
       
-      {!address.isDefault && (
-        <TouchableOpacity 
-          style={styles.setDefaultButton}
-          onPress={() => toggleDefaultAddress(address.id)}
-          disabled={deleting}
-        >
-          <Text style={styles.setDefaultText}>Set as default address</Text>
-        </TouchableOpacity>
-      )}
+      {/* Removed Set as default button from here */}
     </View>
   );
 
@@ -578,110 +550,36 @@ ${geo.country || ''}
     </View>
   );
 
-  const CentralModal = ({ visible, onClose, title, message, type, onConfirm }) => (
-    <Modal
-      visible={visible}
-      transparent={true}
-      animationType="fade"
-      onRequestClose={onClose}
-    >
-      <View style={styles.modalOverlay}>
-        <Animated.View style={[styles.centralModalContent, { opacity: fadeAnim }]}>
-          <View style={styles.modalIconContainer}>
-            {type === 'edit' && <MaterialIcons name="edit" size={40} color="#ED7117" />}
-            {type === 'delete' && <MaterialIcons name="warning" size={40} color="#EF4444" />}
-            {type === 'success' && <MaterialIcons name="check-circle" size={40} color="#10B981" />}
-          </View>
-          
-          <Text style={styles.modalTitle}>{title}</Text>
-          <Text style={styles.modalMessage}>{message}</Text>
-          
-          <View style={styles.modalButtons}>
-            {type === 'success' ? (
-              <TouchableOpacity 
-                style={[styles.modalButton, styles.successButton]}
-                onPress={() => {
-                  onClose();
-                  setStep(1);
-                }}
-              >
-                <Text style={styles.successButtonText}>OK</Text>
-              </TouchableOpacity>
-            ) : (
-              <>
-                <TouchableOpacity 
-                  style={[styles.modalButton, styles.cancelButton]}
-                  onPress={onClose}
-                  disabled={deleting}
-                >
-                  <Text style={styles.cancelButtonText}>Cancel</Text>
-                </TouchableOpacity>
-                
-                <TouchableOpacity 
-                  style={[
-                    styles.modalButton, 
-                    type === 'edit' ? styles.editConfirmButton : styles.deleteConfirmButton
-                  ]}
-                  onPress={onConfirm}
-                  disabled={deleting}
-                >
-                  {deleting ? (
-                    <ActivityIndicator color="white" size="small" />
-                  ) : (
-                    <Text style={styles.confirmButtonText}>
-                      {type === 'edit' ? 'Edit' : 'Delete'}
-                    </Text>
-                  )}
-                </TouchableOpacity>
-              </>
-            )}
-          </View>
-        </Animated.View>
-      </View>
-    </Modal>
+  const renderSearchResults = () => (
+    <View style={styles.searchResultsOverlay}>
+      <FlatList
+        data={searchResults}
+        keyExtractor={(item) => item.place_id}
+        keyboardShouldPersistTaps="handled"
+        renderItem={({ item }) => (
+          <TouchableOpacity
+            style={styles.searchResultItem}
+            onPress={() => selectPlace(item.place_id, item.description)}
+          >
+            <Ionicons name="location-outline" size={20} color={Colors.primary} />
+            <View style={styles.searchResultTextContainer}>
+              <Text style={styles.searchResultPrimary} numberOfLines={1}>
+                {item.structured_formatting?.main_text || item.description}
+              </Text>
+              {item.structured_formatting?.secondary_text && (
+                <Text style={styles.searchResultSecondary} numberOfLines={1}>
+                  {item.structured_formatting.secondary_text}
+                </Text>
+              )}
+            </View>
+          </TouchableOpacity>
+        )}
+      />
+    </View>
   );
 
-  const getModalContent = () => {
-    switch (modalType) {
-      case 'edit':
-        return {
-          title: 'Edit Address',
-          message: 'Do you want to edit this address?',
-          type: 'edit',
-          onConfirm: confirmEdit
-        };
-      case 'delete':
-        return {
-          title: 'Delete Address',
-          message: 'Are you sure you want to delete this address? This action cannot be undone.',
-          type: 'delete',
-          onConfirm: confirmDelete
-        };
-      case 'success':
-        return {
-          title: 'Success!',
-          message: 'Address has been saved successfully.',
-          type: 'success',
-          onConfirm: () => {
-            setModalVisible(false);
-            setModalType(null);
-            setStep(1);
-          }
-        };
-      default:
-        return {
-          title: '',
-          message: '',
-          type: '',
-          onConfirm: () => {}
-        };
-    }
-  };
-
-  const modalContent = getModalContent();
   const handleBack = () => navigation.goBack();
 
-  // Show loader while fetching data (initial load only)
   if (loading && step === 1 && addresses.length === 0) {
     return (
       <SafeAreaView style={styles.container}>
@@ -711,7 +609,7 @@ ${geo.country || ''}
           </TouchableOpacity>
 
           <Text style={styles.headerTitle}>
-            {step === 1 ? "Saved Addresses" : step === 2 ? "Select Location" : "Save Address"}
+            {step === 1 ? "Saved Address" : step === 2 ? "Select Location" : "Save Address"}
           </Text>
 
           <View style={styles.headerSpacer} />
@@ -752,33 +650,13 @@ ${geo.country || ''}
                   region={mapRegion}
                   onRegionChangeComplete={(reg) => {
                     setMapRegion(reg);
-                    updateAddressFromMap(reg);
                   }}
                 >
                   <Marker coordinate={mapRegion} />
                 </MapView>
 
-                {/* Search Results Dropdown */}
-                {showSearchResults && searchResults.length > 0 && (
-                  <View style={styles.searchResultsContainer}>
-                    <FlatList
-                      data={searchResults}
-                      keyExtractor={(item) => item.place_id}
-                      renderItem={({ item }) => (
-                        <TouchableOpacity
-                          style={styles.searchResultItem}
-                          onPress={() => selectPlace(item.place_id, item.description)}
-                        >
-                          <Ionicons name="location-outline" size={20} color={Colors.primary} />
-                          <Text style={styles.searchResultText} numberOfLines={2}>
-                            {item.description}
-                          </Text>
-                        </TouchableOpacity>
-                      )}
-                      keyboardShouldPersistTaps="always"
-                    />
-                  </View>
-                )}
+                {/* Search Results Overlay */}
+                {showSearchResults && searchResults.length > 0 && !searching && renderSearchResults()}
               </>
             ) : (
               <View style={styles.webFallbackContainer}>
@@ -794,7 +672,13 @@ ${geo.country || ''}
 
               <View style={styles.searchRow}>
                 <View style={styles.searchInputContainer}>
-                  <Ionicons name="search-outline" size={20} color={Colors.gray} style={styles.searchIcon} />
+                  <Ionicons
+                    name="search-outline"
+                    size={20}
+                    color={Colors.gray}
+                    style={styles.searchIcon}
+                  />
+
                   <TextInput
                     ref={searchRef}
                     style={styles.searchBox}
@@ -803,32 +687,41 @@ ${geo.country || ''}
                     value={searchText}
                     onChangeText={(text) => {
                       setSearchText(text);
-                      searchLocation(text);
+
+                      if (text.trim().length >= 2) {
+                        searchLocation(text);
+                      } else {
+                        setSearchResults([]);
+                        setShowSearchResults(false);
+                      }
                     }}
                   />
+
                   {searchText.length > 0 && (
-                    <TouchableOpacity onPress={() => {
-                      setSearchText('');
-                      setSearchResults([]);
-                      setShowSearchResults(false);
-                    }}>
-                      <Ionicons name="close-circle" size={20} color={Colors.gray} />
+                    <TouchableOpacity
+                      onPress={() => {
+                        setSearchText('');
+                        setSearchResults([]);
+                        setShowSearchResults(false);
+                      }}
+                    >
+                      <Ionicons
+                        name="close-circle"
+                        size={20}
+                        color={Colors.gray}
+                      />
                     </TouchableOpacity>
                   )}
                 </View>
 
-                <TouchableOpacity
-                  style={styles.searchButton}
-                  onPress={() => {
-                    if (searchText.trim()) {
-                      setSelectedAddress(searchText);
-                      setShowSearchResults(false);
-                    }
-                  }}
-                >
-                  <Text style={styles.searchButtonText}>Go</Text>
-                </TouchableOpacity>
+              
               </View>
+
+              {/* SEARCH RESULTS */}
+              {showSearchResults &&
+                searchResults.length > 0 &&
+                !searching &&
+                renderSearchResults()}
 
               {searching && (
                 <View style={styles.searchingContainer}>
@@ -837,27 +730,32 @@ ${geo.country || ''}
                 </View>
               )}
 
-              <TouchableOpacity style={styles.locateRow} onPress={handleLocateMe}>
-                <MaterialIcons name="my-location" size={18} color="#ED7117" />
-                <Text style={styles.locateText}>Use my current location</Text>
-              </TouchableOpacity>
-
-              {selectedAddress ? (
-                <Text style={styles.selectedAddressText} numberOfLines={2}>
-                  {selectedAddress}
-                </Text>
-              ) : null}
-            </View>
-
-            {/* Bottom Button */}
-            <View style={styles.bottomBar}>
               <TouchableOpacity
-                style={styles.standardButton}
-                onPress={handleConfirm}
-                activeOpacity={0.9}
+                style={styles.locateRow}
+                onPress={handleLocateMe}
               >
-                <Text style={styles.standardButtonText}>Confirm Location</Text>
+                <MaterialIcons
+                  name="my-location"
+                  size={18}
+                  color="#ED7117"
+                />
+                <Text style={styles.locateText}>
+                  Use my current location
+                </Text>
               </TouchableOpacity>
+
+              {/* CONFIRM BUTTON */}
+              {selectedAddress && (
+                <TouchableOpacity
+                  style={[styles.standardButton, { marginTop: 16 }]}
+                  onPress={handleConfirm}
+                  activeOpacity={0.9}
+                >
+                  <Text style={styles.standardButtonText}>
+                    Confirm Location
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
         )}
@@ -874,6 +772,16 @@ ${geo.country || ''}
             >
               <Text style={styles.locationHeader}>Your Location</Text>
               <Text style={styles.locationText}>{selectedAddress}</Text>
+
+              <TouchableOpacity 
+                style={styles.changeLocationButton}
+                onPress={() => {
+                  setStep(2);
+                }}
+              >
+                <Ionicons name="location-outline" size={18} color="#ED7117" />
+                <Text style={styles.changeLocationText}>Change Location</Text>
+              </TouchableOpacity>
 
               <View style={styles.modernInputContainer}>
                 <TextInput
@@ -971,20 +879,81 @@ ${geo.country || ''}
             </View>
           </KeyboardAvoidingView>
         )}
-
-        <CentralModal
-          visible={modalVisible}
-          onClose={() => {
-            setModalVisible(false);
-            setSelectedModalItem(null);
-            setModalType(null);
-          }}
-          title={modalContent.title}
-          message={modalContent.message}
-          type={modalContent.type}
-          onConfirm={modalContent.onConfirm}
-        />
       </KeyboardAvoidingView>
+
+      {/* Edit/Delete Modal */}
+      <Modal
+        visible={modalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => {
+          setModalVisible(false);
+          setSelectedModalItem(null);
+          setModalType(null);
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            {modalType === 'edit' && (
+              <>
+                <Text style={styles.modalTitle}>Edit Address</Text>
+                <Text style={styles.modalMessage}>
+                  Are you sure you want to edit "{selectedModalItem?.label}" address?
+                </Text>
+                <View style={styles.modalButtons}>
+                  <TouchableOpacity
+                    style={[styles.modalButton, styles.cancelButton]}
+                    onPress={() => {
+                      setModalVisible(false);
+                      setSelectedModalItem(null);
+                      setModalType(null);
+                    }}
+                  >
+                    <Text style={styles.cancelButtonText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.modalButton, styles.editModalButton]}
+                    onPress={confirmEdit}
+                  >
+                    <Text style={styles.modalButtonText}>Edit</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+
+            {modalType === 'delete' && (
+              <>
+                <Text style={styles.modalTitle}>Delete Address</Text>
+                <Text style={styles.modalMessage}>
+                  Are you sure you want to delete "{selectedModalItem?.label}" address? This action cannot be undone.
+                </Text>
+                <View style={styles.modalButtons}>
+                  <TouchableOpacity
+                    style={[styles.modalButton, styles.cancelButton]}
+                    onPress={() => {
+                      setModalVisible(false);
+                      setSelectedModalItem(null);
+                      setModalType(null);
+                    }}
+                  >
+                    <Text style={styles.cancelButtonText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.modalButton, styles.deleteModalButton]}
+                    onPress={confirmDelete}
+                  >
+                    {deleting && deletingId === selectedModalItem?.id ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Text style={styles.modalButtonText}>Delete</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
 
       <CustomAlert
         visible={alertVisible}
@@ -1016,7 +985,6 @@ const styles = StyleSheet.create({
     borderBottomColor: '#F3F4F6',
   },
   headerTitle: {
-    ...Typography.h2,
     fontSize: 28,
     fontWeight: '700',
     color: Colors.primary,
@@ -1143,9 +1111,11 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     position: 'absolute',
-    bottom: 80,
+    bottom: 0,
     left: 0,
     right: 0,
+    elevation: 10,
+    paddingBottom: 20,
   },
   sheetTitle: {
     fontSize: 14,
@@ -1190,20 +1160,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
-  searchResultsContainer: {
-    position: 'absolute',
-    top: 120,
-    left: 16,
-    right: 16,
-    backgroundColor: Colors.white,
-    borderRadius: 12,
-    maxHeight: 250,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 5,
-    zIndex: 1000,
+  searchResultsOverlay: {
+    marginTop: 10,
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    maxHeight: 220,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
   searchResultItem: {
     flexDirection: 'row',
@@ -1212,11 +1175,19 @@ const styles = StyleSheet.create({
     borderBottomWidth: 0.5,
     borderBottomColor: '#E5E7EB',
   },
-  searchResultText: {
+  searchResultTextContainer: {
     flex: 1,
+    marginLeft: 12,
+  },
+  searchResultPrimary: {
     fontSize: 14,
     color: Colors.dark,
-    marginLeft: 12,
+    fontWeight: '500',
+  },
+  searchResultSecondary: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 2,
   },
   searchingContainer: {
     flexDirection: 'row',
@@ -1240,12 +1211,6 @@ const styles = StyleSheet.create({
     color: '#ED7117',
     fontWeight: '600',
     fontSize: 13,
-  },
-  selectedAddressText: {
-    marginTop: 10,
-    color: '#555',
-    fontSize: 12,
-    lineHeight: 18,
   },
   webFallbackContainer: {
     flex: 1,
@@ -1278,8 +1243,24 @@ const styles = StyleSheet.create({
   locationText: {
     fontSize: 14,
     color: '#555',
-    marginBottom: 20,
+    marginBottom: 12,
     lineHeight: 20,
+  },
+  changeLocationButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#FFF7ED',
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+  },
+  changeLocationText: {
+    color: '#ED7117',
+    fontSize: 13,
+    fontWeight: '600',
   },
   modernInputContainer: {
     flexDirection: 'row',
@@ -1376,7 +1357,10 @@ const styles = StyleSheet.create({
     padding: 16,
     backgroundColor: Colors.white,
     borderTopWidth: 1,
-    borderTopColor: '#F3F4F6',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    borderTopColor: '#E5E7EB',
   },
   standardButton: {
     backgroundColor: '#184080',
@@ -1398,88 +1382,6 @@ const styles = StyleSheet.create({
   disabledButton: {
     opacity: 0.6,
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-  },
-  centralModalContent: {
-    backgroundColor: Colors.white,
-    borderRadius: 20,
-    width: '100%',
-    padding: 20,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  modalIconContainer: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    backgroundColor: '#F3F4F6',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 14,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: Colors.primary,
-    textAlign: 'center',
-    marginBottom: 10,
-  },
-  modalMessage: {
-    fontSize: 14,
-    color: '#6B7280',
-    textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: 20,
-  },
-  modalButtons: {
-    flexDirection: 'row',
-    gap: 12,
-    width: '100%',
-  },
-  modalButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cancelButton: {
-    backgroundColor: '#F3F4F6',
-  },
-  cancelButtonText: {
-    color: '#6B7280',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  editConfirmButton: {
-    backgroundColor: '#184080',
-  },
-  deleteConfirmButton: {
-    backgroundColor: '#184080',
-  },
-  successButton: {
-    backgroundColor: '#10B981',
-    width: '100%',
-  },
-  confirmButtonText: {
-    color: Colors.white,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  successButtonText: {
-    color: Colors.white,
-    fontSize: 14,
-    fontWeight: '600',
-  },
   row: {
     flexDirection: "row",
     alignItems: "center",
@@ -1500,5 +1402,72 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 4 },
+  },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 24,
+    width: '85%',
+    maxWidth: 340,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1F2937',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  modalMessage: {
+    fontSize: 14,
+    color: '#6B7280',
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 20,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelButton: {
+    backgroundColor: '#F3F4F6',
+  },
+  cancelButtonText: {
+    color: '#6B7280',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  editModalButton: {
+    backgroundColor: '#ED7117',
+  },
+  deleteModalButton: {
+    backgroundColor: '#EF4444',
+  },
+  modalButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

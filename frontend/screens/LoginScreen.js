@@ -29,7 +29,7 @@ import { Button } from 'react-native';  // Explicit import
 const { width } = Dimensions.get('window');
 
 export default function LoginScreen({ navigation }) {
-  const { loginGuest } = useAuth();
+  const { loginGuest,login } = useAuth();
   const insets = useSafeAreaInsets();
   
   // State management

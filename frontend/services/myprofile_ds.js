@@ -55,6 +55,7 @@ async updateUserProfile(data) {
         first_name: data.first_name || null,
         last_name: data.last_name || null,
         email: data.email || null,
+         email_verified: data.email_verified ?? false,
         gender: data.gender || null,
         date_of_birth: data.date_of_birth || null, // yyyy-mm-dd
         state: data.state || null,

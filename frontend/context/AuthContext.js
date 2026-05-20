@@ -1,49 +1,50 @@
-import React, { createContext, useState, useContext, useEffect } from "react";
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AppState } from "react-native";
-
+import { API_BASE_URL } from "../config/config_ip";
 const AuthContext = createContext();
-
-const SESSION_EXPIRY_MS = 30 * 24 * 60 * 60 * 1000;
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
-  let appState = AppState.currentState;
+  const appState = useRef(AppState.currentState);
 
-  const isSessionValid = (sessionData) => {
-    if (!sessionData || !sessionData.lastUsed) return false;
-    return Date.now() - sessionData.lastUsed < SESSION_EXPIRY_MS;
-  };
-
-  // 🔄 Restore session on app start
+  // =========================================
+  // RESTORE SESSION
+  // =========================================
   const restoreSession = async () => {
     try {
-      const storedSession = await AsyncStorage.getItem("user");
+      console.log("🔄 RESTORE SESSION");
 
-      if (storedSession) {
-        const sessionData = JSON.parse(storedSession);
-        console.log("🔍 Loaded session:", sessionData);
+      const storedAuth = await AsyncStorage.getItem("auth");
 
-        if (isSessionValid(sessionData)) {
-          setUser(sessionData.userData);
-          setIsAuthenticated(true);
+      if (!storedAuth) {
+        console.log("❌ No saved auth");
 
-          // update lastUsed
-          sessionData.lastUsed = Date.now();
-          await AsyncStorage.setItem("user", JSON.stringify(sessionData));
+        setLoading(false);
+        return;
+      }
 
-          console.log("✅ Session restored");
-        } else {
-          console.log("❌ Session expired");
-          await AsyncStorage.removeItem("user");
-          setUser(null);
-          setIsAuthenticated(false);
-        }
-      } else {
-        setIsAuthenticated(false);
+      const authData = JSON.parse(storedAuth);
+
+      // CHECK TOKEN EXISTS
+      if (authData?.accessToken) {
+        setUser(authData.userData);
+        setIsAuthenticated(true);
+
+        console.log("✅ Session restored");
+
+        // SILENT REFRESH
+        await refreshAccessToken();
       }
     } catch (error) {
       console.log("❌ Restore session error:", error);
@@ -52,112 +53,171 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // =========================================
+  // REFRESH ACCESS TOKEN
+  // =========================================
+ const refreshAccessToken = async () => {
+  try {
+    console.log("🔄 REFRESH TOKEN");
+
+    const storedAuth = await AsyncStorage.getItem("auth");
+
+    if (!storedAuth) return false;
+
+    const authData = JSON.parse(storedAuth);
+
+    if (!authData.refreshToken) {
+      return false;
+    }
+
+    // ✅ FIXED: Use your actual backend URL
+    const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        refreshToken: authData.refreshToken,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (response.ok) {
+      const updatedAuth = {
+        ...authData,
+        accessToken: data.accessToken,
+        lastUsed: Date.now(),
+      };
+
+      await AsyncStorage.setItem("auth", JSON.stringify(updatedAuth));
+
+      console.log("✅ Token refreshed");
+
+      return true;
+    } else {
+      console.log("❌ Refresh token expired");
+      await logout();
+      return false;
+    }
+  } catch (error) {
+    console.log("❌ Refresh token error:", error);
+    return false;
+  }
+};
+  // =========================================
+  // APP START
+  // =========================================
   useEffect(() => {
     restoreSession();
   }, []);
 
-  // 🔄 Handle app background → foreground
+  // =========================================
+  // APP RESUME
+  // =========================================
   useEffect(() => {
-    const subscription = AppState.addEventListener("change", async (nextState) => {
-      if (appState.match(/inactive|background/) && nextState === "active") {
-        console.log("📲 App resumed");
+    const subscription = AppState.addEventListener(
+      "change",
+      async (nextState) => {
+        if (
+          appState.current.match(/inactive|background/) &&
+          nextState === "active"
+        ) {
+          console.log("📲 App resumed");
 
-        const storedSession = await AsyncStorage.getItem("user");
-
-        if (storedSession) {
-          const sessionData = JSON.parse(storedSession);
-
-          if (isSessionValid(sessionData)) {
-            sessionData.lastUsed = Date.now();
-            await AsyncStorage.setItem("user", JSON.stringify(sessionData));
-
-            setUser(sessionData.userData);
-            setIsAuthenticated(true);
-
-            console.log("✅ Session refreshed");
-          } else {
-            await AsyncStorage.removeItem("user");
-            setUser(null);
-            setIsAuthenticated(false);
-            console.log("❌ Session expired on resume");
-          }
+          await refreshAccessToken();
         }
+
+        appState.current = nextState;
       }
-      appState = nextState;
-    });
+    );
 
     return () => subscription.remove();
   }, []);
 
-  // 🔐 LOGIN
-  const login = async (userData) => {
-    try {
-      const sessionData = {
-        userData,
-        lastUsed: Date.now(),
-      };
+  // =========================================
+  // LOGIN
+  // =========================================
+const login = async (data) => {
+  try {
+    console.log("🔐 LOGIN DATA:", data);
 
-      await AsyncStorage.setItem("user", JSON.stringify(sessionData));
+    const sessionData = {
+      userData: data.user,
+      accessToken: data.accessToken,
+      refreshToken: data.refreshToken,
+      lastUsed: Date.now(),
+    };
 
-      setUser(userData);
-      setIsAuthenticated(true);
+    // ✅ FIXED: Use 'auth' key instead of 'user'
+    await AsyncStorage.setItem("auth", JSON.stringify(sessionData));
 
-      console.log("🔐 Login saved");
-    } catch (error) {
-      console.log("❌ Login error:", error);
-    }
-  };
+    console.log("✅ SAVED AUTH:", sessionData);
 
-  // 👤 GUEST LOGIN
-  const loginGuest = async () => {
+    setUser(data.user);
+    setIsAuthenticated(true);
+
+    console.log("✅ LOGIN SUCCESS");
+  } catch (error) {
+    console.log("❌ Login error:", error);
+  }
+};
+  // =========================================
+  // GUEST LOGIN
+  // =========================================
+ const loginGuest = async () => {
+  try {
     const guestData = {
       id: "guest_" + Date.now(),
       first_name: "Guest",
-      phone_number: "guest_mode",
       isGuest: true,
-      createdAt: Date.now(),
     };
 
-    try {
-      await AsyncStorage.setItem(
-        "user",
-        JSON.stringify({
-          userData: guestData,
-          lastUsed: Date.now(),
-        })
-      );
+    const authData = {
+      userData: guestData,
+      accessToken: "guest_token",
+      refreshToken: "guest_refresh",
+      lastUsed: Date.now(),
+    };
 
-      setUser(guestData);
-      setIsAuthenticated(true);
+    // ✅ FIXED: Use 'auth' key
+    await AsyncStorage.setItem("auth", JSON.stringify(authData));
 
-      console.log("👤 Guest login");
-    } catch (error) {
-      console.log("Guest login error:", error);
-    }
-  };
+    setUser(guestData);
+    setIsAuthenticated(true);
 
-  // 🚪 LOGOUT
+    console.log("👤 Guest Login");
+  } catch (error) {
+    console.log("❌ Guest login error:", error);
+  }
+};
+
+  // =========================================
+  // LOGOUT
+  // =========================================
   const logout = async () => {
-    try {
-      await AsyncStorage.removeItem("user");
-      setUser(null);
-      setIsAuthenticated(false);
-      console.log("🚪 Logout");
-    } catch (error) {
-      console.log("Logout error:", error);
-    }
-  };
+  try {
+    // ✅ FIXED: Remove 'auth' key
+    await AsyncStorage.removeItem("auth");
+    
+    setUser(null);
+    setIsAuthenticated(false);
+
+    console.log("🚪 Logout");
+  } catch (error) {
+    console.log("❌ Logout error:", error);
+  }
+};
 
   return (
     <AuthContext.Provider
       value={{
         user,
+        loading,
         isAuthenticated,
         login,
         loginGuest,
         logout,
-        loading,
-        isGuest: !!user?.isGuest,
       }}
     >
       {children}
