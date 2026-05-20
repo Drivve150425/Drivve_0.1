@@ -216,21 +216,70 @@ static async verifyOTP(phoneOrConfirmation, otpCode, isBackendFlow = false) {
       // Firebase verification
       // ... your existing Firebase code
       const confirmation = phoneOrConfirmation;
-      const result = await confirmation.confirm(otpCode);
-      const token = await result.user.getIdToken();
-      
-      return {
-        success: true,
-        accessToken: token,      // ← Use accessToken instead of token
-        refreshToken: token,     // ← Add refreshToken
-        user: {
-          uid: result.user.uid,
-          phoneNumber: result.user.phoneNumber,
-        },
-        uid: result.user.uid,
-        phoneNumber: result.user.phoneNumber,
-        isBackendFlow: false,
-      };
+  const result = await confirmation.confirm(otpCode);
+
+const firebaseToken =
+  await result.user.getIdToken();
+
+console.log(
+  "🔥 Firebase verified"
+);
+
+const backendResponse = await fetch(
+  `${API_BASE_URL}/api/verify-otp`,
+  {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      phone_number:
+        result.user.phoneNumber,
+
+      firebase_id_token:
+        firebaseToken,
+    }),
+  }
+);
+
+const backendData =
+  await backendResponse.json();
+
+console.log(
+  "📦 Backend verify response:",
+  backendData
+);
+
+if (!backendData.success) {
+
+  return {
+    success: false,
+    message:
+      backendData.detail ||
+      "Backend verification failed",
+  };
+}
+
+return {
+  success: true,
+
+  accessToken:
+    backendData.accessToken,
+
+  refreshToken:
+    backendData.refreshToken,
+
+  user:
+    backendData.user,
+
+  uid:
+    result.user.uid,
+
+  phoneNumber:
+    result.user.phoneNumber,
+
+  isBackendFlow: false,
+};
     }
   } catch (error) {
     console.error('❌ Verification error:', error);
