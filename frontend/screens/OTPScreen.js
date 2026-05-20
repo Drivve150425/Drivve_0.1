@@ -284,10 +284,10 @@ await AsyncStorage.setItem(
       result = await FirebaseAuthService.verifyOTP(confirmationResult, otpValue);
       
       if (result.success) {
-        const tokens = {
-          accessToken: result.accessToken || result.token,
-          refreshToken: result.refreshToken || result.token,
-        };
+       const tokens = {
+  accessToken: result.accessToken,
+  refreshToken: result.refreshToken,
+};
         setBackendTokens(tokens);
         setIsVerifying(false);
         setTimeout(() => {
