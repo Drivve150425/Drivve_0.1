@@ -255,6 +255,8 @@ from drivve_api.createprofile import router as createprofile_router
 from drivve_api.myprofile import router as profile_router
 from drivve_api.chat import router as chat_router
 from drivve_api.chat_socket import socket_app
+from routers import ride_session
+
 
 app.include_router(otp_router)
 app.include_router(account_router)
@@ -292,6 +294,7 @@ app.include_router(riderrouter)
 app.include_router(routes_router)
 app.include_router(ridesrouter)
 app.include_router(myrides_router)
+app.include_router(ride_session.router)
 
 
 

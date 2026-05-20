@@ -213,8 +213,21 @@ export default function MyRides({ route, navigation }) {
     });
   };
 
-  const handleStartRide = () => {
-    showUpcomingFeature("Start ride");
+  const handleStartRide = (ride) => {
+    const liveSession = ride?.live_session;
+
+    if (liveSession?.session_id) {
+      navigation.navigate('OngoingRideDriverScreen', {
+        rideId: ride.id,
+        sessionId: liveSession.session_id,
+      });
+      return;
+    }
+
+    navigation.navigate('StartRideConfirmScreen', {
+      rideId: ride.id,
+      ride,
+    });
   };
 
   const handleBookingAction = async (bookingId, action) => {
@@ -519,7 +532,9 @@ export default function MyRides({ route, navigation }) {
               onPress={() => handleStartRide(ride)}
               activeOpacity={0.85}
             >
-              <Text style={styles.startRideBtnText}>Start Ride</Text>
+              <Text style={styles.startRideBtnText}>
+                {ride?.live_session?.session_id ? 'Open Ongoing Ride' : 'Start Ride'}
+              </Text>
             </TouchableOpacity>
 
             <View style={styles.secondaryActionsRow}>
@@ -766,34 +781,47 @@ export default function MyRides({ route, navigation }) {
           </View>
         )}
 
-        {isAccepted && (
-          <View style={styles.driverActionWrapper}>
+        {isAccepted && !booking?.live_session?.session_id && (
+  <View style={styles.waitingBox}>
+    <Ionicons name="time-outline" size={16} color="#16A34A" />
+    <Text style={[styles.waitingText, { color: '#166534' }]}>
+      Driver will start the ride soon
+    </Text>
+  </View>
+)}
+
+        {isAccepted && booking?.live_session?.session_id && (
+          <>
+            <View style={[styles.waitingBox, { backgroundColor: '#ECFDF3', borderColor: '#86EFAC' }]}>
+              <Ionicons name="car-outline" size={16} color="#15803D" />
+              <Text style={[styles.waitingText, { color: '#166534' }]}>
+                🚗 Driver has started the ride!
+              </Text>
+            </View>
+
             <TouchableOpacity
               style={styles.startRideBtn}
-              onPress={() => showUpcomingFeature("Contact / ride action")}
+              onPress={() =>
+                navigation.navigate('OngoingRideRiderScreen', {
+                  bookingId: booking.id,
+                  sessionId: booking?.live_session?.session_id,
+                })
+              }
               activeOpacity={0.85}
             >
-              <Text style={styles.startRideBtnText}>Confirmed Ride</Text>
+              <Text style={styles.startRideBtnText}>Track Ride</Text>
             </TouchableOpacity>
 
             <View style={styles.secondaryActionsRow}>
               <TouchableOpacity
                 style={styles.secondaryBtn}
-                onPress={() => showUpcomingFeature("Edit booking")}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.secondaryBtnText}>Edit Details</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.secondaryBtn}
-                onPress={() => cancelBooking(booking.id)}
+                onPress={cancelBooking.bind(null, booking.id)}
                 activeOpacity={0.85}
               >
                 <Text style={styles.secondaryBtnText}>Cancel</Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </>
         )}
 
         {!isClosed && !isAccepted && (

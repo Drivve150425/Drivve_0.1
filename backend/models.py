@@ -791,3 +791,74 @@ class BlockedUsers(Base):
     __table_args__ = (
         UniqueConstraint('blocker_phone', 'blocked_phone', name='unique_block'),
     )
+
+# ===== ADD TO models.py =====
+
+from sqlalchemy import Column, Integer, String, DateTime, Float, ForeignKey, Text, Boolean
+from sqlalchemy.orm import relationship
+from datetime import datetime
+from database import Base
+
+
+class RideSession(Base):
+    __tablename__ = "ride_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    ride_id = Column(Integer, ForeignKey("rides.id"), nullable=False, index=True)
+    driver_phone = Column(String, nullable=False, index=True)
+
+    status = Column(String, default="driver_started")  # driver_started, boarding, en_route, completed, emergency_stopped
+    current_phase = Column(String, default="boarding")  # boarding, en_route, completed
+
+    current_lat = Column(Float, nullable=True)
+    current_lng = Column(Float, nullable=True)
+
+    qr_code_token = Column(String, nullable=True)
+    qr_expires_at = Column(DateTime, nullable=True)
+
+    sos_active = Column(Boolean, default=False)
+    emergency_stop_active = Column(Boolean, default=False)
+    emergency_note = Column(Text, nullable=True)
+
+    started_at = Column(DateTime, default=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    ride = relationship("Ride", backref="ride_sessions")
+    riders = relationship("RideSessionRider", back_populates="session", cascade="all, delete-orphan")
+
+
+class RideSessionRider(Base):
+    __tablename__ = "ride_session_riders"
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(Integer, ForeignKey("ride_sessions.id"), nullable=False, index=True)
+    booking_id = Column(Integer, ForeignKey("ride_bookings.id"), nullable=False, index=True)
+
+    rider_phone = Column(String, nullable=False, index=True)
+    rider_name = Column(String, nullable=True)
+    rider_photo = Column(String, nullable=True)
+
+    pickup_location = Column(String, nullable=True)
+    dropoff_location = Column(String, nullable=True)
+
+    pickup_lat = Column(Float, nullable=True)
+    pickup_lng = Column(Float, nullable=True)
+    dropoff_lat = Column(Float, nullable=True)
+    dropoff_lng = Column(Float, nullable=True)
+
+    status = Column(String, default="accepted")  # accepted, reached_pickup, boarded, dropped_off, completed, skipped
+    reached_pickup_at = Column(DateTime, nullable=True)
+    boarded_at = Column(DateTime, nullable=True)
+    dropped_off_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+
+    driver_rating = Column(Integer, nullable=True)
+    driver_feedback = Column(Text, nullable=True)
+
+    rider_rating = Column(Integer, nullable=True)
+    rider_feedback = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    session = relationship("RideSession", back_populates="riders")

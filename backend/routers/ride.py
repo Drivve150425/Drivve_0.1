@@ -424,6 +424,7 @@ from datetime import datetime, timezone, timedelta
 from pydantic import BaseModel, field_validator
 from typing import Optional, Dict, List
 import math
+from models import RideSession, RideSessionRider
 
 
 router = APIRouter()
@@ -617,7 +618,7 @@ def post_ride(data: CreateRideRequest, db: Session = Depends(get_db)):
         destination_lon=data.destination_coords[0],
         destination_lat=data.destination_coords[1],
         route_coordinates=data.route_coordinates,
-        status="active"
+        status="active",
     )
 
     db.add(ride)
@@ -699,6 +700,24 @@ def get_my_rides(phone_number: str, db: Session = Depends(get_db)):
     for ride in posted_rides:
         bookings_list = bookings_map.get(ride.id, [])
 
+        live_session = db.query(RideSession).filter(
+            RideSession.ride_id == ride.id,
+            RideSession.status.in_(["driver_started", "boarding", "en_route", "emergency_stopped"])
+        ).order_by(RideSession.id.desc()).first()
+
+        live_session_data = None
+        if live_session:
+            boarded_count = sum(1 for r in live_session.riders if r.status in ["boarded", "dropped_off", "completed"])
+            dropped_count = sum(1 for r in live_session.riders if r.status in ["dropped_off", "completed"])
+            live_session_data = {
+                "session_id": live_session.id,
+                "status": live_session.status,
+                "current_phase": live_session.current_phase,
+                "boarded_count": boarded_count,
+                "dropped_count": dropped_count,
+                "total_riders": len(live_session.riders)
+            }
+
         posted_rides_formatted.append({
             "id": ride.id,
             "phone_number": ride.phone_number,
@@ -718,6 +737,7 @@ def get_my_rides(phone_number: str, db: Session = Depends(get_db)):
             "vehicle_id": ride.vehicle_id,
             "created_at": ride.created_at.isoformat() if ride.created_at else None,
             "bookings": bookings_list,
+            "live_session": live_session_data,
         })
 
     # Requested rides with ride and driver info joined
@@ -727,6 +747,24 @@ def get_my_rides(phone_number: str, db: Session = Depends(get_db)):
         .filter(RideBooking.passenger_phone == normalized_phone)\
         .order_by(RideBooking.created_at.desc())\
         .all()
+
+    # Live session info for the most recent requested booking (if any)
+    live_session_data = None
+    if requested_bookings:
+        latest_booking = requested_bookings[0][0]  # RideBooking from (booking, ride, driver)
+        session_rider = db.query(RideSessionRider).filter(
+            RideSessionRider.booking_id == latest_booking.id
+        ).order_by(RideSessionRider.id.desc()).first()
+
+        if session_rider:
+            session = db.query(RideSession).filter(RideSession.id == session_rider.session_id).first()
+            if session:
+                live_session_data = {
+                    "session_id": session.id,
+                    "session_status": session.status,
+                    "current_phase": session.current_phase,
+                    "rider_status": session_rider.status
+                }
 
     requested_rides_formatted = []
     for booking, ride, driver in requested_bookings:
@@ -766,7 +804,8 @@ def get_my_rides(phone_number: str, db: Session = Depends(get_db)):
 
     return {
         "posted_rides": posted_rides_formatted,
-        "requested_rides": requested_rides_formatted
+        "requested_rides": requested_rides_formatted,
+        "live_session": live_session_data,
     }
 
 
