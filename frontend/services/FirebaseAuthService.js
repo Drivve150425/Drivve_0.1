@@ -312,11 +312,29 @@ return {
         isBackendFlow: false,
       };
     } catch (error) {
-      return {
-        success: false,
-        message: this._mapFirebaseError(error),
-        error: error.code,
-      };
+
+  console.log(
+    "🔥 FIREBASE FULL ERROR:",
+    JSON.stringify(error)
+  );
+
+  console.log(
+    "🔥 FIREBASE ERROR CODE:",
+    error.code
+  );
+
+  console.log(
+    "🔥 FIREBASE ERROR MESSAGE:",
+    error.message
+  );
+
+  return {
+    success: false,
+    message:
+      error.message ||
+      "Firebase auth failed"
+  };
+
     }
   }
 
