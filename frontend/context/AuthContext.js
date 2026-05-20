@@ -93,7 +93,8 @@ export const AuthProvider = ({ children }) => {
 };
 
       await AsyncStorage.setItem("auth", JSON.stringify(updatedAuth));
-
+      setUser(updatedAuth.userData);
+      setIsAuthenticated(true);
       console.log("✅ Token refreshed");
 
       return true;
