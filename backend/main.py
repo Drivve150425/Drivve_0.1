@@ -294,7 +294,6 @@ app.include_router(ridesrouter)
 app.include_router(myrides_router)
 
 
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 from sqlalchemy import text
 from database import engine
