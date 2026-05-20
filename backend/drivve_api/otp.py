@@ -2,6 +2,8 @@ from datetime import UTC, datetime, timedelta, timezone
 import random
 import os
 
+import jwt
+
 from drivve_api.createnotification import create_notification
 from models import AccountDeactivation, NotificationType, OTPVerification, User, UserDevice, UserStatus
 from database import get_db
@@ -271,31 +273,89 @@ def check_user_exists(user_check: dict, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail="User check failed")
 @router.post("/auth/refresh")
 def refresh_token(
-    payload: dict
+    payload: dict,
+    db: Session = Depends(get_db)
 ):
 
-    refresh_token =payload.get(
-            "refreshToken"
-        )
-    print("🔄 REFRESH TOKEN PAYLOAD:", payload)
-    if not refresh_token:
+    refresh_token = payload.get("refreshToken")
 
+    print("🔄 REFRESH TOKEN PAYLOAD:", payload)
+
+    if not refresh_token:
         raise HTTPException(
             401,
             "No refresh token"
         )
 
-    decoded = decode_token(
-            refresh_token
-        )
+    # =========================================
+    # TRY NORMAL BACKEND JWT FIRST
+    # =========================================
+    decoded = decode_token(refresh_token)
 
+    # =========================================
+    # IF FAILED → TRY FIREBASE TOKEN
+    # =========================================
     if not decoded:
 
-        raise HTTPException(
-            401,
-            "Invalid refresh token"
-        )
+        try:
+
+            firebase_payload = jwt.decode(
+                refresh_token,
+                options={"verify_signature": False}
+            )
+
+            print("🔥 FIREBASE TOKEN DETECTED")
+
+            phone_number = firebase_payload.get(
+                "phone_number"
+            )
+
+            if not phone_number:
+                raise HTTPException(
+                    401,
+                    "Invalid Firebase token"
+                )
+
+            user = db.query(User).filter(
+                User.phone_number == phone_number
+            ).first()
+
+            if not user:
+                raise HTTPException(
+                    401,
+                    "User not found"
+                )
+
+            new_access_token = create_access_token(
+                user.id
+            )
+
+            new_refresh_token = create_refresh_token(
+                user.id
+            )
+
+            print("✅ Converted Firebase token to backend session")
+
+            return {
+                "success": True,
+                "accessToken": new_access_token,
+                "refreshToken": new_refresh_token
+            }
+
+        except Exception as e:
+
+            print("❌ FIREBASE FALLBACK FAILED:", str(e))
+
+            raise HTTPException(
+                401,
+                "Invalid refresh token"
+            )
+
+    # =========================================
+    # NORMAL BACKEND JWT FLOW
+    # =========================================
     print("✅ REFRESH TOKEN DECODED:", decoded)
+
     if decoded["type"] != "refresh":
 
         raise HTTPException(
@@ -304,9 +364,11 @@ def refresh_token(
         )
 
     new_access_token = create_access_token(
-            decoded["user_id"]
-        )
-    print("✅ NEW ACCESS TOKEN CREATED", new_access_token)
+        decoded["user_id"]
+    )
+
+    print("✅ NEW ACCESS TOKEN CREATED")
+
     return {
         "success": True,
         "accessToken": new_access_token,
