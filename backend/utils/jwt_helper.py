@@ -1,8 +1,9 @@
+import os
+
 import jwt
 import datetime
 
-SECRET_KEY = "drivve_secret_key"
-
+SECRET_KEY = os.getenv("SECRET_KEY")
 ACCESS_EXPIRE_MINUTES = 60
 
 REFRESH_EXPIRE_DAYS = 30
@@ -70,6 +71,6 @@ def decode_token(token):
 
         return payload
 
-    except Exception:
-
+    except Exception as e:
+        print("JWT ERROR:", str(e))
         return None

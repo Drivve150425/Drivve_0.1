@@ -277,7 +277,7 @@ def refresh_token(
     refresh_token =payload.get(
             "refreshToken"
         )
-
+    print("🔄 REFRESH TOKEN PAYLOAD:", payload)
     if not refresh_token:
 
         raise HTTPException(
@@ -295,7 +295,7 @@ def refresh_token(
             401,
             "Invalid refresh token"
         )
-
+    print("✅ REFRESH TOKEN DECODED:", decoded)
     if decoded["type"] != "refresh":
 
         raise HTTPException(
@@ -306,7 +306,7 @@ def refresh_token(
     new_access_token = create_access_token(
             decoded["user_id"]
         )
-
+    print("✅ NEW ACCESS TOKEN CREATED", new_access_token)
     return {
         "success": True,
         "accessToken": new_access_token,
