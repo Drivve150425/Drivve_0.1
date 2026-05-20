@@ -121,19 +121,49 @@ def verify_otp(payload: dict, db: Session = Depends(get_db)):
 
     # ── Firebase ID Token verification (preferred) ──
     if firebase_id_token:
-        try:
-            decoded = verify_firebase_token(firebase_id_token)
-            token_phone = decoded.get("phone_number")
-            if token_phone and normalize_phone(token_phone) != phone:
-                raise HTTPException(400, "Phone number mismatch with Firebase token")
-            print("✅ Firebase ID token verified:", decoded.get("uid"))
-        except ValueError as e:
-            print("❌ Firebase token verification failed:", e)
-            raise HTTPException(401, str(e))
-        except Exception as e:
-            # Dev fallback: if Firebase Admin not configured, accept token blindly
-            print("⚠️ Firebase Admin not configured, skipping token verification")
 
+        print("🔥 FIREBASE TOKEN RECEIVED")
+
+        try:
+
+            decoded = verify_firebase_token(
+                firebase_id_token
+            )
+
+            print("✅ FIREBASE VERIFIED")
+            print("📱 Firebase phone:",
+                decoded.get("phone_number"))
+            print("🆔 Firebase uid:",
+                decoded.get("uid"))
+
+            token_phone = decoded.get(
+                "phone_number"
+            )
+
+            if (
+                token_phone and
+                normalize_phone(token_phone) != phone
+            ):
+
+                print("❌ PHONE MISMATCH")
+                print("REQUEST:", phone)
+                print("TOKEN:", token_phone)
+
+                raise HTTPException(
+                    400,
+                    "Phone mismatch"
+                )
+
+        except Exception as e:
+
+            print("❌ FIREBASE VERIFY ERROR")
+            print("ERROR TYPE:", type(e))
+            print("ERROR:", str(e))
+
+            raise HTTPException(
+                401,
+                str(e)
+            )
     # ── Legacy OTP verification (fallback) ──
     elif otp_code:
         otp = db.query(OTPVerification).filter(
