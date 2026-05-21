@@ -4,14 +4,14 @@ from datetime import datetime, timedelta, timezone
 import os
 import random
 import string
-from typing import Dict
+from typing import Dict, Optional
 import uuid
 
 import requests
 import resend
 from user_id_generator import generate_user_id
 from pydantic import BaseModel, EmailStr
-from models import User, UserStatus
+from models import User, UserStatus,Vehicle,MatchingPreferenceUser,Ride, RideFeedback
 from database import get_db
 from sqlalchemy.orm import Session
 from fastapi import Depends, HTTPException, APIRouter
@@ -295,3 +295,175 @@ async def get_all_users(db: Session = Depends(get_db)):
     except Exception as e:
         print(f"❌ Error in get_all_users: {str(e)}")
         raise HTTPException(500, str(e))
+    
+    
+@router.get("/api/v1/users/profile-public")
+async def get_public_profile(
+    phone_number: Optional[str] = None,
+    user_id: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Get public profile information for a user
+    """
+    try:
+        # Find the user
+        user = None
+        if user_id:
+            user = db.query(User).filter(User.user_id == user_id).first()
+        elif phone_number:
+            user = db.query(User).filter(User.phone_number == phone_number).first()
+        else:
+            raise HTTPException(400, "Either phone_number or user_id is required")
+        
+        if not user:
+            raise HTTPException(404, "User not found")
+        
+        # 1. Get vehicle info
+        vehicle = db.query(Vehicle).filter(
+            Vehicle.phone_number == user.phone_number
+        ).order_by(Vehicle.created_at.desc()).first()
+        
+        vehicle_data = None
+        if vehicle:
+            photos = []
+            if vehicle.notes and vehicle.notes.startswith('{"photos":'):
+                try:
+                    import json
+                    photos_data = json.loads(vehicle.notes)
+                    photos = photos_data.get('photos', [])
+                except:
+                    photos = [vehicle.photo_url] if vehicle.photo_url else []
+            else:
+                photos = [vehicle.photo_url] if vehicle.photo_url else []
+            
+            vehicle_data = {
+                "id": vehicle.id,
+                "vehicle_type": vehicle.vehicle_type,
+                "body_type": vehicle.body_type,
+                "fuel_type": vehicle.fuel_type,
+                "make": vehicle.make,
+                "model": vehicle.model,
+                "year": vehicle.year,
+                "registration_number": vehicle.registration_number,
+                "color": vehicle.color,
+                "max_seats": vehicle.max_seats,
+                "photo_url": vehicle.photo_url,
+                "photos": photos,
+                "type": vehicle.vehicle_type  # Add this for compatibility
+            }
+        
+        # 2. ⭐ GET TRAVEL PREFERENCES from MatchingPreferenceUser table ⭐
+        preferences = db.query(MatchingPreferenceUser).filter(
+            MatchingPreferenceUser.phone_number == user.phone_number
+        ).all()
+        
+        # Initialize default travel preferences
+        travel_preferences = {
+            "music": True,    # Default: allowed
+            "ac": True,       # Default: available  
+            "pets": False,    # Default: not allowed
+            "smoking": False  # Default: not allowed
+        }
+        
+        # Override with actual user preferences from database
+        for pref in preferences:
+            key = pref.preference_key
+            value = pref.value
+            
+            # Handle different value formats from MatchingPreferenceUser
+            if isinstance(value, dict):
+                # If value is a dict like {"value": true}
+                travel_preferences[key] = value.get('value', travel_preferences.get(key, False))
+            elif isinstance(value, list) and len(value) > 0:
+                # If value is a list like [{"value": true}]
+                if isinstance(value[0], dict):
+                    travel_preferences[key] = value[0].get('value', travel_preferences.get(key, False))
+                else:
+                    travel_preferences[key] = value[0] if value[0] is not None else travel_preferences.get(key, False)
+            elif isinstance(value, bool):
+                # If value is direct boolean
+                travel_preferences[key] = value
+            else:
+                # Fallback
+                travel_preferences[key] = bool(value) if value is not None else travel_preferences.get(key, False)
+        
+        print(f"Travel preferences for {user.phone_number}: {travel_preferences}")  # Debug log
+        
+        # 3. Calculate statistics
+        completed_rides_as_driver = db.query(Ride).filter(
+            Ride.phone_number == user.phone_number,
+            Ride.status == "completed"
+        ).count()
+        
+        cancelled_rides = db.query(Ride).filter(
+            Ride.phone_number == user.phone_number,
+            Ride.status == "cancelled"
+        ).count()
+        
+        on_time_rate = 98
+        response_rate = 95
+        
+        # 4. Get reviews
+        reviews_data = []
+        total_rating_sum = 0
+        total_ratings_count = 0
+        
+        feedback_received = db.query(RideFeedback).filter(
+            RideFeedback.feedback_for_user_id == user.id,
+            RideFeedback.rating.isnot(None)
+        ).order_by(RideFeedback.created_at.desc()).limit(10).all()
+        
+        for feedback in feedback_received:
+            reviewer = db.query(User).filter(User.id == feedback.feedback_by_user_id).first()
+            
+            total_rating_sum += feedback.rating
+            total_ratings_count += 1
+            
+            reviews_data.append({
+                "rating": feedback.rating,
+                "comment": feedback.comment,
+                "reviewer_name": reviewer.full_name if reviewer else "Anonymous",
+                "reviewer_photo": reviewer.profile_picture if reviewer else None,
+                "date": feedback.created_at.isoformat() if feedback.created_at else None,
+                "route": None
+            })
+        
+        avg_rating = total_rating_sum / total_ratings_count if total_ratings_count > 0 else 5.0
+        
+        # 5. Prepare profile response
+        profile_data = {
+            "user_id": user.user_id,
+            "phone_number": user.phone_number,
+            "full_name": user.full_name,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "profile_picture": user.profile_picture,
+            "email": user.email,
+            "bio": user.bio or "Friendly driver, love meeting new people!",
+            "about": user.bio or "Friendly driver, love meeting new people!",
+            "avg_rating": avg_rating,
+            "total_ratings": total_ratings_count,
+            "created_at": user.created_at.isoformat() if user.created_at else None,
+            "vehicle": vehicle_data,
+            "travel_preferences": travel_preferences,  # ⭐ THIS IS THE KEY FIX ⭐
+            "stats": {
+                "posted_rides": completed_rides_as_driver,
+                "cancelled_rides": cancelled_rides,
+                "on_time_rate": on_time_rate,
+                "response_rate": response_rate
+            },
+            "reviews": reviews_data,
+            "profile_completed": user.profile_completed,
+        }
+        
+        return {
+            "success": True,
+            "user": profile_data
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error in get_public_profile: {str(e)}")
+        raise HTTPException(500, f"Failed to fetch profile: {str(e)}")
