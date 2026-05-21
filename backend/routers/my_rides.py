@@ -4,6 +4,14 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from database import get_db
 from models import Ride, RideBooking, User
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy.orm import Session
+from sqlalchemy import func, and_
+from datetime import datetime, timezone
+from typing import Optional
+from database import get_db
+from models import Ride, User, Vehicle
+import math
 
 router = APIRouter()
 
@@ -106,16 +114,7 @@ async def get_my_rides(phone: str, db: Session = Depends(get_db)):
         "requested_rides": requested_formatted
     }
 
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy.orm import Session
-from sqlalchemy import func, and_
-from datetime import datetime, timezone
-from typing import Optional
-from database import get_db
-from models import Ride, User, Vehicle
-import math
 
-router = APIRouter()
 
 @router.get("/api/v1/rides/search")
 async def search_rides(
