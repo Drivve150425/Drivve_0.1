@@ -601,7 +601,7 @@ def post_ride(data: CreateRideRequest, db: Session = Depends(get_db)):
         departure_time_utc = departure_time_utc.replace(tzinfo=IST).astimezone(timezone.utc)
     else:
         departure_time_utc = departure_time_utc.astimezone(timezone.utc)
-
+    print(f"📝 Creating ride with preferences: {data.preferences}")
     ride = Ride(
         phone_number=normalized_phone,
         origin=data.origin,
@@ -624,6 +624,7 @@ def post_ride(data: CreateRideRequest, db: Session = Depends(get_db)):
     db.add(ride)
     db.commit()
     db.refresh(ride)
+    print(f"✅ Ride {ride.id} created with preferences: {ride.preferences}")
 
     line_wkt = "LINESTRING(" + ",".join(
         [f"{lng} {lat}" for lng, lat in data.route_coordinates]
@@ -919,7 +920,7 @@ def search_rides(data: SearchRidesRequest, db: Session = Depends(get_db)):
                 r.total_estimated_price,
                 r.route_line,
                 r.route_coordinates,
-
+                r.preferences, 
                 u.id AS user_db_id,
                 u.user_id AS driver_user_id,
                 u.first_name,
@@ -1036,6 +1037,16 @@ def search_rides(data: SearchRidesRequest, db: Session = Depends(get_db)):
 
         driver_name = full_name if full_name else f"Driver {str(row['phone_number'])[-4:]}"
         departure_time_ist = to_ist(row_departure_utc)
+         # ✅ Parse preferences to ensure it's a proper object
+        preferences = row.get("preferences")
+        if preferences and isinstance(preferences, str):
+            try:
+                import json
+                preferences = json.loads(preferences)
+            except:
+                preferences = {}
+        elif preferences is None:
+            preferences = {}
 
         rides.append({
             "id": row["id"],
@@ -1064,7 +1075,7 @@ def search_rides(data: SearchRidesRequest, db: Session = Depends(get_db)):
 
             "suggestedPickup": pickup_point,
             "suggestedDrop": drop_point,
-
+            "preferences": preferences,
             "pickupWalkDistanceM": int(pickup_distance_m),
             "dropWalkDistanceM": int(drop_distance_m),
             "pickupLabel": f"Walk {int(pickup_distance_m)} m to pickup point",
