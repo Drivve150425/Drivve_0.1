@@ -5,7 +5,7 @@ from typing import List, Optional
 from fastapi.encoders import jsonable_encoder
 from fastapi.staticfiles import StaticFiles
 import requests
-from models import Vehicle
+from models import Ride, Vehicle
 import os
 from fastapi import Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
@@ -314,4 +314,34 @@ def get_db_list(
         "success": True,
         "count": len(data),
         "data": jsonable_encoder(data)
+    }
+# Add this to your existing router in the backend file
+
+@router.get("/api/v1/vehicles/{vehicle_id}/ride-status")
+def check_vehicle_ride_status(vehicle_id: int, db: Session = Depends(get_db)):
+    """Check if vehicle has any ongoing rides (not completed or cancelled)"""
+    
+    # Check for active rides with this vehicle
+    active_rides = db.query(Ride).filter(
+        Ride.vehicle_id == vehicle_id,
+        Ride.is_deleted == False,
+        Ride.status.notin_(['completed', 'cancelled', 'ended'])
+    ).first()
+    
+    has_ongoing_ride = active_rides is not None
+    
+    # Get ride details if exists
+    ride_details = None
+    if has_ongoing_ride:
+        ride_details = {
+            "ride_id": active_rides.id,
+            "status": active_rides.status,
+            "departure_time": active_rides.departure_time.isoformat() if active_rides.departure_time else None,
+            "origin": active_rides.origin,
+            "destination": active_rides.destination
+        }
+    
+    return {
+        "has_ongoing_ride": has_ongoing_ride,
+        "ride_details": ride_details
     }
