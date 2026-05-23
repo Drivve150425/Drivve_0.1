@@ -180,23 +180,38 @@ def post_ride(data: CreateRideRequest, db: Session = Depends(get_db)):
     normalized_phone = normalize_phone(data.phone_number)
     
     # ✅ Get vehicle_id from request
-    vehicle_id = data.vehicle_id if hasattr(data, 'vehicle_id') else None
+    vehicle_id = data.vehicle_id if hasattr(data, 'vehicle_id') and data.vehicle_id else None
     
+    print(f"🔍 Posting ride - Phone: {normalized_phone}, Vehicle ID: {vehicle_id}")
+    
+    # ✅ CRITICAL VALIDATION: Check for existing active rides with same vehicle
     if vehicle_id:
-        # ✅ Check for UPCOMING rides (active/full status)
-        upcoming_ride = db.query(Ride).filter(
+        # Get current time in UTC
+        now_utc = datetime.now(timezone.utc)
+        
+        # Check for ANY active/upcoming ride with this vehicle
+        existing_ride = db.query(Ride).filter(
             Ride.vehicle_id == vehicle_id,
             Ride.status.in_(["active", "full"]),
-            Ride.is_deleted == False,
-            Ride.departure_time > datetime.now(timezone.utc)
+            Ride.is_deleted == False
         ).first()
         
-        if upcoming_ride:
-            raise HTTPException(
-                status_code=400, 
-                detail=f"This vehicle already has an UPCOMING ride scheduled (Ride #{upcoming_ride.id}). "
-                       f"Please edit that ride instead of creating a new one, or wait for it to complete."
-            )
+        if existing_ride:
+            # If the existing ride's departure time is in the past, mark it as completed
+            if existing_ride.departure_time < now_utc:
+                print(f"⚠️ Found past active ride {existing_ride.id}, marking as completed")
+                existing_ride.status = "completed"
+                db.commit()
+            else:
+                # Valid upcoming ride - block new posting
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"This vehicle already has an ACTIVE ride scheduled (Ride #{existing_ride.id}).\n"
+                           f"From: {existing_ride.origin}\n"
+                           f"To: {existing_ride.destination}\n"
+                           f"Departure: {existing_ride.departure_time.strftime('%Y-%m-%d %H:%M')}\n\n"
+                           f"Please edit that ride instead of creating a new one, or wait for it to complete."
+                )
         
         # ✅ Check for ONGOING rides (started but not completed)
         ongoing_ride = db.query(Ride).join(
@@ -292,25 +307,26 @@ def post_ride(data: CreateRideRequest, db: Session = Depends(get_db)):
     db.add(ride)
     db.commit()
     db.refresh(ride)
-    print(f"✅ Ride {ride.id} created with preferences: {ride.preferences}")
+    print(f"✅ Ride {ride.id} created successfully with vehicle_id: {vehicle_id}")
 
     # Update geometry
-    line_wkt = "LINESTRING(" + ",".join(
-        [f"{lng} {lat}" for lng, lat in data.route_coordinates]
-    ) + ")"
+    if data.route_coordinates and len(data.route_coordinates) >= 2:
+        line_wkt = "LINESTRING(" + ",".join(
+            [f"{lng} {lat}" for lng, lat in data.route_coordinates]
+        ) + ")"
 
-    db.execute(
-        text("""
-            UPDATE rides
-            SET route_line = ST_GeomFromText(:line_wkt, 4326)::geography
-            WHERE id = :ride_id
-        """),
-        {
-            "ride_id": ride.id,
-            "line_wkt": line_wkt
-        }
-    )
-    db.commit()
+        db.execute(
+            text("""
+                UPDATE rides
+                SET route_line = ST_GeomFromText(:line_wkt, 4326)::geography
+                WHERE id = :ride_id
+            """),
+            {
+                "ride_id": ride.id,
+                "line_wkt": line_wkt
+            }
+        )
+        db.commit()
 
     # Create notification
     try:
@@ -775,7 +791,7 @@ def update_ride(ride_id: int, data: UpdateRideRequest, db: Session = Depends(get
     if not ride:
         raise HTTPException(status_code=404, detail="Ride not found or you don't have permission to edit it")
     
-    # ✅ NEW: Check if ride is ongoing (has active session)
+    # ✅ Check if ride is ongoing (has active session)
     ongoing_session = db.query(RideSession).filter(
         RideSession.ride_id == ride_id,
         RideSession.status.in_(["driver_started", "boarding", "en_route"])
@@ -1075,12 +1091,14 @@ def check_active_rides(phone_number: str, vehicle_id: Optional[int] = None, db: 
     """Check if driver has active rides, optionally for a specific vehicle"""
     normalized_phone = normalize_phone(phone_number)
     
+    now_utc = datetime.now(timezone.utc)
+    
     # ✅ Check for UPCOMING rides (active/full status - not started yet)
     query = db.query(Ride).filter(
         Ride.phone_number == normalized_phone,
         Ride.status.in_(["active", "full"]),
         Ride.is_deleted == False,
-        Ride.departure_time > datetime.now(timezone.utc)
+        Ride.departure_time > now_utc
     )
     
     if vehicle_id:
@@ -1116,6 +1134,7 @@ def check_active_rides(phone_number: str, vehicle_id: Optional[int] = None, db: 
             "destination": ride.destination,
             "departure_time": ride.departure_time.isoformat(),
             "available_seats": ride.available_seats,
+            "price_per_seat": ride.price_per_seat,
             "status": ride.status,
             "ride_type": "upcoming",
             "can_edit": True
@@ -1134,6 +1153,7 @@ def check_active_rides(phone_number: str, vehicle_id: Optional[int] = None, db: 
             "destination": ride.destination,
             "departure_time": ride.departure_time.isoformat(),
             "available_seats": ride.available_seats,
+            "price_per_seat": ride.price_per_seat,
             "status": ride.status,
             "session_status": session.status if session else None,
             "ride_type": "ongoing",
@@ -1182,3 +1202,29 @@ def get_ride_status(ride_id: int, db: Session = Depends(get_db)):
     }
     
     return status_info
+
+
+# ✅ DEBUG ENDPOINT - Add this to help debug
+@router.get("/debug/vehicle-rides/{vehicle_id}")
+def debug_vehicle_rides(vehicle_id: int, db: Session = Depends(get_db)):
+    """Debug endpoint to check all rides for a vehicle"""
+    rides = db.query(Ride).filter(
+        Ride.vehicle_id == vehicle_id,
+        Ride.is_deleted == False
+    ).all()
+    
+    result = []
+    for ride in rides:
+        result.append({
+            "id": ride.id,
+            "status": ride.status,
+            "departure_time": ride.departure_time.isoformat(),
+            "is_deleted": ride.is_deleted,
+            "created_at": ride.created_at.isoformat() if ride.created_at else None
+        })
+    
+    return {
+        "vehicle_id": vehicle_id,
+        "ride_count": len(result),
+        "rides": result
+    }
