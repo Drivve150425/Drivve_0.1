@@ -419,7 +419,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import text
 from database import get_db
-from models import Ride, RideBooking, User, UserNotification, NotificationType
+from models import Ride, RideBooking, User, UserNotification, NotificationType, Vehicle
 from datetime import datetime, timezone, timedelta
 from pydantic import BaseModel, field_validator
 from typing import Optional, Dict, List
@@ -441,7 +441,7 @@ class CreateRideRequest(BaseModel):
     departure_time: datetime
     available_seats: int
     price_per_seat: float
-
+    vehicle_id: Optional[int] = None
     origin_coords: List[float]
     destination_coords: List[float]
     route_coordinates: List[List[float]]
@@ -595,7 +595,55 @@ def find_nearest_route_vertex(route_coords: List[List[float]], lng: float, lat: 
 @router.post("/post-ride")
 def post_ride(data: CreateRideRequest, db: Session = Depends(get_db)):
     normalized_phone = normalize_phone(data.phone_number)
-
+     # ✅ VALIDATION 1: Check for existing active ride with same vehicle
+    # First, get the vehicle_id from the request (you need to add vehicle_id to CreateRideRequest)
+    vehicle_id = data.vehicle_id if hasattr(data, 'vehicle_id') else None
+    
+    if vehicle_id:
+        # Check if there's already an active ride with this vehicle
+        existing_active_ride = db.query(Ride).filter(
+            Ride.vehicle_id == vehicle_id,
+            Ride.status.in_(["active", "full"]),  # Active or full rides count as ongoing
+            Ride.is_deleted == False,
+            Ride.departure_time > datetime.now(timezone.utc)  # Only future rides
+        ).first()
+        
+        if existing_active_ride:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"You already have an active ride with this vehicle (Ride #{existing_active_ride.id}). Please complete or cancel that ride before posting a new one."
+            )
+    
+    # ✅ VALIDATION 2: Check for any active ride by same driver (optional - prevent multiple rides altogether)
+    existing_driver_rides = db.query(Ride).filter(
+        Ride.phone_number == normalized_phone,
+        Ride.status.in_(["active", "full"]),
+        Ride.is_deleted == False,
+        Ride.departure_time > datetime.now(timezone.utc)
+    ).all()
+    
+    if len(existing_driver_rides) >= 3:  # Limit to 3 concurrent rides if needed
+        raise HTTPException(
+            status_code=400,
+            detail=f"You already have {len(existing_driver_rides)} active rides. Please complete or cancel existing rides before posting new ones."
+        )
+    
+    # ✅ VALIDATION 3: Ensure available seats doesn't exceed vehicle capacity
+    # Get vehicle max seats if vehicle_id is provided
+    if vehicle_id:
+        vehicle = db.query(Vehicle).filter(Vehicle.id == vehicle_id).first()
+        if vehicle and vehicle.max_seats:
+            # Driver seat is included in max_seats
+            if data.available_seats > vehicle.max_seats - 1:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Available seats ({data.available_seats}) cannot exceed vehicle capacity ({vehicle.max_seats - 1} passenger seats)."
+                )
+            if data.available_seats < 1:
+                raise HTTPException(
+                    status_code=400,
+                    detail="At least 1 seat must be available for passengers."
+                )
     departure_time_utc = data.departure_time
     if departure_time_utc.tzinfo is None:
         departure_time_utc = departure_time_utc.replace(tzinfo=IST).astimezone(timezone.utc)
@@ -618,6 +666,7 @@ def post_ride(data: CreateRideRequest, db: Session = Depends(get_db)):
         destination_lon=data.destination_coords[0],
         destination_lat=data.destination_coords[1],
         route_coordinates=data.route_coordinates,
+        vehicle_id=vehicle_id,
         status="active",
     )
 
@@ -1118,10 +1167,35 @@ def update_ride(ride_id: int, data: UpdateRideRequest, db: Session = Depends(get
     if not ride:
         raise HTTPException(status_code=404, detail="Ride not found or you don't have permission to edit it")
 
-    # Prevent edits if bookings accepted or ride started
+    
+    # ✅ VALIDATION: Check if ride has active bookings
+    active_bookings = db.query(RideBooking).filter(
+        RideBooking.ride_id == ride_id,
+        RideBooking.status.in_(["pending", "accepted"])
+    ).first()
+    
+    if active_bookings and ride.status in ["active", "full"]:
+        raise HTTPException(
+            status_code=400, 
+            detail="Cannot edit ride with active bookings. Please cancel existing bookings first."
+        )
+    
+    # ✅ VALIDATION: Check vehicle capacity when updating seats
+    vehicle_id = data.vehicle_id if hasattr(data, 'vehicle_id') else ride.vehicle_id
+    
+    if vehicle_id:
+        vehicle = db.query(Vehicle).filter(Vehicle.id == vehicle_id).first()
+        if vehicle and vehicle.max_seats:
+            if data.available_seats > vehicle.max_seats - 1:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Available seats ({data.available_seats}) cannot exceed vehicle capacity ({vehicle.max_seats - 1} passenger seats)."
+                )
+    
+    # Prevent editing if ride status is not active
     if ride.status not in ["active"]:
         raise HTTPException(status_code=400, detail="Cannot edit this ride (may have active bookings or completed)")
-
+    
     # Update scalar fields
     departure_time_utc = data.departure_time
     if departure_time_utc.tzinfo is None:
@@ -1375,4 +1449,37 @@ def get_ride_passengers(ride_id: int, db: Session = Depends(get_db)):
         "destination_lat": ride.destination_lat,
         "route_coordinates": ride.route_coordinates,
         "passengers": passengers
+    }
+@router.get("/check-active-rides/{phone_number}")
+def check_active_rides(phone_number: str, vehicle_id: Optional[int] = None, db: Session = Depends(get_db)):
+    """Check if driver has active rides, optionally for a specific vehicle"""
+    normalized_phone = normalize_phone(phone_number)
+    
+    query = db.query(Ride).filter(
+        Ride.phone_number == normalized_phone,
+        Ride.status.in_(["active", "full"]),
+        Ride.is_deleted == False,
+        Ride.departure_time > datetime.now(timezone.utc)
+    )
+    
+    if vehicle_id:
+        query = query.filter(Ride.vehicle_id == vehicle_id)
+    
+    active_rides = query.all()
+    
+    return {
+        "has_active_rides": len(active_rides) > 0,
+        "active_rides_count": len(active_rides),
+        "rides": [
+            {
+                "id": ride.id,
+                "vehicle_id": ride.vehicle_id,
+                "origin": ride.origin,
+                "destination": ride.destination,
+                "departure_time": ride.departure_time.isoformat(),
+                "available_seats": ride.available_seats,
+                "status": ride.status
+            }
+            for ride in active_rides
+        ]
     }
