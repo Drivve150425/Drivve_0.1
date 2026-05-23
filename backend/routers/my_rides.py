@@ -1,17 +1,9 @@
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from database import get_db
 from models import Ride, RideBooking, User
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy.orm import Session
-from sqlalchemy import func, and_
-from datetime import datetime, timezone
-from typing import Optional
-from database import get_db
-from models import Ride, User, Vehicle
-import math
 
 router = APIRouter()
 
@@ -76,7 +68,6 @@ async def get_my_rides(phone: str, db: Session = Depends(get_db)):
             "departure_time": ride.departure_time.isoformat() if ride.departure_time else None,
             "available_seats": ride.available_seats,
             "price_per_seat": ride.price_per_seat,
-            "preferences": ride.preferences,
             "status": ride.status,
             "bookings": bookings_map.get(ride.id, []),
         })
@@ -114,121 +105,3 @@ async def get_my_rides(phone: str, db: Session = Depends(get_db)):
         "requested_rides": requested_formatted
     }
 
-
-
-@router.get("/api/v1/rides/search")
-async def search_rides(
-    from_lat: float = Query(..., description="Pickup latitude"),
-    from_lng: float = Query(..., description="Pickup longitude"),
-    to_lat: float = Query(..., description="Drop latitude"),
-    to_lng: float = Query(..., description="Drop longitude"),
-    date: str = Query(..., description="Travel date YYYY-MM-DD"),
-    seats: int = Query(1, ge=1, description="Number of seats needed"),
-    db: Session = Depends(get_db)
-):
-    """
-    Search for available rides
-    """
-    try:
-        # Parse date
-        travel_date = datetime.strptime(date, "%Y-%m-%d").date()
-        start_datetime = datetime.combine(travel_date, datetime.min.time()).replace(tzinfo=timezone.utc)
-        end_datetime = datetime.combine(travel_date, datetime.max.time()).replace(tzinfo=timezone.utc)
-        
-        # Query rides with all necessary fields including preferences
-        rides = db.query(
-            Ride.id,
-            Ride.phone_number,
-            Ride.user_id,
-            Ride.origin,
-            Ride.destination,
-            Ride.origin_lat,
-            Ride.origin_lng,
-            Ride.destination_lat,
-            Ride.destination_lng,
-            Ride.departure_time,
-            Ride.available_seats,
-            Ride.price_per_seat,
-            Ride.preferences,  # ⭐ CRITICAL: Include preferences field
-            Ride.route_coordinates,
-            Ride.status,
-            Ride.created_at,
-            User.full_name.label("driver_name"),
-            User.profile_picture,
-            User.avg_rating,
-            User.bio,
-            Vehicle.make,
-            Vehicle.model,
-            Vehicle.color,
-            Vehicle.vehicle_type
-        ).join(
-            User, User.id == Ride.user_id
-        ).outerjoin(
-            Vehicle, Vehicle.id == Ride.vehicle_id
-        ).filter(
-            and_(
-                Ride.status == "active",
-                Ride.available_seats >= seats,
-                Ride.departure_time >= start_datetime,
-                Ride.departure_time <= end_datetime
-            )
-        ).order_by(Ride.departure_time.asc()).all()
-        
-        # Calculate intersection points and format response
-        result = []
-        for ride in rides:
-            # Calculate suggested pickup/drop points (simplified)
-            suggested_pickup = None
-            suggested_drop = None
-            
-            if ride.origin_lat and ride.origin_lng and from_lat and from_lng:
-                # Simple midpoint calculation
-                suggested_pickup = {
-                    "lat": (ride.origin_lat + from_lat) / 2,
-                    "lng": (ride.origin_lng + from_lng) / 2
-                }
-            
-            if ride.destination_lat and ride.destination_lng and to_lat and to_lng:
-                suggested_drop = {
-                    "lat": (ride.destination_lat + to_lat) / 2,
-                    "lng": (ride.destination_lng + to_lng) / 2
-                }
-            
-            result.append({
-                "id": ride.id,
-                "phoneNumber": ride.phone_number,
-                "driverUserId": ride.user_id,
-                "driverName": ride.driver_name,
-                "driverBio": ride.bio,
-                "profilePicture": ride.profile_picture,
-                "rating": float(ride.avg_rating) if ride.avg_rating else 5.0,
-                "from": ride.origin,
-                "to": ride.destination,
-                "from_coords": [ride.origin_lng, ride.origin_lat] if ride.origin_lat else None,
-                "to_coords": [ride.destination_lng, ride.destination_lat] if ride.destination_lat else None,
-                "date": ride.departure_time.strftime("%Y-%m-%d"),
-                "time": ride.departure_time.strftime("%I:%M %p"),
-                "price": float(ride.price_per_seat),
-                "seatsAvailable": ride.available_seats,
-                "preferences": ride.preferences,  # ⭐ Include preferences here
-                "vehicle": {
-                    "make": ride.make,
-                    "model": ride.model,
-                    "color": ride.color,
-                    "vehicle_type": ride.vehicle_type
-                } if ride.make else None,
-                "route_coordinates": ride.route_coordinates,
-                "suggestedPickup": suggested_pickup,
-                "suggestedDrop": suggested_drop,
-                "profileCompleted": True  # You can check from user table if needed
-            })
-        
-        return {
-            "success": True,
-            "rides": result,
-            "count": len(result)
-        }
-        
-    except Exception as e:
-        print(f"❌ Search rides error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
