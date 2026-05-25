@@ -417,7 +417,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import text
+from sqlalchemy import func, text
 from database import get_db
 from models import Ride, RideBooking, User, UserNotification, NotificationType
 from datetime import datetime, timezone, timedelta
@@ -426,7 +426,13 @@ from typing import Optional, Dict, List
 import math
 from models import RideSession, RideSessionRider
 
+from sqlalchemy import func
+from sqlalchemy.sql import expression as expr
 
+# Add this near your other imports
+ST_Distance = func.ST_Distance
+ST_SetSRID = func.ST_SetSRID
+ST_MakePoint = func.ST_MakePoint
 router = APIRouter()
 
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -1398,3 +1404,68 @@ def check_active_rides(phone_number: str, vehicle_id: int = None, db: Session = 
         "has_active_rides": len(active_rides) > 0,
         "rides": rides_data
     }
+@router.get("/check-duplicate-ride")
+def check_duplicate_ride(
+    phone_number: str,
+    origin_lng: float,
+    origin_lat: float,
+    destination_lng: float,
+    destination_lat: float,
+    departure_time: datetime,
+    vehicle_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Check for duplicate rides with same route, time, and vehicle
+    """
+    normalized_phone = normalize_phone(phone_number)
+    
+    # Convert departure time to UTC for comparison
+    if departure_time.tzinfo is None:
+        departure_time = departure_time.replace(tzinfo=IST).astimezone(timezone.utc)
+    else:
+        departure_time = departure_time.astimezone(timezone.utc)
+    
+    # Time window for duplicate detection (±2 hours)
+    time_window_start = departure_time - timedelta(hours=2)
+    time_window_end = departure_time + timedelta(hours=2)
+    
+    # Find similar rides
+    similar_rides = db.query(Ride).filter(
+        Ride.phone_number == normalized_phone,
+        Ride.vehicle_id == vehicle_id,
+        Ride.status.in_(["active", "full"]),  # Only active or full rides
+        Ride.departure_time.between(time_window_start, time_window_end),
+        # Check if routes are similar using PostGIS (within 1km of origin/destination)
+        ST_Distance(
+            ST_SetSRID(ST_MakePoint(origin_lng, origin_lat), 4326),
+            ST_SetSRID(ST_MakePoint(Ride.origin_lon, Ride.origin_lat), 4326)
+        ) < 1000,  # Within 1km
+        ST_Distance(
+            ST_SetSRID(ST_MakePoint(destination_lng, destination_lat), 4326),
+            ST_SetSRID(ST_MakePoint(Ride.destination_lon, Ride.destination_lat), 4326)
+        ) < 1000   # Within 1km
+    ).all()
+    
+    if similar_rides:
+        ride = similar_rides[0]
+        return {
+            "has_duplicate": True,
+            "ride_id": ride.id,
+            "status": ride.status,
+            "available_seats": ride.available_seats,
+            "total_seats": ride.available_seats + get_booked_seats_count(db, ride.id),
+            "message": f"You already have a ride from {ride.origin} to {ride.destination} on {ride.departure_time.strftime('%d %b %Y at %I:%M %p')}"
+        }
+    
+    return {
+        "has_duplicate": False
+    }
+
+def get_booked_seats_count(db: Session, ride_id: int) -> int:
+    """Helper function to get total booked seats for a ride"""
+    result = db.query(func.sum(RideBooking.seats_booked)).filter(
+        RideBooking.ride_id == ride_id,
+        RideBooking.status.in_(["pending", "accepted"])
+    ).scalar()
+    return result or 0
