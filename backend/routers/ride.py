@@ -1365,3 +1365,36 @@ def get_ride_passengers(ride_id: int, db: Session = Depends(get_db)):
         "route_coordinates": ride.route_coordinates,
         "passengers": passengers
     }
+@router.get("/check-active-rides/{phone_number}")
+def check_active_rides(phone_number: str, vehicle_id: int = None, db: Session = Depends(get_db)):
+    """
+    Check if the driver has any active rides with the specified vehicle
+    """
+    normalized_phone = normalize_phone(phone_number)
+    
+    query = db.query(Ride).filter(
+        Ride.phone_number == normalized_phone,
+        Ride.status.in_(["active", "full"])  # Only active or full rides
+    )
+    
+    if vehicle_id:
+        query = query.filter(Ride.vehicle_id == vehicle_id)
+    
+    active_rides = query.all()
+    
+    rides_data = []
+    for ride in active_rides:
+        rides_data.append({
+            "id": ride.id,
+            "origin": ride.origin,
+            "destination": ride.destination,
+            "departure_time": ride.departure_time.isoformat(),
+            "available_seats": ride.available_seats,
+            "status": ride.status,
+            "vehicle_id": ride.vehicle_id
+        })
+    
+    return {
+        "has_active_rides": len(active_rides) > 0,
+        "rides": rides_data
+    }
