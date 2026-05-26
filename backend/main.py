@@ -2,6 +2,7 @@
 # STANDARD LIBRARIES
 # =========================
 from datetime import datetime, timezone, UTC
+import os
 
 # =========================
 # FASTAPI & RELATED
@@ -17,7 +18,7 @@ from sqlalchemy.orm import Session
 import uvicorn
 
 from drivve_api.app_config import create_app
-from drivve_api.createprofile import EMAIL_USER
+# from drivve_api.createprofile import EMAIL_USER
 from database import engine, get_db, Base
 
 # =========================
@@ -45,7 +46,7 @@ from pydantic import BaseModel, EmailStr
 from dotenv import load_dotenv
 
 load_dotenv()
-
+EMAIL_USER = os.getenv("EMAIL_USER")
 
 app = create_app()
 
