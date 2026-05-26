@@ -425,7 +425,7 @@ from pydantic import BaseModel, field_validator
 from typing import Optional, Dict, List
 import math
 from models import RideSession, RideSessionRider
-
+from sqlalchemy import cast, Float
 from sqlalchemy import func
 from sqlalchemy.sql import expression as expr
 
@@ -1431,22 +1431,52 @@ def check_duplicate_ride(
     time_window_end = departure_time + timedelta(hours=2)
     
     # Find similar rides
-    similar_rides = db.query(Ride).filter(
-        Ride.phone_number == normalized_phone,
-        Ride.vehicle_id == vehicle_id,
-        Ride.status.in_(["active", "full"]),  # Only active or full rides
-        Ride.departure_time.between(time_window_start, time_window_end),
-        # Check if routes are similar using PostGIS (within 1km of origin/destination)
-        ST_Distance(
-            ST_SetSRID(ST_MakePoint(origin_lng, origin_lat), 4326),
-            ST_SetSRID(ST_MakePoint(Ride.origin_lon, Ride.origin_lat), 4326)
-        ) < 1000,  # Within 1km
-        ST_Distance(
-            ST_SetSRID(ST_MakePoint(destination_lng, destination_lat), 4326),
-            ST_SetSRID(ST_MakePoint(Ride.destination_lon, Ride.destination_lat), 4326)
-        ) < 1000   # Within 1km
-    ).all()
-    
+  similar_rides = db.query(Ride).filter(
+    Ride.phone_number == normalized_phone,
+    Ride.vehicle_id == vehicle_id,
+    Ride.status.in_(["active", "full"]),
+    Ride.departure_time.between(time_window_start, time_window_end),
+
+    func.ST_DWithin(
+        func.ST_SetSRID(
+            func.ST_MakePoint(
+                cast(origin_lng, Float),
+                cast(origin_lat, Float)
+            ),
+            4326
+        )::geography,
+
+        func.ST_SetSRID(
+            func.ST_MakePoint(
+                cast(Ride.origin_lon, Float),
+                cast(Ride.origin_lat, Float)
+            ),
+            4326
+        )::geography,
+
+        1000
+    ),
+
+    func.ST_DWithin(
+        func.ST_SetSRID(
+            func.ST_MakePoint(
+                cast(destination_lng, Float),
+                cast(destination_lat, Float)
+            ),
+            4326
+        )::geography,
+
+        func.ST_SetSRID(
+            func.ST_MakePoint(
+                cast(Ride.destination_lon, Float),
+                cast(Ride.destination_lat, Float)
+            ),
+            4326
+        )::geography,
+
+        1000
+    )
+).all()
     if similar_rides:
         ride = similar_rides[0]
         return {
