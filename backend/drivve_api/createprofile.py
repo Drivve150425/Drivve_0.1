@@ -1157,7 +1157,13 @@ def send_email_via_azure(to_email: str, subject: str, html_content: str) -> bool
         return True
         
     except Exception as ex:
-        print(f"Failed to send email: {str(ex)}")
+        import traceback
+
+        print("========== AZURE EMAIL ERROR ==========")
+        print(str(ex))
+        traceback.print_exc()
+        print("======================================")
+
         return False
 
 
