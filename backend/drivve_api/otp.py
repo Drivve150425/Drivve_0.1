@@ -183,20 +183,56 @@ def verify_otp(payload: dict, db: Session = Depends(get_db)):
         raise HTTPException(400, "OTP code or firebase_id_token required")
 
     # ✅ update user if exists
-    access_token = None
-    refresh_token = None
-    user = db.query(User).filter(User.phone_number == phone).first()
-    if user:
-        user.is_phone_verified = True
-        user.status = UserStatus.ACTIVE
-        db.commit()
-        access_token = create_access_token(
-            user.id
+    # =========================================
+    # FIND OR CREATE USER
+    # =========================================
+
+    user = db.query(User).filter(
+        User.phone_number == phone
+    ).first()
+
+    is_new_user = False
+
+    # NEW USER
+    if not user:
+
+        is_new_user = True
+
+        user = User(
+            phone_number=phone,
+            is_phone_verified=True,
+            profile_completed=False,
+            status=UserStatus.PENDING,
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc)
         )
 
-        refresh_token = create_refresh_token(
-            user.id
-        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+    # EXISTING USER
+    else:
+
+        user.is_phone_verified = True
+        user.status = UserStatus.ACTIVE
+        user.updated_at = datetime.now(timezone.utc)
+
+        db.commit()
+        db.refresh(user)
+
+    # =========================================
+    # GENERATE TOKENS FOR ALL USERS
+    # =========================================
+
+    access_token = create_access_token(
+        user.id
+    )
+
+    refresh_token = create_refresh_token(
+        user.id
+    )
+       
     # ✅ register device
     if device_name and device_type:
         db.query(UserDevice).filter(
@@ -239,7 +275,7 @@ def verify_otp(payload: dict, db: Session = Depends(get_db)):
         "accessToken": access_token if user else None,
         "refreshToken": refresh_token if user else None,
 
-        "is_new_user": user is None
+        "is_new_user": is_new_user
     }
 
 
