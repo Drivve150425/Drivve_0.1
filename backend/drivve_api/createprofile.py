@@ -1072,52 +1072,102 @@ def generate_otp():
     """Generate a 6-digit OTP"""
     return ''.join(random.choices(string.digits, k=6))
 
-
 def get_otp_email_html(first_name: str, otp: str, expiry_minutes: int = 2) -> str:
-    """
-    Generate HTML email content for OTP verification in the exact format requested
-    
-    Args:
-        first_name: User's first name
-        otp: The OTP code
-        expiry_minutes: OTP validity in minutes (default 2)
-    
-    Returns:
-        HTML string for email
-    """
+
     return f"""
     <html>
-        <body style="font-family: Arial, sans-serif; margin: 0; padding: 0;">
-            <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-                <!-- Logo Section -->
-                <div style="text-align: left; margin-bottom: 30px;">
-                    <img src="https://drivvestorage.blob.core.windows.net/drivvestorage/logogray.png" alt="Drivve Logo" style="max-height: 50px;" onerror="this.style.display='none'">
-                </div>
-                
+        <body style="
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+        ">
+
+            <div style="
+                max-width: 600px;
+                margin: 0 auto;
+                background: white;
+                padding: 30px;
+            ">
+
                 <!-- Email Content -->
-                <div>
-                    <p style="font-size: 14px; color: #333; margin-bottom: 20px;">
-                        Hey {first_name or 'there'},
-                    </p>
-                    
-                    <p style="font-size: 14px; color: #333; margin-bottom: 20px;">
-                        Your verification code is <strong style="font-size: 18px;">{otp}</strong>.
-                    </p>
-                    
-                    <p style="font-size: 14px; color: #333; margin-bottom: 20px;">
-                        This OTP is valid for <strong>{expiry_minutes} minutes</strong>. Do not share this code with anyone.
-                    </p>
-                    
-                    <p style="font-size: 14px; color: #333; margin-bottom: 20px;">
-                        If you did not request this code, please ignore this email or contact us at <a href="mailto:support@Drivve.in" style="color: #0066cc;">support@Drivve.in</a>.
-                    </p>
-                    
-                    <p style="font-size: 14px; color: #333; margin-top: 30px;">
-                        Best regards,<br>
-                        <strong>Team Drivve</strong>
-                    </p>
+
+                <p style="
+                    font-size: 15px;
+                    color: #333;
+                    margin-bottom: 20px;
+                ">
+                    Hey {first_name or 'there'},
+                </p>
+
+                <p style="
+                    font-size: 15px;
+                    color: #333;
+                    margin-bottom: 20px;
+                ">
+                    Your verification code is
+                    <strong style="
+                        font-size: 24px;
+                        letter-spacing: 3px;
+                    ">
+                        {otp}
+                    </strong>.
+                </p>
+
+                <p style="
+                    font-size: 15px;
+                    color: #333;
+                    margin-bottom: 20px;
+                ">
+                    This OTP is valid for
+                    <strong>{expiry_minutes} minutes</strong>.
+                    Do not share this code with anyone.
+                </p>
+
+                <p style="
+                    font-size: 15px;
+                    color: #333;
+                    margin-bottom: 25px;
+                ">
+                    If you did not request this code,
+                    please ignore this email or contact us at
+                    <a href="mailto:support@drivve.in">
+                        support@drivve.in
+                    </a>.
+                </p>
+
+                <p style="
+                    font-size: 15px;
+                    color: #333;
+                    margin-top: 30px;
+                    margin-bottom: 40px;
+                ">
+                    Best regards,<br>
+                    <strong>Team Drivve</strong>
+                </p>
+
+                <!-- Logo at Bottom -->
+
+                <div style="
+                    text-align: center;
+                    border-top: 1px solid #e5e5e5;
+                    padding-top: 20px;
+                    margin-top: 20px;
+                ">
+
+                    <img
+                        src="https://drivvestorage.blob.core.windows.net/drivvestorage/logogray.png"
+                        alt="Drivve Logo"
+                        style="
+                            max-height: 60px;
+                            opacity: 0.9;
+                        "
+                    />
+
                 </div>
+
             </div>
+
         </body>
     </html>
     """
@@ -1153,7 +1203,7 @@ def send_email_via_azure(to_email: str, subject: str, html_content: str) -> bool
         
         poller = email_client.begin_send(message)
         result = poller.result()
-        print(f"Email sent successfully. Message ID: {result.message_id}")
+        print(f"Email sent successfully.")
         return True
         
     except Exception as ex:
