@@ -114,6 +114,11 @@ class Ride(Base):
 
 
     departure_time = Column(DateTime(timezone=True), nullable=False)
+      # ✅ NEW: Expected end time for overlap checking
+    expected_end_time = Column(DateTime(timezone=True), nullable=True)
+    
+    # ✅ NEW: Duration in minutes for overlap checking
+    duration_minutes = Column(Integer, default=60, nullable=True)
 
     # Route summary
     distance_km = Column(Float, nullable=True)
@@ -130,6 +135,8 @@ class Ride(Base):
 
     # Vehicle
     vehicle_id = Column(Integer, ForeignKey("vehicles.id"), nullable=True)
+        # ✅ NEW: Women only ride filter
+    women_only = Column(Boolean, default=False, nullable=True)
 
     status = Column(String(20), default="active")
     is_deleted = Column(Boolean, default=False)

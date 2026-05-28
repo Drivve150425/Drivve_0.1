@@ -1156,7 +1156,7 @@ def get_otp_email_html(first_name: str, otp: str, expiry_minutes: int = 2) -> st
                 ">
 
                     <img
-                        src="https://drivvestorage.blob.core.windows.net/drivvestorage/logogray.png"
+                        src="https://drivvestorage.blob.core.windows.net/drivvestorage/adaptive-icon.png"
                         alt="Drivve Logo"
                         style="
                             max-height: 60px;
