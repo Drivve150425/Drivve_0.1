@@ -806,6 +806,34 @@ from sqlalchemy.orm import relationship
 from datetime import datetime
 from database import Base
 
+
+class RideSession(Base):
+    __tablename__ = "ride_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    ride_id = Column(Integer, ForeignKey("rides.id"), nullable=False, index=True)
+    driver_phone = Column(String, nullable=False, index=True)
+
+    status = Column(String, default="driver_started")  # driver_started, boarding, en_route, completed, emergency_stopped
+    current_phase = Column(String, default="boarding")  # boarding, en_route, completed
+
+    current_lat = Column(Float, nullable=True)
+    current_lng = Column(Float, nullable=True)
+
+    qr_code_token = Column(String, nullable=True)
+    qr_expires_at = Column(DateTime, nullable=True)
+
+    sos_active = Column(Boolean, default=False)
+    emergency_stop_active = Column(Boolean, default=False)
+    emergency_note = Column(Text, nullable=True)
+
+    started_at = Column(DateTime, default=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    ride = relationship("Ride", backref="ride_sessions")
+    riders = relationship("RideSessionRider", back_populates="session", cascade="all, delete-orphan")
+
 class RideSessionRider(Base):
     __tablename__ = "ride_session_riders"
 
