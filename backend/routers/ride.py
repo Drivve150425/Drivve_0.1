@@ -3186,7 +3186,6 @@ def check_active_rides(phone_number: str, vehicle_id: Optional[int] = None, db: 
         "rides": rides_data
     }
 
-
 @router.post("/search-rides")
 def search_rides(data: SearchRidesRequest, db: Session = Depends(get_db)):
     req_time_utc = data.departure_time
@@ -3195,27 +3194,26 @@ def search_rides(data: SearchRidesRequest, db: Session = Depends(get_db)):
     else:
         req_time_utc = req_time_utc.astimezone(timezone.utc)
 
-    # Simplified search without PostGIS (using manual distance calculation)
-    # Get all active rides
-    all_rides = db.query(Ride).filter(
+    # ✅ Build query first
+    query = db.query(Ride).filter(
         Ride.status == "active",
         Ride.available_seats >= data.seats_required,
         Ride.departure_time.between(
             req_time_utc - timedelta(minutes=TIME_WINDOW_MINUTES),
             req_time_utc + timedelta(minutes=TIME_WINDOW_MINUTES)
         )
-    ).all()
+    )
+    
+    # ✅ Apply women-only filter at database level
     if data.passenger_gender != 'female':
         query = query.filter(Ride.women_only == False)
 
+    # ✅ Execute query
     all_rides = query.all()
+    
     rides = []
     
     for ride in all_rides:
-        # Skip women-only rides for male passengers
-        # if ride.women_only and data.passenger_gender != 'female':
-        #     continue
-        
         # Calculate distances if coordinates available
         pickup_distance_m = 0
         drop_distance_m = 0
@@ -3318,7 +3316,6 @@ def search_rides(data: SearchRidesRequest, db: Session = Depends(get_db)):
     )
     
     return {"rides": rides}
-
 @router.post("/ride-bookings")
 def create_ride_booking(data: CreateRideBookingRequest, db: Session = Depends(get_db)):
     passenger_phone = normalize_phone(data.passenger_phone)
