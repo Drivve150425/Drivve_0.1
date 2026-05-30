@@ -2425,7 +2425,7 @@ router = APIRouter()
 
 IST = timezone(timedelta(hours=5, minutes=30))
 SEARCH_RADIUS_M = 2000
-TIME_WINDOW_SECONDS = 3600
+TIME_WINDOW_MINUTES  = 60
 
 # ============================================
 # PYDANTIC MODELS
@@ -3201,17 +3201,20 @@ def search_rides(data: SearchRidesRequest, db: Session = Depends(get_db)):
         Ride.status == "active",
         Ride.available_seats >= data.seats_required,
         Ride.departure_time.between(
-            req_time_utc - timedelta(seconds=TIME_WINDOW_SECONDS),
-            req_time_utc + timedelta(seconds=TIME_WINDOW_SECONDS)
+            req_time_utc - timedelta(minutes=TIME_WINDOW_MINUTES),
+            req_time_utc + timedelta(minutes=TIME_WINDOW_MINUTES)
         )
     ).all()
-    
+    if data.passenger_gender != 'female':
+        query = query.filter(Ride.women_only == False)
+
+    all_rides = query.all()
     rides = []
     
     for ride in all_rides:
         # Skip women-only rides for male passengers
-        if ride.women_only and data.passenger_gender != 'female':
-            continue
+        # if ride.women_only and data.passenger_gender != 'female':
+        #     continue
         
         # Calculate distances if coordinates available
         pickup_distance_m = 0
@@ -3315,3 +3318,138 @@ def search_rides(data: SearchRidesRequest, db: Session = Depends(get_db)):
     )
     
     return {"rides": rides}
+
+@router.post("/ride-bookings")
+def create_ride_booking(data: CreateRideBookingRequest, db: Session = Depends(get_db)):
+    passenger_phone = normalize_phone(data.passenger_phone)
+
+    ride = db.query(Ride).filter(Ride.id == data.ride_id).first()
+    if not ride:
+        raise HTTPException(status_code=404, detail="Ride not found")
+
+    if ride.status != "active":
+        raise HTTPException(status_code=400, detail="Ride is not available")
+
+    if ride.available_seats < data.seats_requested:
+        raise HTTPException(status_code=400, detail="Not enough seats available")
+
+    if ride.phone_number == passenger_phone:
+        raise HTTPException(status_code=400, detail="You cannot book your own ride")
+
+    existing_booking = db.query(RideBooking).filter(
+        RideBooking.ride_id == data.ride_id,
+        RideBooking.passenger_phone == passenger_phone,
+        RideBooking.status.in_(["pending", "accepted"])
+    ).first()
+
+    if existing_booking:
+        raise HTTPException(status_code=400, detail="You already requested this ride")
+
+    # Compute intersection points if coords provided
+    pickup_lat = pickup_lon = drop_lat = drop_lon = None
+    int_pickup_lat = int_pickup_lon = int_drop_lat = int_drop_lon = None
+    pickup_walk_m = drop_walk_m = None
+
+    if data.from_coords and data.to_coords and ride.route_coordinates:
+        try:
+            sql = text("""
+                WITH input AS (
+                    SELECT
+                        ST_SetSRID(ST_MakePoint(:from_lng, :from_lat), 4326)::geography AS rider_pickup,
+                        ST_SetSRID(ST_MakePoint(:to_lng, :to_lat), 4326)::geography AS rider_drop
+                )
+                SELECT
+                    ST_Distance(r.route_line, i.rider_pickup) AS pickup_distance_m,
+                    ST_Distance(r.route_line, i.rider_drop) AS drop_distance_m
+                FROM rides r
+                CROSS JOIN input i
+                WHERE r.id = :ride_id
+            """)
+
+            result = db.execute(sql, {
+                "ride_id": ride.id,
+                "from_lng": data.from_coords[0],
+                "from_lat": data.from_coords[1],
+                "to_lng": data.to_coords[0],
+                "to_lat": data.to_coords[1],
+            }).mappings().first()
+
+            if result:
+                pickup_walk_m = int(float(result["pickup_distance_m"]))
+                drop_walk_m = int(float(result["drop_distance_m"]))
+
+                # Use nearest route vertex for accessible junction points
+                route_coords = ride.route_coordinates or []
+                pickup_pt = find_nearest_route_vertex(route_coords, data.from_coords[0], data.from_coords[1])
+                drop_pt = find_nearest_route_vertex(route_coords, data.to_coords[0], data.to_coords[1])
+
+                if pickup_pt:
+                    int_pickup_lon = pickup_pt["lng"]
+                    int_pickup_lat = pickup_pt["lat"]
+                if drop_pt:
+                    int_drop_lon = drop_pt["lng"]
+                    int_drop_lat = drop_pt["lat"]
+
+                pickup_lat = data.from_coords[1]
+                pickup_lon = data.from_coords[0]
+                drop_lat = data.to_coords[1]
+                drop_lon = data.to_coords[0]
+        except Exception as e:
+            print(f"⚠️ Intersection compute error (non-fatal): {e}")
+
+    # Defensive: ensure price_per_seat is valid before computing total
+    if ride.price_per_seat is None:
+        raise HTTPException(status_code=500, detail="Ride pricing is not configured. Please contact support.")
+
+    total_amount = ride.price_per_seat * data.seats_requested
+
+    booking = RideBooking(
+        ride_id=data.ride_id,
+        passenger_phone=passenger_phone,
+        seats_booked=data.seats_requested,
+        total_amount=total_amount,
+        pickup_lat=pickup_lat,
+        pickup_lon=pickup_lon,
+        drop_lat=drop_lat,
+        drop_lon=drop_lon,
+        intersection_pickup_lat=int_pickup_lat,
+        intersection_pickup_lon=int_pickup_lon,
+        intersection_drop_lat=int_drop_lat,
+        intersection_drop_lon=int_drop_lon,
+        pickup_walk_distance_m=pickup_walk_m,
+        drop_walk_distance_m=drop_walk_m,
+        status="pending"
+    )
+
+    db.add(booking)
+    db.flush()
+
+    try:
+        driver_phone = normalize_phone(ride.phone_number)
+
+        origin_short = ride.origin.split(",")[0].strip() if ride.origin else "pickup"
+        dest_short = ride.destination.split(",")[0].strip() if ride.destination else "destination"
+
+        notification = UserNotification(
+            phone_number=driver_phone,
+            title="New Ride Request 🙋",
+            message=f"You received a request for your ride from {origin_short} to {dest_short}.",
+            type=NotificationType.RIDE,
+            action_type="booking",
+            action_value=str(booking.id),
+            is_read=False,
+            is_deleted=False
+        )
+        db.add(notification)
+
+    except Exception as e:
+        print(f"❌ Error creating booking notification: {str(e)}")
+
+    db.commit()
+    db.refresh(booking)
+
+    return {
+        "message": "Ride request sent successfully",
+        "booking_id": booking.id,
+        "status": booking.status
+    }
