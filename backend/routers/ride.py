@@ -4480,6 +4480,1243 @@
 #         "withdrawn_count": withdrawn_count,
 #         "withdrawn_reason": "Rider joined another vehicle"
 #     }
+# from fastapi import APIRouter, Depends, HTTPException, Query
+# from sqlalchemy.orm import Session, joinedload
+# from sqlalchemy import func, text, and_, or_
+# from database import get_db
+# from models import Ride, RideBooking, User, UserNotification, NotificationType, Vehicle
+# from datetime import datetime, timezone, timedelta
+# from pydantic import BaseModel, field_validator
+# from typing import Optional, Dict, List
+# import math
+# import re
+
+# router = APIRouter()
+
+# IST = timezone(timedelta(hours=5, minutes=30))
+# SEARCH_RADIUS_M = 2000
+# TIME_WINDOW_MINUTES = 60
+
+# # ============================================
+# # PYDANTIC MODELS
+# # ============================================
+
+# class CreateRideRequest(BaseModel):
+#     phone_number: str
+#     origin: str
+#     destination: str
+#     departure_time: datetime
+#     available_seats: int
+#     price_per_seat: float
+#     origin_coords: List[float]
+#     destination_coords: List[float]
+#     route_coordinates: List[List[float]]
+#     distance_km: Optional[float] = None
+#     duration_text: Optional[str] = None
+#     total_estimated_price: Optional[float] = None
+#     preferences: Optional[Dict] = None
+#     vehicle_id: Optional[int] = None
+#     women_only: Optional[bool] = False
+
+#     @field_validator("origin_coords", "destination_coords")
+#     @classmethod
+#     def validate_point_coords(cls, value):
+#         if len(value) != 2:
+#             raise ValueError("Coordinates must contain exactly [lng, lat]")
+#         return value
+
+#     @field_validator("route_coordinates")
+#     @classmethod
+#     def validate_route_coords(cls, value):
+#         if len(value) < 2:
+#             raise ValueError("Route must contain at least 2 coordinate points")
+#         for point in value:
+#             if not isinstance(point, list) or len(point) != 2:
+#                 raise ValueError("Each route coordinate must be [lng, lat]")
+#         return value
+
+
+# class UpdateRideRequest(CreateRideRequest):
+#     """Same as CreateRideRequest for ride updates"""
+#     pass
+
+
+# class SearchRidesRequest(BaseModel):
+#     from_location: str
+#     to_location: str
+#     from_coords: List[float]
+#     to_coords: List[float]
+#     departure_time: datetime
+#     seats_required: int = 1
+#     passenger_gender: Optional[str] = None
+
+#     @field_validator("from_coords", "to_coords")
+#     @classmethod
+#     def validate_search_coords(cls, value):
+#         if len(value) != 2:
+#             raise ValueError("Coordinates must contain exactly [lng, lat]")
+#         return value
+
+
+# class CreateRideBookingRequest(BaseModel):
+#     ride_id: int
+#     passenger_phone: str
+#     seats_requested: int = 1
+#     from_coords: Optional[List[float]] = None
+#     to_coords: Optional[List[float]] = None
+
+#     @field_validator("from_coords", "to_coords")
+#     @classmethod
+#     def validate_optional_coords(cls, value):
+#         if value is None:
+#             return value
+#         if len(value) != 2:
+#             raise ValueError("Coordinates must contain exactly [lng, lat]")
+#         return value
+
+
+# class VehicleChangeNotification(BaseModel):
+#     ride_id: int
+#     old_vehicle_id: Optional[int] = None
+#     new_vehicle_id: int
+
+
+
+# # ============================================
+# # HELPER FUNCTIONS
+# # ============================================
+
+# def normalize_phone(phone: str) -> str:
+#     if not phone:
+#         return phone
+#     phone = phone.replace(" ", "").replace("-", "")
+#     if phone.startswith("+91"):
+#         return phone
+#     if phone.startswith("91") and len(phone) == 12:
+#         return f"+{phone}"
+#     if phone.startswith("+"):
+#         return phone
+#     return f"+91{phone}"
+
+
+# def parse_duration_to_minutes(duration_str: Optional[str]) -> int:
+#     """Parse duration string like '1 Hr 30 Min' to minutes"""
+#     if not duration_str:
+#         return 60
+    
+#     mins = 0
+#     hr_match = re.search(r'(\d+)\s*Hr', duration_str, re.IGNORECASE)
+#     min_match = re.search(r'(\d+)\s*Min', duration_str, re.IGNORECASE)
+    
+#     if hr_match:
+#         mins += int(hr_match.group(1)) * 60
+#     if min_match:
+#         mins += int(min_match.group(1))
+    
+#     return mins or 60
+
+
+# def calculate_distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+#     """Calculate distance between two points in kilometers using Haversine formula"""
+#     R = 6371
+#     dlat = math.radians(lat2 - lat1)
+#     dlon = math.radians(lon2 - lon1)
+#     a = math.sin(dlat/2) * math.sin(dlat/2) + \
+#         math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * \
+#         math.sin(dlon/2) * math.sin(dlon/2)
+#     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+#     return R * c
+
+
+# def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+#     """Return distance in meters between two lat/lon points."""
+#     R = 6371000
+#     phi1 = math.radians(lat1)
+#     phi2 = math.radians(lat2)
+#     dphi = math.radians(lat2 - lat1)
+#     dlambda = math.radians(lon2 - lon1)
+#     a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+#     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+#     return R * c
+
+
+# def to_ist(dt: datetime) -> datetime:
+#     if dt is None:
+#         return dt
+#     if dt.tzinfo is None:
+#         dt = dt.replace(tzinfo=timezone.utc)
+#     return dt.astimezone(IST)
+
+
+# def get_total_booked_seats(db: Session, ride_id: int) -> int:
+#     """Get total booked seats for a ride (accepted bookings only)"""
+#     result = db.query(func.sum(RideBooking.seats_booked)).filter(
+#         RideBooking.ride_id == ride_id,
+#         RideBooking.status == "accepted"
+#     ).scalar()
+#     return result or 0
+
+
+# def check_overlapping_rides_for_driver(db: Session, phone_number: str, departure_time: datetime, duration_minutes: int, exclude_ride_id: Optional[int] = None) -> Optional[Dict]:
+#     """Check if driver has overlapping active rides"""
+    
+#     departure_time_utc = departure_time
+#     if departure_time_utc.tzinfo is None:
+#         departure_time_utc = departure_time_utc.replace(tzinfo=IST).astimezone(timezone.utc)
+    
+#     expected_end_time = departure_time_utc + timedelta(minutes=duration_minutes)
+    
+#     # Add buffer (30 minutes before start, 15 minutes after end for overlap detection)
+#     buffer_start = departure_time_utc - timedelta(minutes=30)
+#     buffer_end = expected_end_time + timedelta(minutes=15)
+    
+#     query = db.query(Ride).filter(
+#         Ride.phone_number == phone_number,
+#         Ride.status.in_(["active", "full"]),
+#         Ride.departure_time < buffer_end,
+#         Ride.expected_end_time > buffer_start
+#     )
+    
+#     if exclude_ride_id:
+#         query = query.filter(Ride.id != exclude_ride_id)
+    
+#     overlapping = query.first()
+    
+#     if overlapping:
+#         return {
+#             "ride_id": overlapping.id,
+#             "origin": overlapping.origin,
+#             "destination": overlapping.destination,
+#             "departure_time": overlapping.departure_time,
+#             "expected_end_time": overlapping.expected_end_time
+#         }
+    
+#     return None
+
+
+# def check_overlapping_bookings_for_passenger(db: Session, phone_number: str, departure_time: datetime, duration_minutes: int, exclude_booking_id: Optional[int] = None) -> Optional[Dict]:
+#     """Check if passenger has overlapping active/accepted bookings"""
+    
+#     departure_time_utc = departure_time
+#     if departure_time_utc.tzinfo is None:
+#         departure_time_utc = departure_time_utc.replace(tzinfo=IST).astimezone(timezone.utc)
+    
+#     expected_end_time = departure_time_utc + timedelta(minutes=duration_minutes)
+    
+#     # Add buffer (30 minutes before start, 60 minutes after end for passenger)
+#     buffer_start = departure_time_utc - timedelta(minutes=30)
+#     buffer_end = expected_end_time + timedelta(minutes=60)
+    
+#     query = db.query(RideBooking).join(Ride).filter(
+#         RideBooking.passenger_phone == phone_number,
+#         RideBooking.status.in_(["accepted"]),  # Only accepted bookings count as active
+#         Ride.departure_time < buffer_end,
+#         Ride.expected_end_time > buffer_start
+#     )
+    
+#     if exclude_booking_id:
+#         query = query.filter(RideBooking.id != exclude_booking_id)
+    
+#     overlapping = query.first()
+    
+#     if overlapping:
+#         return {
+#             "booking_id": overlapping.id,
+#             "ride_id": overlapping.ride_id,
+#             "origin": overlapping.ride.origin,
+#             "destination": overlapping.ride.destination,
+#             "departure_time": overlapping.ride.departure_time,
+#             "expected_end_time": overlapping.ride.expected_end_time
+#         }
+    
+#     return None
+
+
+# def find_nearest_route_vertex(route_coords: List[List[float]], lng: float, lat: float) -> Optional[Dict]:
+#     """Find the nearest vertex in the route_coordinates array to the given point."""
+#     if not route_coords or len(route_coords) < 2:
+#         return None
+
+#     best = None
+#     best_dist = float('inf')
+
+#     for point in route_coords:
+#         if not isinstance(point, (list, tuple)) or len(point) < 2:
+#             continue
+#         plng, plat = float(point[0]), float(point[1])
+#         dist = haversine_m(lat, lng, plat, plng)
+#         if dist < best_dist:
+#             best_dist = dist
+#             best = {"lng": plng, "lat": plat}
+
+#     return best
+
+
+# def build_match_label(score: int) -> str:
+#     if score >= 90:
+#         return "Excellent"
+#     if score >= 75:
+#         return "Good"
+#     if score >= 60:
+#         return "Fair"
+#     return "Low"
+
+
+# # ============================================
+# # RIDE ENDPOINTS
+# # ============================================
+
+# @router.post("/post-ride")
+# def post_ride(data: CreateRideRequest, db: Session = Depends(get_db)):
+#     normalized_phone = normalize_phone(data.phone_number)
+    
+#     # Parse duration
+#     duration_minutes = parse_duration_to_minutes(data.duration_text)
+    
+#     # Convert departure time to UTC
+#     departure_time_utc = data.departure_time
+#     if departure_time_utc.tzinfo is None:
+#         departure_time_utc = departure_time_utc.replace(tzinfo=IST).astimezone(timezone.utc)
+#     else:
+#         departure_time_utc = departure_time_utc.astimezone(timezone.utc)
+    
+#     expected_end_time = departure_time_utc + timedelta(minutes=duration_minutes)
+    
+#     # Check if user has overlapping ACCEPTED bookings as a passenger
+#     passenger_overlap = check_overlapping_bookings_for_passenger(db, normalized_phone, departure_time_utc, duration_minutes)
+#     if passenger_overlap:
+#         raise HTTPException(
+#             status_code=409,
+#             detail=f"You have a confirmed booking as a passenger from {passenger_overlap['origin']} to {passenger_overlap['destination']} at {to_ist(passenger_overlap['departure_time']).strftime('%I:%M %p')} that overlaps with this ride. Please complete that ride before offering another."
+#         )
+    
+#     # Check for overlapping rides (Time Buffer Block)
+#     overlapping = check_overlapping_rides_for_driver(db, normalized_phone, departure_time_utc, duration_minutes)
+#     if overlapping:
+#         end_time_ist = to_ist(overlapping["expected_end_time"])
+#         raise HTTPException(
+#             status_code=409,
+#             detail=f"You already have an active ride from {overlapping['origin']} to {overlapping['destination']} at {to_ist(overlapping['departure_time']).strftime('%I:%M %p')}. Please wait until {end_time_ist.strftime('%I:%M %p')} to post another ride."
+#         )
+    
+#     # Validate distance (3km - 300km)
+#     distance = calculate_distance_km(
+#         data.origin_coords[1], data.origin_coords[0],
+#         data.destination_coords[1], data.destination_coords[0]
+#     )
+    
+#     MIN_DISTANCE_KM = 3
+#     MAX_DISTANCE_KM = 300
+    
+#     if distance < MIN_DISTANCE_KM:
+#         raise HTTPException(
+#             status_code=400,
+#             detail=f"Pickup and destination are too close ({distance:.1f} km). Minimum distance is {MIN_DISTANCE_KM} km for a ride."
+#         )
+    
+#     if distance > MAX_DISTANCE_KM:
+#         raise HTTPException(
+#             status_code=400,
+#             detail=f"Distance too far ({distance:.1f} km). Maximum allowed is {MAX_DISTANCE_KM} km for daily commutes."
+#         )
+    
+#     # Validate time (minimum 30 minutes from now)
+#     min_departure_time = datetime.now(timezone.utc) + timedelta(minutes=30)
+#     if departure_time_utc < min_departure_time:
+#         min_time_ist = to_ist(min_departure_time)
+#         raise HTTPException(
+#             status_code=400,
+#             detail=f"Departure time must be at least 30 minutes from now. Please select a time after {min_time_ist.strftime('%I:%M %p')}."
+#         )
+    
+#     # Get women_only from preferences
+#     women_only = data.preferences.get('womenOnly', False) if data.preferences else data.women_only
+    
+#     # Create ride
+#     ride = Ride(
+#         phone_number=normalized_phone,
+#         origin=data.origin,
+#         destination=data.destination,
+#         departure_time=departure_time_utc,
+#         expected_end_time=expected_end_time,
+#         duration_minutes=duration_minutes,
+#         available_seats=data.available_seats,
+#         price_per_seat=data.price_per_seat,
+#         distance_km=data.distance_km,
+#         duration_text=data.duration_text,
+#         total_estimated_price=data.total_estimated_price,
+#         preferences=data.preferences,
+#         origin_lon=data.origin_coords[0],
+#         origin_lat=data.origin_coords[1],
+#         destination_lon=data.destination_coords[0],
+#         destination_lat=data.destination_coords[1],
+#         route_coordinates=data.route_coordinates,
+#         vehicle_id=data.vehicle_id,
+#         women_only=women_only,
+#         status="active",
+#     )
+
+#     db.add(ride)
+#     db.commit()
+#     db.refresh(ride)
+
+#     # Update geometry (if PostGIS is enabled, otherwise skip)
+#     try:
+#         if data.route_coordinates and len(data.route_coordinates) >= 2:
+#             line_wkt = "LINESTRING(" + ",".join(
+#                 [f"{lng} {lat}" for lng, lat in data.route_coordinates]
+#             ) + ")"
+#             db.execute(
+#                 text("""
+#                     UPDATE rides
+#                     SET route_line = ST_GeomFromText(:line_wkt, 4326)::geography
+#                     WHERE id = :ride_id
+#                 """),
+#                 {"ride_id": ride.id, "line_wkt": line_wkt}
+#             )
+#             db.commit()
+#     except Exception as e:
+#         print(f"⚠️ PostGIS update skipped: {str(e)}")
+
+#     # Create notification for ride posted
+#     try:
+#         origin_short = data.origin.split(",")[0].strip() if data.origin else "start"
+#         dest_short = data.destination.split(",")[0].strip() if data.destination else "destination"
+
+#         notification = UserNotification(
+#             phone_number=normalized_phone,
+#             title="Ride Posted! 🚗",
+#             message=f"Your ride from {origin_short} to {dest_short} has been posted. You'll be notified when passengers book!",
+#             type=NotificationType.RIDE,
+#             action_type="ride",
+#             action_value=str(ride.id),
+#             is_read=False,
+#             is_deleted=False
+#         )
+#         db.add(notification)
+#         db.commit()
+#         print(f"✅ Ride posted notification created for {normalized_phone}")
+#     except Exception as e:
+#         print(f"❌ Error creating ride posted notification: {str(e)}")
+
+#     return {
+#         "message": "Ride posted successfully",
+#         "ride_id": ride.id
+#     }
+
+
+# @router.put("/update-ride/{ride_id}")
+# def update_ride(ride_id: int, data: UpdateRideRequest, db: Session = Depends(get_db)):
+#     normalized_phone = normalize_phone(data.phone_number)
+
+#     # Fetch existing ride
+#     ride = db.query(Ride).filter(
+#         Ride.id == ride_id,
+#         Ride.phone_number == normalized_phone
+#     ).first()
+    
+#     if not ride:
+#         raise HTTPException(status_code=404, detail="Ride not found or you don't have permission to edit it")
+
+#     # Check if ride has confirmed bookings
+#     confirmed_bookings = db.query(RideBooking).filter(
+#         RideBooking.ride_id == ride_id,
+#         RideBooking.status == "accepted"
+#     ).all()
+    
+#     has_confirmed_bookings = len(confirmed_bookings) > 0
+#     total_booked_seats = sum(b.seats_booked for b in confirmed_bookings)
+    
+#     # Calculate time difference for validation
+#     departure_time_utc = data.departure_time
+#     if departure_time_utc.tzinfo is None:
+#         departure_time_utc = departure_time_utc.replace(tzinfo=IST).astimezone(timezone.utc)
+#     else:
+#         departure_time_utc = departure_time_utc.astimezone(timezone.utc)
+    
+#     time_diff_minutes = abs((departure_time_utc - ride.departure_time).total_seconds()) / 60
+    
+#     # Lock major fields if there are confirmed bookings
+#     if has_confirmed_bookings:
+#         major_changes = []
+        
+#         if ride.origin != data.origin:
+#             major_changes.append("Origin")
+#         if ride.destination != data.destination:
+#             major_changes.append("Destination")
+        
+#         if time_diff_minutes > 10:
+#             major_changes.append("Time (more than 10 minutes)")
+        
+#         if ride.price_per_seat != data.price_per_seat:
+#             major_changes.append("Price")
+        
+#         if major_changes:
+#             raise HTTPException(
+#                 status_code=403,
+#                 detail=f"Cannot modify: {', '.join(major_changes)}. This ride has {len(confirmed_bookings)} confirmed booking(s). Please cancel the ride and create a new one if you need major changes."
+#             )
+    
+#     # Validate seat changes (cannot reduce below booked seats)
+#     if data.available_seats < total_booked_seats:
+#         raise HTTPException(
+#             status_code=400,
+#             detail=f"Cannot reduce seats below {total_booked_seats} as you have {total_booked_seats} confirmed passenger(s)."
+#         )
+    
+#     # Parse duration
+#     duration_minutes = parse_duration_to_minutes(data.duration_text)
+#     expected_end_time = departure_time_utc + timedelta(minutes=duration_minutes)
+    
+#     # Check for overlapping rides (excluding current ride) - only if time changed significantly
+#     if time_diff_minutes > 30:
+#         overlapping = check_overlapping_rides_for_driver(db, normalized_phone, departure_time_utc, duration_minutes, exclude_ride_id=ride_id)
+#         if overlapping:
+#             end_time_ist = to_ist(overlapping["expected_end_time"])
+#             raise HTTPException(
+#                 status_code=409,
+#                 detail=f"Cannot update: You have another active ride from {overlapping['origin']} to {overlapping['destination']} at {to_ist(overlapping['departure_time']).strftime('%I:%M %p')} that overlaps with this new time."
+#             )
+    
+#     # Check if vehicle changed (for notification)
+#     vehicle_changed = ride.vehicle_id != data.vehicle_id
+    
+#     # Update ride fields
+#     ride.origin = data.origin
+#     ride.destination = data.destination
+#     ride.departure_time = departure_time_utc
+#     ride.expected_end_time = expected_end_time
+#     ride.duration_minutes = duration_minutes
+#     ride.available_seats = data.available_seats
+#     ride.price_per_seat = data.price_per_seat
+#     ride.distance_km = data.distance_km
+#     ride.duration_text = data.duration_text
+#     ride.total_estimated_price = data.total_estimated_price
+#     ride.preferences = data.preferences
+#     ride.origin_lon = data.origin_coords[0]
+#     ride.origin_lat = data.origin_coords[1]
+#     ride.destination_lon = data.destination_coords[0]
+#     ride.destination_lat = data.destination_coords[1]
+#     ride.route_coordinates = data.route_coordinates
+#     ride.vehicle_id = data.vehicle_id
+#     ride.women_only = data.preferences.get('womenOnly', False) if data.preferences else False
+
+#     db.commit()
+#     db.refresh(ride)
+
+#     # Update geometry (if PostGIS is enabled)
+#     try:
+#         if data.route_coordinates and len(data.route_coordinates) >= 2:
+#             line_wkt = "LINESTRING(" + ",".join(
+#                 [f"{lng} {lat}" for lng, lat in data.route_coordinates]
+#             ) + ")"
+#             db.execute(
+#                 text("""
+#                     UPDATE rides
+#                     SET route_line = ST_GeomFromText(:line_wkt, 4326)::geography
+#                     WHERE id = :ride_id
+#                 """),
+#                 {"ride_id": ride.id, "line_wkt": line_wkt}
+#             )
+#             db.commit()
+#     except Exception as e:
+#         print(f"⚠️ PostGIS update skipped: {str(e)}")
+
+#     # Send notification if vehicle changed and has bookings
+#     if vehicle_changed and has_confirmed_bookings:
+#         try:
+#             old_vehicle = db.query(Vehicle).filter(Vehicle.id == ride.vehicle_id).first() if ride.vehicle_id else None
+#             new_vehicle = db.query(Vehicle).filter(Vehicle.id == data.vehicle_id).first() if data.vehicle_id else None
+            
+#             old_vehicle_text = f"{old_vehicle.make} {old_vehicle.model} ({old_vehicle.registration_number})" if old_vehicle else "previous vehicle"
+#             new_vehicle_text = f"{new_vehicle.make} {new_vehicle.model} ({new_vehicle.registration_number})" if new_vehicle else "new vehicle"
+            
+#             for booking in confirmed_bookings:
+#                 notification = UserNotification(
+#                     phone_number=booking.passenger_phone,
+#                     title="Vehicle Changed 🚗",
+#                     message=f"Driver has changed vehicle from {old_vehicle_text} to {new_vehicle_text}. Please check ride details.",
+#                     type=NotificationType.RIDE,
+#                     action_type="ride",
+#                     action_value=str(ride.id),
+#                     is_read=False,
+#                     is_deleted=False
+#                 )
+#                 db.add(notification)
+#             db.commit()
+#             print(f"✅ Sent vehicle change notifications to {len(confirmed_bookings)} passengers")
+#         except Exception as e:
+#             print(f"❌ Error sending vehicle change notifications: {str(e)}")
+
+#     # Create notification for ride update
+#     try:
+#         origin_short = data.origin.split(",")[0].strip() if data.origin else "start"
+#         dest_short = data.destination.split(",")[0].strip() if data.destination else "destination"
+        
+#         notification_title = "Ride Updated! 🔄" if not vehicle_changed else "Ride & Vehicle Updated! 🔄🚗"
+        
+#         notification = UserNotification(
+#             phone_number=normalized_phone,
+#             title=notification_title,
+#             message=f"Your ride from {origin_short} to {dest_short} has been updated.",
+#             type=NotificationType.RIDE,
+#             action_type="ride",
+#             action_value=str(ride.id),
+#             is_read=False,
+#             is_deleted=False
+#         )
+#         db.add(notification)
+#         db.commit()
+#     except Exception as e:
+#         print(f"❌ Error creating update notification: {str(e)}")
+
+#     return {
+#         "message": "Ride updated successfully",
+#         "ride_id": ride.id,
+#         "vehicle_changed": vehicle_changed,
+#         "notifications_sent": len(confirmed_bookings) if vehicle_changed else 0
+#     }
+
+
+# @router.post("/search-rides")
+# def search_rides(data: SearchRidesRequest, db: Session = Depends(get_db)):
+#     req_time_utc = data.departure_time
+#     if req_time_utc.tzinfo is None:
+#         req_time_utc = req_time_utc.replace(tzinfo=IST).astimezone(timezone.utc)
+#     else:
+#         req_time_utc = req_time_utc.astimezone(timezone.utc)
+
+#     # Build query
+#     query = db.query(Ride).filter(
+#         Ride.status == "active",
+#         Ride.available_seats >= data.seats_required,
+#         Ride.departure_time.between(
+#             req_time_utc - timedelta(minutes=TIME_WINDOW_MINUTES),
+#             req_time_utc + timedelta(minutes=TIME_WINDOW_MINUTES)
+#         )
+#     )
+    
+#     # Apply women-only filter at database level
+#     if data.passenger_gender != 'female':
+#         query = query.filter(Ride.women_only == False)
+
+#     # Execute query
+#     all_rides = query.all()
+    
+#     rides = []
+    
+#     for ride in all_rides:
+#         # Calculate distances if coordinates available
+#         pickup_distance_m = 0
+#         drop_distance_m = 0
+#         pickup_point = None
+#         drop_point = None
+        
+#         if ride.origin_lat and ride.origin_lon and ride.destination_lat and ride.destination_lon:
+#             pickup_distance_m = haversine_m(
+#                 ride.origin_lat, ride.origin_lon,
+#                 data.from_coords[1], data.from_coords[0]
+#             )
+#             drop_distance_m = haversine_m(
+#                 ride.destination_lat, ride.destination_lon,
+#                 data.to_coords[1], data.to_coords[0]
+#             )
+            
+#             # Find nearest points on route
+#             if ride.route_coordinates:
+#                 pickup_point = find_nearest_route_vertex(ride.route_coordinates, data.from_coords[0], data.from_coords[1])
+#                 drop_point = find_nearest_route_vertex(ride.route_coordinates, data.to_coords[0], data.to_coords[1])
+        
+#         # Skip if too far
+#         if pickup_distance_m > SEARCH_RADIUS_M * 2 or drop_distance_m > SEARCH_RADIUS_M * 2:
+#             continue
+        
+#         # Calculate match score
+#         pickup_score = max(0, 1 - (pickup_distance_m / SEARCH_RADIUS_M))
+#         drop_score = max(0, 1 - (drop_distance_m / SEARCH_RADIUS_M))
+        
+#         time_diff_min = abs((ride.departure_time - req_time_utc).total_seconds()) / 60
+#         time_score = max(0, 1 - (time_diff_min / 60))
+        
+#         match_percentage = round(
+#             100 * (0.35 * pickup_score + 0.35 * drop_score + 0.20 * time_score + 0.10)
+#         )
+        
+#         # Get driver info
+#         driver = db.query(User).filter(
+#             User.phone_number == ride.phone_number
+#         ).first()
+        
+#         driver_name = None
+#         if driver:
+#             driver_name = driver.full_name or " ".join(filter(None, [driver.first_name, driver.last_name]))
+#         if not driver_name:
+#             driver_name = f"Driver {ride.phone_number[-4:]}"
+        
+#         # Get vehicle info
+#         vehicle = db.query(Vehicle).filter(Vehicle.id == ride.vehicle_id).first() if ride.vehicle_id else None
+        
+#         departure_time_ist = to_ist(ride.departure_time)
+        
+#         # Calculate total booked seats
+#         total_booked = get_total_booked_seats(db, ride.id)
+#         remaining_seats = ride.available_seats - total_booked
+        
+#         rides.append({
+#             "id": ride.id,
+#             "driverName": driver_name,
+#             "driverUserId": driver.user_id if driver else None,
+#             "phoneNumber": ride.phone_number,
+#             "email": driver.email if driver else None,
+#             "profileCompleted": driver.profile_completed if driver else False,
+#             "userStatus": driver.status.value if driver else None,
+#             "profilePicture": driver.profile_picture if driver else None,
+#             "driverGender": driver.gender if driver else None,
+#             "womenOnly": ride.women_only,
+#             "vehicle": {
+#                 "id": vehicle.id if vehicle else None,
+#                 "make": vehicle.make if vehicle else None,
+#                 "model": vehicle.model if vehicle else None,
+#                 "color": vehicle.color if vehicle else None,
+#                 "registrationNumber": vehicle.registration_number if vehicle else None,
+#                 "photoUrl": vehicle.photo_url if vehicle else None,
+#             },
+#             "rating": 4.5,
+#             "date": departure_time_ist.strftime("%d %b %Y"),
+#             "time": departure_time_ist.strftime("%I:%M %p"),
+#             "from": ride.origin,
+#             "to": ride.destination,
+#             "suggestedPickup": pickup_point,
+#             "suggestedDrop": drop_point,
+#             "pickupWalkDistanceM": int(pickup_distance_m),
+#             "dropWalkDistanceM": int(drop_distance_m),
+#             "pickupLabel": f"Walk {int(pickup_distance_m)} m to pickup point" if pickup_distance_m > 0 else "Pickup point",
+#             "dropLabel": f"Walk {int(drop_distance_m)} m from drop point" if drop_distance_m > 0 else "Drop point",
+#             "price": ride.price_per_seat,
+#             "matchPercentage": match_percentage,
+#             "matchLabel": build_match_label(match_percentage),
+#             "seatsAvailable": remaining_seats,  # Show remaining seats, not total available
+#             "totalSeats": ride.available_seats,  # Total seats originally available
+#             "seatsRequested": data.seats_required,  # Seats requested by passenger
+#             "distanceKm": ride.distance_km,
+#             "durationText": ride.duration_text,
+#             "totalEstimatedPrice": ride.total_estimated_price,
+#             "timeDifferenceMin": round(time_diff_min),
+#             "routeCoordinates": ride.route_coordinates or [],
+#         })
+    
+#     rides.sort(
+#         key=lambda x: (
+#             -x["matchPercentage"],
+#             x["timeDifferenceMin"],
+#             x["pickupWalkDistanceM"] + x["dropWalkDistanceM"]
+#         )
+#     )
+    
+#     return {"rides": rides}
+
+
+# @router.post("/ride-bookings")
+# def create_ride_booking(data: CreateRideBookingRequest, db: Session = Depends(get_db)):
+#     passenger_phone = normalize_phone(data.passenger_phone)
+
+#     ride = db.query(Ride).filter(Ride.id == data.ride_id).first()
+#     if not ride:
+#         raise HTTPException(status_code=404, detail="Ride not found")
+
+#     if ride.status != "active":
+#         raise HTTPException(status_code=400, detail="Ride is not available")
+
+#     # Check available seats
+#     total_booked = get_total_booked_seats(db, ride.id)
+#     remaining_seats = ride.available_seats - total_booked
+    
+#     if remaining_seats < data.seats_requested:
+#         raise HTTPException(status_code=400, detail=f"Not enough seats available. Only {remaining_seats} seat(s) left.")
+
+#     if ride.phone_number == passenger_phone:
+#         raise HTTPException(status_code=400, detail="You cannot book your own ride")
+    
+#     # Check if user already has an ACCEPTED booking for this ride
+#     existing_accepted = db.query(RideBooking).filter(
+#         RideBooking.ride_id == data.ride_id,
+#         RideBooking.passenger_phone == passenger_phone,
+#         RideBooking.status == "accepted"
+#     ).first()
+
+#     if existing_accepted:
+#         raise HTTPException(
+#             status_code=400, 
+#             detail="You already have a confirmed booking for this ride. Please contact the driver if you need to modify your seat count."
+#         )
+    
+#     # Check for multiple ride requests for same journey (max 2)
+#     active_requests = db.query(RideBooking).filter(
+#         RideBooking.passenger_phone == passenger_phone,
+#         RideBooking.status == "pending",
+#         RideBooking.created_at > datetime.now(timezone.utc) - timedelta(minutes=10)
+#     ).count()
+    
+#     if active_requests >= 2:
+#         raise HTTPException(status_code=400, detail="You can only have 2 active ride requests at a time. Please wait for responses before requesting more rides.")
+
+#     existing_pending = db.query(RideBooking).filter(
+#         RideBooking.ride_id == data.ride_id,
+#         RideBooking.passenger_phone == passenger_phone,
+#         RideBooking.status == "pending"
+#     ).first()
+
+#     if existing_pending:
+#         raise HTTPException(status_code=400, detail="You already requested this ride")
+    
+#     # Get ride duration for overlap check
+#     duration_minutes = ride.duration_minutes or parse_duration_to_minutes(ride.duration_text) or 60
+    
+#     # Check for overlapping active bookings
+#     overlapping = check_overlapping_bookings_for_passenger(db, passenger_phone, ride.departure_time, duration_minutes)
+#     if overlapping:
+#         raise HTTPException(
+#             status_code=409,
+#             detail=f"You already have a confirmed booking for a ride from {overlapping['origin']} to {overlapping['destination']} at {to_ist(overlapping['departure_time']).strftime('%I:%M %p')} that overlaps with this ride."
+#         )
+
+#     # Compute intersection points if coords provided
+#     pickup_lat = pickup_lon = drop_lat = drop_lon = None
+#     int_pickup_lat = int_pickup_lon = int_drop_lat = int_drop_lon = None
+#     pickup_walk_m = drop_walk_m = None
+
+#     if data.from_coords and data.to_coords and ride.route_coordinates:
+#         try:
+#             sql = text("""
+#                 WITH input AS (
+#                     SELECT
+#                         ST_SetSRID(ST_MakePoint(:from_lng, :from_lat), 4326)::geography AS rider_pickup,
+#                         ST_SetSRID(ST_MakePoint(:to_lng, :to_lat), 4326)::geography AS rider_drop
+#                 )
+#                 SELECT
+#                     ST_Distance(r.route_line, i.rider_pickup) AS pickup_distance_m,
+#                     ST_Distance(r.route_line, i.rider_drop) AS drop_distance_m
+#                 FROM rides r
+#                 CROSS JOIN input i
+#                 WHERE r.id = :ride_id
+#             """)
+
+#             result = db.execute(sql, {
+#                 "ride_id": ride.id,
+#                 "from_lng": data.from_coords[0],
+#                 "from_lat": data.from_coords[1],
+#                 "to_lng": data.to_coords[0],
+#                 "to_lat": data.to_coords[1],
+#             }).mappings().first()
+
+#             if result:
+#                 pickup_walk_m = int(float(result["pickup_distance_m"]))
+#                 drop_walk_m = int(float(result["drop_distance_m"]))
+
+#                 # Use nearest route vertex for accessible junction points
+#                 route_coords = ride.route_coordinates or []
+#                 pickup_pt = find_nearest_route_vertex(route_coords, data.from_coords[0], data.from_coords[1])
+#                 drop_pt = find_nearest_route_vertex(route_coords, data.to_coords[0], data.to_coords[1])
+
+#                 if pickup_pt:
+#                     int_pickup_lon = pickup_pt["lng"]
+#                     int_pickup_lat = pickup_pt["lat"]
+#                 if drop_pt:
+#                     int_drop_lon = drop_pt["lng"]
+#                     int_drop_lat = drop_pt["lat"]
+
+#                 pickup_lat = data.from_coords[1]
+#                 pickup_lon = data.from_coords[0]
+#                 drop_lat = data.to_coords[1]
+#                 drop_lon = data.to_coords[0]
+#         except Exception as e:
+#             print(f"⚠️ Intersection compute error (non-fatal): {e}")
+
+#     # Defensive: ensure price_per_seat is valid before computing total
+#     if ride.price_per_seat is None:
+#         raise HTTPException(status_code=500, detail="Ride pricing is not configured. Please contact support.")
+
+#     total_amount = ride.price_per_seat * data.seats_requested
+
+#     booking = RideBooking(
+#         ride_id=data.ride_id,
+#         passenger_phone=passenger_phone,
+#         seats_booked=data.seats_requested,
+#         total_amount=total_amount,
+#         pickup_lat=pickup_lat,
+#         pickup_lon=pickup_lon,
+#         drop_lat=drop_lat,
+#         drop_lon=drop_lon,
+#         intersection_pickup_lat=int_pickup_lat,
+#         intersection_pickup_lon=int_pickup_lon,
+#         intersection_drop_lat=int_drop_lat,
+#         intersection_drop_lon=int_drop_lon,
+#         pickup_walk_distance_m=pickup_walk_m,
+#         drop_walk_distance_m=drop_walk_m,
+#         status="pending"
+#     )
+
+#     db.add(booking)
+#     db.flush()
+
+#     try:
+#         driver_phone = normalize_phone(ride.phone_number)
+
+#         origin_short = ride.origin.split(",")[0].strip() if ride.origin else "pickup"
+#         dest_short = ride.destination.split(",")[0].strip() if ride.destination else "destination"
+
+#         notification = UserNotification(
+#             phone_number=driver_phone,
+#             title="New Ride Request 🙋",
+#             message=f"You received a request for {data.seats_requested} seat(s) for your ride from {origin_short} to {dest_short}.",
+#             type=NotificationType.RIDE,
+#             action_type="booking",
+#             action_value=str(booking.id),
+#             is_read=False,
+#             is_deleted=False
+#         )
+#         db.add(notification)
+
+#     except Exception as e:
+#         print(f"❌ Error creating booking notification: {str(e)}")
+
+#     db.commit()
+#     db.refresh(booking)
+
+#     return {
+#         "message": "Ride request sent successfully",
+#         "booking_id": booking.id,
+#         "status": booking.status
+#     }
+# class ModifySeatsRequest(BaseModel):
+#     new_seats: int
+# @router.put("/booking/{booking_id}/modify-seats")
+# def modify_booking_seats(booking_id: int, data: ModifySeatsRequest, db: Session = Depends(get_db)):
+#     """Allow passenger to modify seat count on an accepted booking"""
+    
+#     booking = db.query(RideBooking).filter(RideBooking.id == booking_id).first()
+#     if not booking:
+#         raise HTTPException(status_code=404, detail="Booking not found")
+    
+#     if booking.status != "accepted":
+#         raise HTTPException(status_code=400, detail="Only accepted bookings can be modified")
+    
+#     ride = db.query(Ride).filter(Ride.id == booking.ride_id).first()
+#     if not ride:
+#         raise HTTPException(status_code=404, detail="Ride not found")
+    
+#     if data.new_seats <= 0:
+#         raise HTTPException(status_code=400, detail="Seat count must be at least 1")
+    
+#     # Calculate seat difference
+#     seat_diff = data.new_seats - booking.seats_booked
+    
+#     if seat_diff > 0:
+#         # Need more seats - check availability
+#         total_booked = get_total_booked_seats(db, ride.id)
+#         remaining_seats = ride.available_seats - (total_booked - booking.seats_booked)
+        
+#         if remaining_seats < seat_diff:
+#             raise HTTPException(
+#                 status_code=400,
+#                 detail=f"Only {remaining_seats} additional seat(s) available. Cannot increase by {seat_diff}."
+#             )
+    
+#     # Update booking
+#     old_seats = booking.seats_booked
+#     booking.seats_booked = data.new_seats
+#     booking.total_amount = ride.price_per_seat * data.new_seats
+    
+#     db.commit()
+    
+#     # Notify driver
+#     try:
+#         notification = UserNotification(
+#             phone_number=ride.phone_number,
+#             title="Booking Modified 🔄",
+#             message=f"Passenger has modified seat request from {old_seats} to {data.new_seats} seat(s).",
+#             type=NotificationType.RIDE,
+#             action_type="booking",
+#             action_value=str(booking.id),
+#             is_read=False,
+#             is_deleted=False
+#         )
+#         db.add(notification)
+#         db.commit()
+#     except Exception as e:
+#         print(f"Error sending modification notification: {str(e)}")
+    
+#     return {
+#         "message": f"Seats updated from {old_seats} to {data.new_seats}",
+#         "booking_id": booking.id,
+#         "new_seats": data.new_seats,
+#         "new_total": booking.total_amount
+#     }
+# @router.get("/check-passenger-overlap")
+# def check_passenger_overlap(
+#     phone_number: str,
+#     departure_time: datetime,
+#     duration_minutes: int = 60,
+#     exclude_booking_id: Optional[int] = None,
+#     db: Session = Depends(get_db)
+# ):
+#     """Check if passenger has overlapping active bookings"""
+#     normalized_phone = normalize_phone(phone_number)
+    
+#     overlapping = check_overlapping_bookings_for_passenger(db, normalized_phone, departure_time, duration_minutes, exclude_booking_id)
+    
+#     if overlapping:
+#         return {
+#             "has_overlap": True,
+#             "overlapping_booking": {
+#                 "booking_id": overlapping["booking_id"],
+#                 "ride_id": overlapping["ride_id"],
+#                 "origin": overlapping["origin"],
+#                 "destination": overlapping["destination"],
+#                 "departure_time": overlapping["departure_time"].isoformat(),
+#                 "expected_end_time": overlapping["expected_end_time"].isoformat() if overlapping["expected_end_time"] else None
+#             }
+#         }
+    
+#     return {"has_overlap": False}
+
+
+# @router.get("/check-overlapping-rides")
+# def check_overlapping_rides_endpoint(
+#     phone_number: str,
+#     departure_time: datetime,
+#     duration_minutes: int = 60,
+#     exclude_ride_id: Optional[int] = None,
+#     db: Session = Depends(get_db)
+# ):
+#     """Check if driver has overlapping active rides"""
+#     normalized_phone = normalize_phone(phone_number)
+    
+#     overlapping = check_overlapping_rides_for_driver(db, normalized_phone, departure_time, duration_minutes, exclude_ride_id)
+    
+#     if overlapping:
+#         return {
+#             "has_overlap": True,
+#             "overlapping_ride": {
+#                 "id": overlapping["ride_id"],
+#                 "origin": overlapping["origin"],
+#                 "destination": overlapping["destination"],
+#                 "departure_time": overlapping["departure_time"].isoformat(),
+#                 "expected_end_time": overlapping["expected_end_time"].isoformat() if overlapping["expected_end_time"] else None
+#             }
+#         }
+    
+#     return {"has_overlap": False}
+
+
+# @router.post("/booking/{booking_id}/accept")
+# def accept_booking(booking_id: int, db: Session = Depends(get_db)):
+#     booking = db.query(RideBooking).filter(RideBooking.id == booking_id).first()
+#     if not booking:
+#         raise HTTPException(status_code=404, detail="Booking not found")
+
+#     if booking.status != "pending":
+#         raise HTTPException(status_code=400, detail="Already processed")
+
+#     ride = db.query(Ride).filter(Ride.id == booking.ride_id).first()
+#     if not ride:
+#         raise HTTPException(status_code=404, detail="Ride not found")
+
+#     # Check seat availability before accepting
+#     total_booked = get_total_booked_seats(db, ride.id)
+#     remaining_seats = ride.available_seats - total_booked
+    
+#     if remaining_seats < booking.seats_booked:
+#         # Auto-reject the booking instead of accepting
+#         booking.status = "rejected"
+#         db.commit()
+#         raise HTTPException(status_code=400, detail="Not enough seats available anymore")
+
+#     # Accept the booking
+#     booking.status = "accepted"
+    
+#     # Auto-withdraw all other pending requests for this ride
+#     other_pending = db.query(RideBooking).filter(
+#         RideBooking.ride_id == ride.id,
+#         RideBooking.id != booking_id,
+#         RideBooking.status == "pending"
+#     ).all()
+    
+#     withdrawn_count = 0
+#     for pending_booking in other_pending:
+#         pending_booking.status = "rejected"
+#         pending_booking.rejection_reason = "Rider joined another vehicle"
+#         withdrawn_count += 1
+        
+#         # Notify the passenger that their request was auto-withdrawn
+#         try:
+#             notification = UserNotification(
+#                 phone_number=pending_booking.passenger_phone,
+#                 title="Request Auto-Withdrawn",
+#                 message="Your ride request was automatically withdrawn because the driver accepted another passenger.",
+#                 type=NotificationType.RIDE,
+#                 action_type="booking",
+#                 action_value=str(pending_booking.id),
+#                 is_read=False,
+#                 is_deleted=False
+#             )
+#             db.add(notification)
+#         except Exception as e:
+#             print(f"Error sending auto-withdrawal notification: {str(e)}")
+    
+#     # Update ride available seats
+#     total_booked_after = get_total_booked_seats(db, ride.id)
+#     if ride.available_seats <= total_booked_after:
+#         ride.status = "full"
+    
+#     db.commit()
+
+#     # Create notification for accepted passenger
+#     try:
+#         origin_short = ride.origin.split(",")[0].strip() if ride.origin else "pickup"
+#         dest_short = ride.destination.split(",")[0].strip() if ride.destination else "destination"
+        
+#         notification = UserNotification(
+#             phone_number=booking.passenger_phone,
+#             title="Booking Accepted! ✅",
+#             message=f"Your request for {booking.seats_booked} seat(s) on the ride from {origin_short} to {dest_short} has been accepted by the driver.",
+#             type=NotificationType.RIDE,
+#             action_type="booking",
+#             action_value=str(booking.id),
+#             is_read=False,
+#             is_deleted=False
+#         )
+#         db.add(notification)
+#         db.commit()
+#         print(f"✅ Booking acceptance notification sent to {booking.passenger_phone}")
+#     except Exception as e:
+#         print(f"❌ Error creating booking acceptance notification: {str(e)}")
+
+#     return {
+#         "message": "Booking accepted", 
+#         "withdrawn_count": withdrawn_count,
+#         "withdrawn_reason": "Rider joined another vehicle"
+#     }
+
+
+# @router.put("/booking/{booking_id}/reject")
+# def reject_booking(booking_id: int, db: Session = Depends(get_db)):
+#     booking = db.query(RideBooking).filter(RideBooking.id == booking_id).first()
+#     if not booking:
+#         raise HTTPException(status_code=404, detail="Booking not found")
+
+#     if booking.status != "pending":
+#         raise HTTPException(status_code=400, detail="Already processed")
+
+#     booking.status = "rejected"
+#     db.commit()
+
+#     # Create notification for passenger
+#     try:
+#         ride = db.query(Ride).filter(Ride.id == booking.ride_id).first()
+#         if ride:
+#             origin_short = ride.origin.split(",")[0].strip() if ride.origin else "pickup"
+#             dest_short = ride.destination.split(",")[0].strip() if ride.destination else "destination"
+            
+#             notification = UserNotification(
+#                 phone_number=booking.passenger_phone,
+#                 title="Booking Declined ❌",
+#                 message=f"Your request for the ride from {origin_short} to {dest_short} was declined by the driver.",
+#                 type=NotificationType.RIDE,
+#                 action_type="booking",
+#                 action_value=str(booking.id),
+#                 is_read=False,
+#                 is_deleted=False
+#             )
+#             db.add(notification)
+#             db.commit()
+#     except Exception as e:
+#         print(f"❌ Error creating booking rejection notification: {str(e)}")
+
+#     return {"message": "Booking rejected"}
+
+
+# @router.put("/ride/{ride_id}/cancel")
+# def cancel_ride(ride_id: int, db: Session = Depends(get_db)):
+#     ride = db.query(Ride).filter(Ride.id == ride_id).first()
+#     if not ride:
+#         raise HTTPException(status_code=404, detail="Ride not found")
+
+#     ride.status = "cancelled"
+
+#     # Cancel all accepted bookings and refund seats
+#     bookings = db.query(RideBooking).filter(
+#         RideBooking.ride_id == ride_id,
+#         RideBooking.status == "accepted"
+#     ).all()
+
+#     for booking in bookings:
+#         booking.status = "cancelled"
+        
+#         # Notify each passenger
+#         try:
+#             notification = UserNotification(
+#                 phone_number=booking.passenger_phone,
+#                 title="Ride Cancelled ❌",
+#                 message=f"The ride from {ride.origin} to {ride.destination} has been cancelled by the driver.",
+#                 type=NotificationType.RIDE,
+#                 action_type="ride",
+#                 action_value=str(ride_id),
+#                 is_read=False,
+#                 is_deleted=False
+#             )
+#             db.add(notification)
+#         except Exception as e:
+#             print(f"❌ Error creating cancellation notification: {str(e)}")
+
+#     db.commit()
+
+#     return {"message": "Ride cancelled successfully", "affected_passengers": len(bookings)}
+
+
+# @router.put("/booking/{booking_id}/cancel")
+# def cancel_booking(booking_id: int, db: Session = Depends(get_db)):
+#     booking = db.query(RideBooking).filter(
+#         RideBooking.id == booking_id
+#     ).first()
+
+#     if not booking:
+#         raise HTTPException(status_code=404, detail="Booking not found")
+
+#     ride = db.query(Ride).filter(
+#         Ride.id == booking.ride_id
+#     ).first()
+
+#     if not ride:
+#         raise HTTPException(status_code=404, detail="Ride not found")
+
+#     # Refund seats if accepted
+#     if booking.status == "accepted":
+#         ride.available_seats += booking.seats_booked
+#         if ride.status == "full":
+#             ride.status = "active"
+
+#     booking.status = "cancelled"
+#     db.commit()
+
+#     # Notify driver
+#     try:
+#         notification = UserNotification(
+#             phone_number=ride.phone_number,
+#             title="Booking Cancelled",
+#             message=f"A passenger has cancelled their booking for your ride from {ride.origin} to {ride.destination}.",
+#             type=NotificationType.RIDE,
+#             action_type="ride",
+#             action_value=str(ride.id),
+#             is_read=False,
+#             is_deleted=False
+#         )
+#         db.add(notification)
+#         db.commit()
+#     except Exception as e:
+#         print(f"❌ Error creating cancellation notification for driver: {str(e)}")
+
+#     return {"message": "Booking cancelled and seats refunded"}
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, text, and_, or_
@@ -4575,14 +5812,14 @@ class CreateRideBookingRequest(BaseModel):
         return value
 
 
+class ModifySeatsRequest(BaseModel):
+    new_seats: int
+
+
 class VehicleChangeNotification(BaseModel):
     ride_id: int
     old_vehicle_id: Optional[int] = None
     new_vehicle_id: int
-
-
-class ModifySeatsRequest(BaseModel):
-    new_seats: int
 
 
 # ============================================
@@ -4658,6 +5895,15 @@ def get_total_booked_seats(db: Session, ride_id: int) -> int:
         RideBooking.status == "accepted"
     ).scalar()
     return result or 0
+
+
+def get_available_seats(db: Session, ride_id: int) -> int:
+    """Calculate actual available seats = total seats - booked seats"""
+    ride = db.query(Ride).filter(Ride.id == ride_id).first()
+    if not ride:
+        return 0
+    total_booked = get_total_booked_seats(db, ride_id)
+    return max(0, ride.available_seats - total_booked)
 
 
 def check_overlapping_rides_for_driver(db: Session, phone_number: str, departure_time: datetime, duration_minutes: int, exclude_ride_id: Optional[int] = None) -> Optional[Dict]:
@@ -4907,7 +6153,6 @@ def post_ride(data: CreateRideRequest, db: Session = Depends(get_db)):
         "ride_id": ride.id
     }
 
-
 @router.put("/update-ride/{ride_id}")
 def update_ride(ride_id: int, data: UpdateRideRequest, db: Session = Depends(get_db)):
     normalized_phone = normalize_phone(data.phone_number)
@@ -4930,6 +6175,28 @@ def update_ride(ride_id: int, data: UpdateRideRequest, db: Session = Depends(get
     has_confirmed_bookings = len(confirmed_bookings) > 0
     total_booked_seats = sum(b.seats_booked for b in confirmed_bookings)
     
+    # ============================================
+    # NEW: Women Only toggle validation
+    # ============================================
+    new_women_only = data.preferences.get('womenOnly', False) if data.preferences else data.women_only
+    
+    if ride.women_only != new_women_only:
+        # Trying to change Women Only setting
+        if new_women_only == False and ride.women_only == True:
+            # Trying to disable Women Only mode
+            # Check if any female passengers have already booked
+            female_bookings = db.query(RideBooking).join(User).filter(
+                RideBooking.ride_id == ride_id,
+                RideBooking.status == "accepted",
+                User.gender == "female"
+            ).count()
+            
+            if female_bookings > 0:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Cannot disable Women Only mode - {female_bookings} female passenger(s) have already booked this ride based on the safety promise."
+                )
+    
     # Calculate time difference for validation
     departure_time_utc = data.departure_time
     if departure_time_utc.tzinfo is None:
@@ -4939,25 +6206,40 @@ def update_ride(ride_id: int, data: UpdateRideRequest, db: Session = Depends(get
     
     time_diff_minutes = abs((departure_time_utc - ride.departure_time).total_seconds()) / 60
     
+    # Check for major changes that require auto-rejecting pending requests
+    major_changes = []
+    auto_reject_pending = False
+    
+    if ride.origin != data.origin:
+        major_changes.append("Origin changed")
+        auto_reject_pending = True
+    if ride.destination != data.destination:
+        major_changes.append("Destination changed")
+        auto_reject_pending = True
+    if time_diff_minutes > 15:
+        major_changes.append(f"Time changed by {int(time_diff_minutes)} minutes")
+        auto_reject_pending = True
+    if ride.price_per_seat != data.price_per_seat and data.price_per_seat > ride.price_per_seat:
+        major_changes.append("Price increased")
+        auto_reject_pending = True
+    
     # Lock major fields if there are confirmed bookings
     if has_confirmed_bookings:
-        major_changes = []
+        critical_changes = []
         
         if ride.origin != data.origin:
-            major_changes.append("Origin")
+            critical_changes.append("Origin")
         if ride.destination != data.destination:
-            major_changes.append("Destination")
-        
+            critical_changes.append("Destination")
         if time_diff_minutes > 10:
-            major_changes.append("Time (more than 10 minutes)")
-        
+            critical_changes.append("Time (more than 10 minutes)")
         if ride.price_per_seat != data.price_per_seat:
-            major_changes.append("Price")
+            critical_changes.append("Price")
         
-        if major_changes:
+        if critical_changes:
             raise HTTPException(
                 status_code=403,
-                detail=f"Cannot modify: {', '.join(major_changes)}. This ride has {len(confirmed_bookings)} confirmed booking(s). Please cancel the ride and create a new one if you need major changes."
+                detail=f"Cannot modify: {', '.join(critical_changes)}. This ride has {len(confirmed_bookings)} confirmed booking(s). Please cancel the ride and create a new one if you need major changes."
             )
     
     # Validate seat changes (cannot reduce below booked seats)
@@ -5002,10 +6284,50 @@ def update_ride(ride_id: int, data: UpdateRideRequest, db: Session = Depends(get
     ride.destination_lat = data.destination_coords[1]
     ride.route_coordinates = data.route_coordinates
     ride.vehicle_id = data.vehicle_id
-    ride.women_only = data.preferences.get('womenOnly', False) if data.preferences else False
+    ride.women_only = new_women_only
+
+    # Update status based on remaining seats
+    remaining_seats = ride.available_seats - total_booked_seats
+    if remaining_seats <= 0 and ride.status == "active":
+        ride.status = "full"
+    elif remaining_seats > 0 and ride.status == "full":
+        ride.status = "active"
 
     db.commit()
     db.refresh(ride)
+
+    # ============================================
+    # NEW: Auto-reject pending requests if major changes
+    # ============================================
+    rejected_count = 0
+    if auto_reject_pending and has_confirmed_bookings == False:
+        pending_requests = db.query(RideBooking).filter(
+            RideBooking.ride_id == ride_id,
+            RideBooking.status == "pending"
+        ).all()
+        
+        for pending in pending_requests:
+            pending.status = "rejected"
+            pending.rejection_reason = f"Driver modified ride details: {', '.join(major_changes)}"
+            rejected_count += 1
+            
+            # Notify riders
+            try:
+                notification = UserNotification(
+                    phone_number=pending.passenger_phone,
+                    title="Ride Details Changed 🔄",
+                    message=f"The driver has modified the ride details ({', '.join(major_changes)}). Please review and request again if it still suits you.",
+                    type=NotificationType.RIDE,
+                    action_type="ride",
+                    action_value=str(ride.id),
+                    is_read=False,
+                    is_deleted=False
+                )
+                db.add(notification)
+            except Exception as e:
+                print(f"Error sending rejection notification: {str(e)}")
+        
+        db.commit()
 
     # Update geometry (if PostGIS is enabled)
     try:
@@ -5076,11 +6398,13 @@ def update_ride(ride_id: int, data: UpdateRideRequest, db: Session = Depends(get
     return {
         "message": "Ride updated successfully",
         "ride_id": ride.id,
+        "remaining_seats": max(0, ride.available_seats - total_booked_seats),
+        "total_booked": total_booked_seats,
         "vehicle_changed": vehicle_changed,
-        "notifications_sent": len(confirmed_bookings) if vehicle_changed else 0
+        "notifications_sent": len(confirmed_bookings) if vehicle_changed else 0,
+        "auto_rejected_pending": rejected_count,
+        "auto_reject_reason": major_changes if auto_reject_pending else None
     }
-
-
 @router.post("/search-rides")
 def search_rides(data: SearchRidesRequest, db: Session = Depends(get_db)):
     req_time_utc = data.departure_time
@@ -5089,10 +6413,9 @@ def search_rides(data: SearchRidesRequest, db: Session = Depends(get_db)):
     else:
         req_time_utc = req_time_utc.astimezone(timezone.utc)
 
-    # Build query
+    # Build query - include both active and full rides
     query = db.query(Ride).filter(
-        Ride.status == "active",
-        Ride.available_seats >= data.seats_required,
+        Ride.status.in_(["active", "full"]),
         Ride.departure_time.between(
             req_time_utc - timedelta(minutes=TIME_WINDOW_MINUTES),
             req_time_utc + timedelta(minutes=TIME_WINDOW_MINUTES)
@@ -5109,6 +6432,14 @@ def search_rides(data: SearchRidesRequest, db: Session = Depends(get_db)):
     rides = []
     
     for ride in all_rides:
+        # Calculate actual remaining seats
+        total_booked = get_total_booked_seats(db, ride.id)
+        remaining_seats = max(0, ride.available_seats - total_booked)
+        
+        # Skip only if no seats available for requested number
+        if remaining_seats < data.seats_required:
+            continue
+        
         # Calculate distances if coordinates available
         pickup_distance_m = 0
         drop_distance_m = 0
@@ -5161,10 +6492,6 @@ def search_rides(data: SearchRidesRequest, db: Session = Depends(get_db)):
         
         departure_time_ist = to_ist(ride.departure_time)
         
-        # Calculate total booked seats
-        total_booked = get_total_booked_seats(db, ride.id)
-        remaining_seats = ride.available_seats - total_booked
-        
         rides.append({
             "id": ride.id,
             "driverName": driver_name,
@@ -5198,9 +6525,10 @@ def search_rides(data: SearchRidesRequest, db: Session = Depends(get_db)):
             "price": ride.price_per_seat,
             "matchPercentage": match_percentage,
             "matchLabel": build_match_label(match_percentage),
-            "seatsAvailable": remaining_seats,  # Show remaining seats, not total available
-            "totalSeats": ride.available_seats,  # Total seats originally available
-            "seatsRequested": data.seats_required,  # Seats requested by passenger
+            "seatsAvailable": remaining_seats,
+            "totalSeats": ride.available_seats,
+            "bookedSeats": total_booked,
+            "seatsRequested": data.seats_required,
             "distanceKm": ride.distance_km,
             "durationText": ride.duration_text,
             "totalEstimatedPrice": ride.total_estimated_price,
@@ -5227,7 +6555,7 @@ def create_ride_booking(data: CreateRideBookingRequest, db: Session = Depends(ge
     if not ride:
         raise HTTPException(status_code=404, detail="Ride not found")
 
-    if ride.status != "active":
+    if ride.status not in ["active", "full"]:
         raise HTTPException(status_code=400, detail="Ride is not available")
 
     # Check available seats
@@ -5411,19 +6739,16 @@ def modify_booking_seats(booking_id: int, data: ModifySeatsRequest, db: Session 
     if data.new_seats <= 0:
         raise HTTPException(status_code=400, detail="Seat count must be at least 1")
     
-    # Calculate seat difference
-    seat_diff = data.new_seats - booking.seats_booked
+    # Calculate available seats excluding current booking
+    total_booked = get_total_booked_seats(db, ride.id)
+    other_booked = total_booked - booking.seats_booked
+    available_seats_excluding_current = ride.available_seats - other_booked
     
-    if seat_diff > 0:
-        # Need more seats - check availability
-        total_booked = get_total_booked_seats(db, ride.id)
-        remaining_seats = ride.available_seats - (total_booked - booking.seats_booked)
-        
-        if remaining_seats < seat_diff:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Only {remaining_seats} additional seat(s) available. Cannot increase by {seat_diff}."
-            )
+    if data.new_seats > available_seats_excluding_current:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Only {available_seats_excluding_current} seat(s) available. Cannot increase to {data.new_seats}."
+        )
     
     # Update booking
     old_seats = booking.seats_booked
@@ -5569,7 +6894,7 @@ def accept_booking(booking_id: int, db: Session = Depends(get_db)):
         except Exception as e:
             print(f"Error sending auto-withdrawal notification: {str(e)}")
     
-    # Update ride available seats
+    # Update ride status if full
     total_booked_after = get_total_booked_seats(db, ride.id)
     if ride.available_seats <= total_booked_after:
         ride.status = "full"
@@ -5649,7 +6974,7 @@ def cancel_ride(ride_id: int, db: Session = Depends(get_db)):
 
     ride.status = "cancelled"
 
-    # Cancel all accepted bookings and refund seats
+    # Cancel all accepted bookings
     bookings = db.query(RideBooking).filter(
         RideBooking.ride_id == ride_id,
         RideBooking.status == "accepted"
@@ -5697,7 +7022,9 @@ def cancel_booking(booking_id: int, db: Session = Depends(get_db)):
 
     # Refund seats if accepted
     if booking.status == "accepted":
-        ride.available_seats += booking.seats_booked
+        # Note: We don't modify ride.available_seats directly
+        # The available seats are calculated as ride.available_seats - total_booked
+        # So when we cancel, total_booked decreases, available increases automatically
         if ride.status == "full":
             ride.status = "active"
 
@@ -5721,4 +7048,202 @@ def cancel_booking(booking_id: int, db: Session = Depends(get_db)):
     except Exception as e:
         print(f"❌ Error creating cancellation notification for driver: {str(e)}")
 
-    return {"message": "Booking cancelled and seats refunded"}
+    return {"message": "Booking cancelled successfully"}
+# Add these imports at the top if not already present
+from datetime import datetime, timezone, timedelta
+from sqlalchemy import and_, or_
+
+# ============================================
+# AUTO-EXPIRY ENDPOINTS
+# ============================================
+
+@router.get("/expire-pending-rides")
+def expire_pending_rides(db: Session = Depends(get_db)):
+    """
+    Auto-expire rides that haven't started within 45 minutes after scheduled time.
+    Run this via cron job every 5 minutes.
+    """
+    now = datetime.now(timezone.utc)
+    # Rides that were supposed to depart 45+ minutes ago but haven't started
+    expiry_cutoff = now - timedelta(minutes=45)
+    
+    expired_rides = db.query(Ride).filter(
+        Ride.departure_time < expiry_cutoff,
+        Ride.status.in_(["active", "full"]),
+        Ride.is_deleted == False
+    ).all()
+    
+    expired_count = 0
+    notification_count = 0
+    
+    for ride in expired_rides:
+        # Get all accepted bookings for this ride
+        bookings = db.query(RideBooking).filter(
+            RideBooking.ride_id == ride.id,
+            RideBooking.status == "accepted"
+        ).all()
+        
+        # Cancel the ride
+        ride.status = "cancelled"
+        ride.cancellation_reason = "Auto-expired: Ride did not start within 45 minutes of scheduled time"
+        
+        # Cancel all accepted bookings
+        for booking in bookings:
+            booking.status = "cancelled"
+            booking.cancellation_reason = "Ride auto-expired"
+            
+            # Notify each passenger
+            try:
+                notification = UserNotification(
+                    phone_number=booking.passenger_phone,
+                    title="Ride Auto-Expired ⏰",
+                    message=f"The ride from {ride.origin} to {ride.destination} scheduled at {to_ist(ride.departure_time).strftime('%I:%M %p')} has been auto-cancelled as it didn't start on time.",
+                    type=NotificationType.RIDE,
+                    action_type="ride",
+                    action_value=str(ride.id),
+                    is_read=False,
+                    is_deleted=False
+                )
+                db.add(notification)
+                notification_count += 1
+            except Exception as e:
+                print(f"Error sending expiry notification: {str(e)}")
+        
+        expired_count += 1
+    
+    db.commit()
+    
+    return {
+        "message": f"Expired {expired_count} rides",
+        "expired_rides": expired_count,
+        "notifications_sent": notification_count
+    }
+
+
+@router.get("/expire-pending-requests")
+def expire_pending_requests(db: Session = Depends(get_db)):
+    """
+    Auto-expire pending ride requests that are 15 minutes before ride start.
+    Run this via cron job every 5 minutes.
+    """
+    now = datetime.now(timezone.utc)
+    # Requests expire 15 minutes before ride departure
+    expiry_threshold = now + timedelta(minutes=15)
+    
+    pending_requests = db.query(RideBooking).join(Ride).filter(
+        RideBooking.status == "pending",
+        Ride.departure_time < expiry_threshold,
+        Ride.departure_time > now  # Only future rides, not past ones
+    ).all()
+    
+    expired_count = 0
+    notification_count = 0
+    
+    for booking in pending_requests:
+        booking.status = "rejected"
+        booking.rejection_reason = "Request timed out - driver did not respond in time"
+        
+        # Notify passenger
+        try:
+            ride = booking.ride
+            origin_short = ride.origin.split(",")[0].strip() if ride.origin else "pickup"
+            dest_short = ride.destination.split(",")[0].strip() if ride.destination else "destination"
+            
+            notification = UserNotification(
+                phone_number=booking.passenger_phone,
+                title="Request Timed Out ⏰",
+                message=f"Your request for the ride from {origin_short} to {dest_short} has expired as the driver didn't respond in time. Please try another ride.",
+                type=NotificationType.RIDE,
+                action_type="booking",
+                action_value=str(booking.id),
+                is_read=False,
+                is_deleted=False
+            )
+            db.add(notification)
+            notification_count += 1
+        except Exception as e:
+            print(f"Error sending timeout notification: {str(e)}")
+        
+        expired_count += 1
+    
+    db.commit()
+    
+    return {
+        "message": f"Expired {expired_count} pending requests",
+        "expired_requests": expired_count,
+        "notifications_sent": notification_count
+    }
+
+
+@router.get("/ride/{ride_id}/expire-check")
+def check_ride_expiry(ride_id: int, db: Session = Depends(get_db)):
+    """Check if a ride should be expired and expire it if needed"""
+    ride = db.query(Ride).filter(Ride.id == ride_id).first()
+    if not ride:
+        raise HTTPException(status_code=404, detail="Ride not found")
+    
+    now = datetime.now(timezone.utc)
+    expiry_cutoff = now - timedelta(minutes=45)
+    
+    if ride.departure_time < expiry_cutoff and ride.status in ["active", "full"]:
+        # Expire the ride
+        ride.status = "cancelled"
+        ride.cancellation_reason = "Auto-expired: Ride did not start on time"
+        
+        # Cancel all accepted bookings
+        bookings = db.query(RideBooking).filter(
+            RideBooking.ride_id == ride_id,
+            RideBooking.status == "accepted"
+        ).all()
+        
+        for booking in bookings:
+            booking.status = "cancelled"
+        
+        db.commit()
+        
+        return {
+            "expired": True,
+            "message": "Ride has been auto-expired",
+            "affected_passengers": len(bookings)
+        }
+    
+    return {
+        "expired": False,
+        "message": "Ride is still active",
+        "time_until_expiry": max(0, (ride.departure_time + timedelta(minutes=45) - now).total_seconds() / 60)
+    }
+
+
+@router.get("/booking/{booking_id}/expire-check")
+def check_booking_expiry(booking_id: int, db: Session = Depends(get_db)):
+    """Check if a pending booking request should be expired"""
+    booking = db.query(RideBooking).filter(RideBooking.id == booking_id).first()
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    
+    if booking.status != "pending":
+        return {
+            "expired": False,
+            "message": f"Booking is already {booking.status}"
+        }
+    
+    now = datetime.now(timezone.utc)
+    ride = booking.ride
+    expiry_threshold = now + timedelta(minutes=15)
+    
+    if ride.departure_time < expiry_threshold:
+        # Expire the request
+        booking.status = "rejected"
+        booking.rejection_reason = "Request timed out"
+        db.commit()
+        
+        return {
+            "expired": True,
+            "message": "Request has been auto-expired"
+        }
+    
+    return {
+        "expired": False,
+        "message": "Request is still pending",
+        "time_until_expiry": max(0, (ride.departure_time - timedelta(minutes=15) - now).total_seconds() / 60)
+    }

@@ -597,6 +597,15 @@ def get_total_booked_seats(db: Session, ride_id: int) -> int:
     return result or 0
 
 
+def get_available_seats(db: Session, ride_id: int) -> int:
+    """Calculate actual available seats = total seats - booked seats"""
+    ride = db.query(Ride).filter(Ride.id == ride_id).first()
+    if not ride:
+        return 0
+    total_booked = get_total_booked_seats(db, ride_id)
+    return max(0, ride.available_seats - total_booked)
+
+
 @router.get("/my-rides/{phone}")
 async def get_my_rides(phone: str, db: Session = Depends(get_db)):
     norm_phone = normalize_phone(phone)
@@ -652,6 +661,12 @@ async def get_my_rides(phone: str, db: Session = Depends(get_db)):
     posted_formatted = []
     for ride in posted_rides:
         total_booked = get_total_booked_seats(db, ride.id)
+        remaining_seats = max(0, ride.available_seats - total_booked)
+        
+        # Determine ride status for display
+        display_status = ride.status
+        if remaining_seats == 0 and ride.status == "active":
+            display_status = "full"
         
         # Get live session if exists
         live_session = None
@@ -695,12 +710,12 @@ async def get_my_rides(phone: str, db: Session = Depends(get_db)):
             "total_estimated_price": ride.total_estimated_price,
             "preferences": ride.preferences,
             "women_only": ride.women_only,
-            "status": ride.status,
+            "status": display_status,
             "vehicle_id": ride.vehicle_id,
             "created_at": ride.created_at.isoformat() if ride.created_at else None,
             "bookings": bookings_map.get(ride.id, []),
             "total_booked_seats": total_booked,
-            "remaining_seats": ride.available_seats - total_booked,
+            "remaining_seats": remaining_seats,  # FIXED: Show actual remaining seats
             "live_session": live_session_data,
         })
     
@@ -749,6 +764,11 @@ async def get_my_rides(phone: str, db: Session = Depends(get_db)):
         except Exception as e:
             print(f"Error fetching session info: {str(e)}")
         
+        # Calculate remaining seats for this ride
+        ride_available = row["available_seats"]
+        total_booked_for_ride = get_total_booked_seats(db, row["ride_id"])
+        remaining_seats_for_ride = max(0, ride_available - total_booked_for_ride)
+        
         requested_formatted.append({
             "id": row["id"],
             "ride_id": row["ride_id"],
@@ -763,6 +783,7 @@ async def get_my_rides(phone: str, db: Session = Depends(get_db)):
             "departure_time_display": to_ist(row["departure_time"]).strftime("%d %b %Y, %I:%M %p") if row["departure_time"] else None,
             "price_per_seat": row["price_per_seat"],
             "available_seats": row["available_seats"],
+            "remaining_seats": remaining_seats_for_ride,  # FIXED: Show actual remaining seats
             "distance_km": row["distance_km"],
             "duration_text": row["duration_text"],
             "ride_status": row["ride_status"],
@@ -794,15 +815,18 @@ def accept_booking(booking_id: int, db: Session = Depends(get_db)):
     if not ride:
         raise HTTPException(status_code=404, detail="Ride not found")
 
-    if ride.available_seats < booking.seats_booked:
-        raise HTTPException(status_code=400, detail="Not enough seats available")
+    # Check seat availability using proper calculation
+    total_booked = get_total_booked_seats(db, ride.id)
+    remaining_seats = ride.available_seats - total_booked
+    
+    if remaining_seats < booking.seats_booked:
+        raise HTTPException(status_code=400, detail=f"Not enough seats available. Only {remaining_seats} seat(s) left.")
 
-    # Reduce available seats
-    ride.available_seats -= booking.seats_booked
+    # Accept the booking (don't modify ride.available_seats directly)
     booking.status = "accepted"
 
     # Mark ride as full if no seats left
-    if ride.available_seats == 0:
+    if remaining_seats - booking.seats_booked <= 0:
         ride.status = "full"
 
     db.commit()
@@ -815,7 +839,7 @@ def accept_booking(booking_id: int, db: Session = Depends(get_db)):
         notification = UserNotification(
             phone_number=booking.passenger_phone,
             title="Booking Accepted! ✅",
-            message=f"Your request for the ride from {origin_short} to {dest_short} has been accepted by the driver.",
+            message=f"Your request for {booking.seats_booked} seat(s) on the ride from {origin_short} to {dest_short} has been accepted by the driver.",
             type=NotificationType.RIDE,
             action_type="booking",
             action_value=str(booking.id),
@@ -876,7 +900,7 @@ def cancel_ride(ride_id: int, db: Session = Depends(get_db)):
 
     ride.status = "cancelled"
 
-    # Cancel all accepted bookings and refund seats
+    # Cancel all accepted bookings
     bookings = db.query(RideBooking).filter(
         RideBooking.ride_id == ride_id,
         RideBooking.status == "accepted"
@@ -922,13 +946,13 @@ def cancel_booking(booking_id: int, db: Session = Depends(get_db)):
     if not ride:
         raise HTTPException(status_code=404, detail="Ride not found")
 
-    # Refund seats if accepted
-    if booking.status == "accepted":
-        ride.available_seats += booking.seats_booked
-        if ride.status == "full":
-            ride.status = "active"
-
+    # Update status (don't modify ride.available_seats directly)
     booking.status = "cancelled"
+    
+    # If ride was full, set back to active since a seat became available
+    if ride.status == "full":
+        ride.status = "active"
+
     db.commit()
 
     # Notify driver
@@ -948,7 +972,68 @@ def cancel_booking(booking_id: int, db: Session = Depends(get_db)):
     except Exception as e:
         print(f"❌ Error creating cancellation notification for driver: {str(e)}")
 
-    return {"message": "Booking cancelled and seats refunded"}
+    return {"message": "Booking cancelled successfully"}
+
+
+@router.put("/booking/{booking_id}/modify-seats")
+def modify_booking_seats(booking_id: int, new_seats: int, db: Session = Depends(get_db)):
+    """Allow passenger to modify seat count on an accepted booking"""
+    
+    booking = db.query(RideBooking).filter(RideBooking.id == booking_id).first()
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    
+    if booking.status != "accepted":
+        raise HTTPException(status_code=400, detail="Only accepted bookings can be modified")
+    
+    ride = db.query(Ride).filter(Ride.id == booking.ride_id).first()
+    if not ride:
+        raise HTTPException(status_code=404, detail="Ride not found")
+    
+    if new_seats <= 0:
+        raise HTTPException(status_code=400, detail="Seat count must be at least 1")
+    
+    # Calculate available seats excluding current booking
+    total_booked = get_total_booked_seats(db, ride.id)
+    other_booked = total_booked - booking.seats_booked
+    available_seats_excluding_current = ride.available_seats - other_booked
+    
+    if new_seats > available_seats_excluding_current:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Only {available_seats_excluding_current} seat(s) available. Cannot increase to {new_seats}."
+        )
+    
+    # Update booking
+    old_seats = booking.seats_booked
+    booking.seats_booked = new_seats
+    booking.total_amount = ride.price_per_seat * new_seats
+    
+    db.commit()
+    
+    # Notify driver
+    try:
+        notification = UserNotification(
+            phone_number=ride.phone_number,
+            title="Booking Modified 🔄",
+            message=f"Passenger has modified seat request from {old_seats} to {new_seats} seat(s).",
+            type=NotificationType.RIDE,
+            action_type="booking",
+            action_value=str(booking.id),
+            is_read=False,
+            is_deleted=False
+        )
+        db.add(notification)
+        db.commit()
+    except Exception as e:
+        print(f"Error sending modification notification: {str(e)}")
+    
+    return {
+        "message": f"Seats updated from {old_seats} to {new_seats}",
+        "booking_id": booking.id,
+        "new_seats": new_seats,
+        "new_total": booking.total_amount
+    }
 
 
 @router.get("/ride/{ride_id}/passengers")
@@ -998,6 +1083,10 @@ def get_ride_passengers(ride_id: int, db: Session = Depends(get_db)):
             "created_at": bk.created_at.isoformat() if bk.created_at else None,
         })
 
+    # Calculate total booked and remaining seats
+    total_booked = get_total_booked_seats(db, ride_id)
+    remaining_seats = max(0, ride.available_seats - total_booked)
+
     return {
         "ride_id": ride_id,
         "origin": ride.origin,
@@ -1009,6 +1098,8 @@ def get_ride_passengers(ride_id: int, db: Session = Depends(get_db)):
         "route_coordinates": ride.route_coordinates,
         "departure_time": ride.departure_time.isoformat(),
         "available_seats": ride.available_seats,
+        "total_booked_seats": total_booked,
+        "remaining_seats": remaining_seats,
         "status": ride.status,
         "passengers": passengers
     }
