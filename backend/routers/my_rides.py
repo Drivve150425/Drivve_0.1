@@ -606,6 +606,260 @@ def get_available_seats(db: Session, ride_id: int) -> int:
     return max(0, ride.available_seats - total_booked)
 
 
+# @router.get("/my-rides/{phone}")
+# async def get_my_rides(phone: str, db: Session = Depends(get_db)):
+#     norm_phone = normalize_phone(phone)
+    
+#     # ============================================
+#     # POSTED RIDES (Driver)
+#     # ============================================
+#     posted_rides = db.query(Ride).filter(
+#         Ride.phone_number == norm_phone,
+#         Ride.is_deleted == False
+#     ).order_by(
+#         Ride.departure_time.desc()
+#     ).all()
+    
+#     # Get bookings for all posted rides
+#     posted_ride_ids = [r.id for r in posted_rides]
+#     bookings_map = {}
+    
+#     if posted_ride_ids:
+#         bookings_raw = db.execute(text("""
+#             SELECT 
+#                 rb.id, rb.ride_id, rb.passenger_phone, rb.seats_booked, rb.status,
+#                 rb.created_at, rb.total_amount,
+#                 u.full_name as passenger_name, u.first_name, u.last_name, u.profile_picture
+#             FROM ride_bookings rb 
+#             LEFT JOIN users u ON u.phone_number = rb.passenger_phone
+#             WHERE rb.ride_id = ANY(:ride_ids)
+#             ORDER BY rb.created_at DESC
+#         """), {"ride_ids": posted_ride_ids}).mappings().all()
+        
+#         for bk in bookings_raw:
+#             ride_id = bk["ride_id"]
+#             if ride_id not in bookings_map:
+#                 bookings_map[ride_id] = []
+            
+#             passenger_name = bk["passenger_name"] or " ".join(
+#                 p for p in [bk["first_name"], bk["last_name"]] if p
+#             ).strip() or f"Passenger {bk['passenger_phone'][-4:]}"
+            
+#             bookings_map[ride_id].append({
+#                 "id": bk["id"],
+#                 "ride_id": ride_id,
+#                 "passenger_phone": bk["passenger_phone"],
+#                 "passenger_name": passenger_name,
+#                 "passenger_photo": bk["profile_picture"],
+#                 "seats_requested": bk["seats_booked"],
+#                 "status": bk["status"],
+#                 "total_amount": float(bk["total_amount"]) if bk["total_amount"] else None,
+#                 "created_at": bk["created_at"].isoformat() if bk["created_at"] else None,
+#             })
+    
+#     # Format posted rides with bookings and live session info
+#     posted_formatted = []
+#     for ride in posted_rides:
+#         total_booked = get_total_booked_seats(db, ride.id)
+#         remaining_seats = max(0, ride.available_seats - total_booked)
+        
+#         # Determine ride status for display
+#         display_status = ride.status
+#         if remaining_seats == 0 and ride.status == "active":
+#             display_status = "full"
+        
+#         # Get live session if exists
+#         live_session = None
+#         try:
+            
+#             live_session = db.query(RideSession).filter(
+#                 RideSession.ride_id == ride.id,
+#                 RideSession.status.in_(["driver_started", "boarding", "en_route", "emergency_stopped"])
+#             ).order_by(RideSession.id.desc()).first()
+#         except Exception as e:
+#             print(f"Error fetching live session: {str(e)}")
+        
+#         live_session_data = None
+#         if live_session:
+#             try:
+#                 boarded_count = sum(1 for r in live_session.riders if r.status in ["boarded", "dropped_off", "completed"])
+#                 dropped_count = sum(1 for r in live_session.riders if r.status in ["dropped_off", "completed"])
+#                 live_session_data = {
+#                     "session_id": live_session.id,
+#                     "status": live_session.status,
+#                     "current_phase": live_session.current_phase,
+#                     "boarded_count": boarded_count,
+#                     "dropped_count": dropped_count,
+#                     "total_riders": len(live_session.riders)
+#                 }
+#             except Exception as e:
+#                 print(f"Error processing live session: {str(e)}")
+        
+#         posted_formatted.append({
+#             "id": ride.id,
+#             "phone_number": ride.phone_number,
+#             "origin": ride.origin,
+#             "destination": ride.destination,
+#             "origin_coords": [ride.origin_lon, ride.origin_lat] if ride.origin_lon and ride.origin_lat else None,
+#             "destination_coords": [ride.destination_lon, ride.destination_lat] if ride.destination_lon and ride.destination_lat else None,
+#             "departure_time": ride.departure_time.isoformat() if ride.departure_time else None,
+#             "departure_time_display": to_ist(ride.departure_time).strftime("%d %b %Y, %I:%M %p") if ride.departure_time else None,
+#             "available_seats": ride.available_seats,
+#             "price_per_seat": ride.price_per_seat,
+#             "distance_km": ride.distance_km,
+#             "duration_text": ride.duration_text,
+#             "total_estimated_price": ride.total_estimated_price,
+#             "preferences": ride.preferences,
+#             "women_only": ride.women_only,
+#             "status": display_status,
+#             "vehicle_id": ride.vehicle_id,
+#             "created_at": ride.created_at.isoformat() if ride.created_at else None,
+#             "bookings": bookings_map.get(ride.id, []),
+#             "total_booked_seats": total_booked,
+#             "remaining_seats": remaining_seats,  # FIXED: Show actual remaining seats
+#             "live_session": live_session_data,
+#         })
+    
+#     # ============================================
+#     # REQUESTED RIDES (Passenger bookings)
+#     # ============================================
+#     requested_raw = db.execute(text("""
+#         SELECT 
+#             rb.id, rb.ride_id, rb.passenger_phone, rb.seats_booked, rb.status,
+#             rb.created_at, rb.total_amount,
+#             r.origin, r.destination, r.departure_time, r.price_per_seat, r.available_seats,
+#             r.distance_km, r.duration_text, r.status as ride_status, r.women_only,
+#             u.full_name as driver_name, u.first_name, u.last_name, u.phone_number as driver_phone,
+#             u.user_id as driver_user_id, u.profile_completed, u.profile_picture
+#         FROM ride_bookings rb
+#         JOIN rides r ON r.id = rb.ride_id
+#         LEFT JOIN users u ON u.phone_number = r.phone_number
+#         WHERE rb.passenger_phone = :phone
+#         ORDER BY rb.created_at DESC
+#     """), {"phone": norm_phone}).mappings().all()
+    
+#     requested_formatted = []
+#     for row in requested_raw:
+#         driver_name = row["driver_name"] or " ".join(
+#             p for p in [row["first_name"], row["last_name"]] if p
+#         ).strip() or f"Driver {row['driver_phone'][-4:] if row['driver_phone'] else 'Unknown'}"
+        
+#         # Get live session info for this booking
+#         live_session_data = None
+#         try:
+#             session_rider = db.query(RideSessionRider).filter(
+#                 RideSessionRider.booking_id == row["id"]
+#             ).order_by(RideSessionRider.id.desc()).first()
+            
+#             if session_rider:
+#                 session = db.query(RideSession).filter(RideSession.id == session_rider.session_id).first()
+#                 if session:
+#                     live_session_data = {
+#                         "session_id": session.id,
+#                         "session_status": session.status,
+#                         "current_phase": session.current_phase,
+#                         "rider_status": session_rider.status,
+#                         "pickup_confirmed": getattr(session_rider, 'pickup_confirmed', False),
+#                         "dropoff_confirmed": getattr(session_rider, 'dropoff_confirmed', False)
+#                     }
+#         except Exception as e:
+#             print(f"Error fetching session info: {str(e)}")
+        
+#         # Calculate remaining seats for this ride
+#         ride_available = row["available_seats"]
+#         total_booked_for_ride = get_total_booked_seats(db, row["ride_id"])
+#         remaining_seats_for_ride = max(0, ride_available - total_booked_for_ride)
+        
+#         requested_formatted.append({
+#             "id": row["id"],
+#             "ride_id": row["ride_id"],
+#             "passenger_phone": row["passenger_phone"],
+#             "seats_requested": row["seats_booked"],
+#             "total_amount": float(row["total_amount"]) if row["total_amount"] else None,
+#             "status": row["status"],
+#             "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+#             "origin": row["origin"],
+#             "destination": row["destination"],
+#             "departure_time": row["departure_time"].isoformat() if row["departure_time"] else None,
+#             "departure_time_display": to_ist(row["departure_time"]).strftime("%d %b %Y, %I:%M %p") if row["departure_time"] else None,
+#             "price_per_seat": row["price_per_seat"],
+#             "available_seats": row["available_seats"],
+#             "remaining_seats": remaining_seats_for_ride,  # FIXED: Show actual remaining seats
+#             "distance_km": row["distance_km"],
+#             "duration_text": row["duration_text"],
+#             "ride_status": row["ride_status"],
+#             "women_only": row["women_only"],
+#             "driver_name": driver_name,
+#             "driver_phone": row["driver_phone"],
+#             "driver_user_id": row["driver_user_id"],
+#             "driver_photo": row["profile_picture"],
+#             "profile_completed": row["profile_completed"],
+#             "live_session": live_session_data,
+#         })
+    
+#     return {
+#         "posted_rides": posted_formatted,
+#         "requested_rides": requested_formatted
+#     }
+
+# Add this helper function after get_total_booked_seats function
+
+def get_ride_display_status(ride, db: Session):
+    """Determine the correct display status for a ride"""
+    now = datetime.now(timezone.utc)
+    
+    # If ride is already cancelled, return cancelled
+    if ride.status == "cancelled":
+        return "cancelled", ride.cancellation_reason
+    
+    # If ride has passed its departure time by more than 1 hour, auto-cancel it
+    time_passed = now - ride.departure_time
+    if time_passed.total_seconds() > 3600:  # 1 hour past departure
+        # Auto-cancel the ride if not already cancelled
+        ride.status = "cancelled"
+        ride.cancellation_reason = "Auto-cancelled: Ride time has passed"
+        
+        # Cancel all accepted bookings
+        bookings = db.query(RideBooking).filter(
+            RideBooking.ride_id == ride.id,
+            RideBooking.status == "accepted"
+        ).all()
+        
+        for booking in bookings:
+            booking.status = "cancelled"
+            booking.cancellation_reason = "Ride auto-cancelled as departure time passed"
+            
+            # Notify passenger
+            try:
+                notification = UserNotification(
+                    phone_number=booking.passenger_phone,
+                    title="Ride Auto-Cancelled ⏰",
+                    message=f"The ride from {ride.origin} to {ride.destination} scheduled at {to_ist(ride.departure_time).strftime('%I:%M %p')} has been auto-cancelled as the departure time has passed.",
+                    type=NotificationType.RIDE,
+                    action_type="ride",
+                    action_value=str(ride.id),
+                    is_read=False,
+                    is_deleted=False
+                )
+                db.add(notification)
+            except Exception as e:
+                print(f"Error sending auto-cancel notification: {str(e)}")
+        
+        db.commit()
+        return "cancelled", "Auto-cancelled: Ride time has passed"
+    
+    # If ride has bookings and seats are full
+    total_booked = get_total_booked_seats(db, ride.id)
+    remaining_seats = ride.available_seats - total_booked
+    
+    if remaining_seats <= 0 and ride.status == "active":
+        return "full", None
+    
+    return ride.status, None
+
+
+# Update the /my-rides/{phone} endpoint
+
 @router.get("/my-rides/{phone}")
 async def get_my_rides(phone: str, db: Session = Depends(get_db)):
     norm_phone = normalize_phone(phone)
@@ -620,6 +874,13 @@ async def get_my_rides(phone: str, db: Session = Depends(get_db)):
         Ride.departure_time.desc()
     ).all()
     
+    # First, auto-cancel any expired rides
+    for ride in posted_rides:
+        get_ride_display_status(ride, db)
+    
+    # Refresh the query after potential updates
+    db.refresh(ride)
+    
     # Get bookings for all posted rides
     posted_ride_ids = [r.id for r in posted_rides]
     bookings_map = {}
@@ -629,7 +890,10 @@ async def get_my_rides(phone: str, db: Session = Depends(get_db)):
             SELECT 
                 rb.id, rb.ride_id, rb.passenger_phone, rb.seats_booked, rb.status,
                 rb.created_at, rb.total_amount,
-                u.full_name as passenger_name, u.first_name, u.last_name, u.profile_picture
+                u.full_name as passenger_name, u.first_name, u.last_name, 
+                u.profile_picture as passenger_profile_picture,
+                u.gender as passenger_gender,
+                rb.cancellation_reason
             FROM ride_bookings rb 
             LEFT JOIN users u ON u.phone_number = rb.passenger_phone
             WHERE rb.ride_id = ANY(:ride_ids)
@@ -650,9 +914,11 @@ async def get_my_rides(phone: str, db: Session = Depends(get_db)):
                 "ride_id": ride_id,
                 "passenger_phone": bk["passenger_phone"],
                 "passenger_name": passenger_name,
-                "passenger_photo": bk["profile_picture"],
+                "passenger_photo": bk["passenger_profile_picture"],
+                "passenger_gender": bk["passenger_gender"],
                 "seats_requested": bk["seats_booked"],
                 "status": bk["status"],
+                "cancellation_reason": bk["cancellation_reason"],
                 "total_amount": float(bk["total_amount"]) if bk["total_amount"] else None,
                 "created_at": bk["created_at"].isoformat() if bk["created_at"] else None,
             })
@@ -663,10 +929,12 @@ async def get_my_rides(phone: str, db: Session = Depends(get_db)):
         total_booked = get_total_booked_seats(db, ride.id)
         remaining_seats = max(0, ride.available_seats - total_booked)
         
-        # Determine ride status for display
-        display_status = ride.status
-        if remaining_seats == 0 and ride.status == "active":
-            display_status = "full"
+        # Get display status (this will auto-cancel expired rides)
+        display_status, cancel_reason = get_ride_display_status(ride, db)
+        
+        # Get driver's own profile picture
+        driver_info = db.query(User).filter(User.phone_number == ride.phone_number).first()
+        driver_profile_picture = driver_info.profile_picture if driver_info else None
         
         # Get live session if exists
         live_session = None
@@ -694,6 +962,10 @@ async def get_my_rides(phone: str, db: Session = Depends(get_db)):
             except Exception as e:
                 print(f"Error processing live session: {str(e)}")
         
+        # Format departure time for display
+        departure_time_ist = to_ist(ride.departure_time)
+        is_past = departure_time_ist < datetime.now(timezone.utc).astimezone(IST)
+        
         posted_formatted.append({
             "id": ride.id,
             "phone_number": ride.phone_number,
@@ -702,8 +974,10 @@ async def get_my_rides(phone: str, db: Session = Depends(get_db)):
             "origin_coords": [ride.origin_lon, ride.origin_lat] if ride.origin_lon and ride.origin_lat else None,
             "destination_coords": [ride.destination_lon, ride.destination_lat] if ride.destination_lon and ride.destination_lat else None,
             "departure_time": ride.departure_time.isoformat() if ride.departure_time else None,
-            "departure_time_display": to_ist(ride.departure_time).strftime("%d %b %Y, %I:%M %p") if ride.departure_time else None,
+            "departure_time_display": departure_time_ist.strftime("%d %b %Y, %I:%M %p") if ride.departure_time else None,
             "available_seats": ride.available_seats,
+            "remaining_seats": remaining_seats,
+            "total_booked_seats": total_booked,
             "price_per_seat": ride.price_per_seat,
             "distance_km": ride.distance_km,
             "duration_text": ride.duration_text,
@@ -711,12 +985,13 @@ async def get_my_rides(phone: str, db: Session = Depends(get_db)):
             "preferences": ride.preferences,
             "women_only": ride.women_only,
             "status": display_status,
+            "cancellation_reason": cancel_reason,
+            "is_past": is_past,
             "vehicle_id": ride.vehicle_id,
             "created_at": ride.created_at.isoformat() if ride.created_at else None,
             "bookings": bookings_map.get(ride.id, []),
-            "total_booked_seats": total_booked,
-            "remaining_seats": remaining_seats,  # FIXED: Show actual remaining seats
             "live_session": live_session_data,
+            "driver_profile_picture": driver_profile_picture,
         })
     
     # ============================================
@@ -725,11 +1000,14 @@ async def get_my_rides(phone: str, db: Session = Depends(get_db)):
     requested_raw = db.execute(text("""
         SELECT 
             rb.id, rb.ride_id, rb.passenger_phone, rb.seats_booked, rb.status,
-            rb.created_at, rb.total_amount,
+            rb.created_at, rb.total_amount, rb.cancellation_reason,
             r.origin, r.destination, r.departure_time, r.price_per_seat, r.available_seats,
             r.distance_km, r.duration_text, r.status as ride_status, r.women_only,
+            r.route_coordinates,
             u.full_name as driver_name, u.first_name, u.last_name, u.phone_number as driver_phone,
-            u.user_id as driver_user_id, u.profile_completed, u.profile_picture
+            u.user_id as driver_user_id, u.profile_completed, 
+            u.profile_picture as driver_profile_picture,
+            u.avg_rating as driver_rating
         FROM ride_bookings rb
         JOIN rides r ON r.id = rb.ride_id
         LEFT JOIN users u ON u.phone_number = r.phone_number
@@ -742,6 +1020,13 @@ async def get_my_rides(phone: str, db: Session = Depends(get_db)):
         driver_name = row["driver_name"] or " ".join(
             p for p in [row["first_name"], row["last_name"]] if p
         ).strip() or f"Driver {row['driver_phone'][-4:] if row['driver_phone'] else 'Unknown'}"
+        
+        # Get ride display status (may auto-cancel if expired)
+        ride_obj = db.query(Ride).filter(Ride.id == row["ride_id"]).first()
+        if ride_obj:
+            ride_status, _ = get_ride_display_status(ride_obj, db)
+        else:
+            ride_status = row["ride_status"]
         
         # Get live session info for this booking
         live_session_data = None
@@ -769,6 +1054,10 @@ async def get_my_rides(phone: str, db: Session = Depends(get_db)):
         total_booked_for_ride = get_total_booked_seats(db, row["ride_id"])
         remaining_seats_for_ride = max(0, ride_available - total_booked_for_ride)
         
+        # Check if ride time has passed
+        departure_time = row["departure_time"]
+        is_past = departure_time and departure_time < datetime.now(timezone.utc)
+        
         requested_formatted.append({
             "id": row["id"],
             "ride_id": row["ride_id"],
@@ -776,6 +1065,7 @@ async def get_my_rides(phone: str, db: Session = Depends(get_db)):
             "seats_requested": row["seats_booked"],
             "total_amount": float(row["total_amount"]) if row["total_amount"] else None,
             "status": row["status"],
+            "cancellation_reason": row["cancellation_reason"],
             "created_at": row["created_at"].isoformat() if row["created_at"] else None,
             "origin": row["origin"],
             "destination": row["destination"],
@@ -783,25 +1073,26 @@ async def get_my_rides(phone: str, db: Session = Depends(get_db)):
             "departure_time_display": to_ist(row["departure_time"]).strftime("%d %b %Y, %I:%M %p") if row["departure_time"] else None,
             "price_per_seat": row["price_per_seat"],
             "available_seats": row["available_seats"],
-            "remaining_seats": remaining_seats_for_ride,  # FIXED: Show actual remaining seats
+            "remaining_seats": remaining_seats_for_ride,
             "distance_km": row["distance_km"],
             "duration_text": row["duration_text"],
-            "ride_status": row["ride_status"],
+            "ride_status": ride_status,
+            "is_past": is_past,
             "women_only": row["women_only"],
             "driver_name": driver_name,
             "driver_phone": row["driver_phone"],
             "driver_user_id": row["driver_user_id"],
-            "driver_photo": row["profile_picture"],
+            "driver_photo": row["driver_profile_picture"],
+            "driver_rating": float(row["driver_rating"]) if row["driver_rating"] else 4.5,
             "profile_completed": row["profile_completed"],
             "live_session": live_session_data,
+            "route_coordinates": row["route_coordinates"],
         })
     
     return {
         "posted_rides": posted_formatted,
         "requested_rides": requested_formatted
     }
-
-
 @router.put("/booking/{booking_id}/accept")
 def accept_booking(booking_id: int, db: Session = Depends(get_db)):
     booking = db.query(RideBooking).filter(RideBooking.id == booking_id).first()
