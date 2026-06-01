@@ -7445,3 +7445,70 @@ def check_booking_expiry(booking_id: int, db: Session = Depends(get_db)):
 #         "posted_rides": posted_formatted,
 #         "requested_rides": requested_formatted
 #     }
+@router.get("/ride/{ride_id}/passengers")
+def get_ride_passengers(ride_id: int, db: Session = Depends(get_db)):
+    ride = db.query(Ride).filter(Ride.id == ride_id).first()
+    if not ride:
+        raise HTTPException(status_code=404, detail="Ride not found")
+
+    bookings = db.query(RideBooking).filter(
+        RideBooking.ride_id == ride_id,
+        RideBooking.status.in_(["pending", "accepted"])
+    ).order_by(RideBooking.created_at.asc()).all()
+
+    passengers = []
+    for idx, bk in enumerate(bookings, start=1):
+        p = db.query(User).filter(
+            User.phone_number == bk.passenger_phone
+        ).first()
+
+        passenger_name = None
+        if p:
+            passenger_name = p.full_name or " ".join(
+                part for part in [p.first_name, p.last_name] if part
+            ).strip()
+        
+        if not passenger_name:
+            passenger_name = f"Passenger {bk.passenger_phone[-4:]}"
+
+        passengers.append({
+            "booking_id": bk.id,
+            "passenger_phone": bk.passenger_phone,
+            "passenger_name": passenger_name,
+            "profile_picture": p.profile_picture if p else None,
+            "seats_booked": bk.seats_booked,
+            "status": bk.status,
+            "total_amount": float(bk.total_amount) if bk.total_amount else None,
+            "pickup_lat": bk.pickup_lat,
+            "pickup_lon": bk.pickup_lon,
+            "drop_lat": bk.drop_lat,
+            "drop_lon": bk.drop_lon,
+            "intersection_pickup_lat": bk.intersection_pickup_lat,
+            "intersection_pickup_lon": bk.intersection_pickup_lon,
+            "intersection_drop_lat": bk.intersection_drop_lat,
+            "intersection_drop_lon": bk.intersection_drop_lon,
+            "pickup_walk_distance_m": bk.pickup_walk_distance_m,
+            "drop_walk_distance_m": bk.drop_walk_distance_m,
+            "created_at": bk.created_at.isoformat() if bk.created_at else None,
+        })
+
+    # Calculate total booked and remaining seats
+    total_booked = get_total_booked_seats(db, ride_id)
+    remaining_seats = max(0, ride.available_seats - total_booked)
+
+    return {
+        "ride_id": ride_id,
+        "origin": ride.origin,
+        "destination": ride.destination,
+        "origin_lon": ride.origin_lon,
+        "origin_lat": ride.origin_lat,
+        "destination_lon": ride.destination_lon,
+        "destination_lat": ride.destination_lat,
+        "route_coordinates": ride.route_coordinates,
+        "departure_time": ride.departure_time.isoformat(),
+        "available_seats": ride.available_seats,
+        "total_booked_seats": total_booked,
+        "remaining_seats": remaining_seats,
+        "status": ride.status,
+        "passengers": passengers
+    }
