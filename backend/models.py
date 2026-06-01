@@ -145,6 +145,8 @@ class Ride(Base):
 
     # Relationships
     bookings = relationship("RideBooking", back_populates="ride")
+    # In Ride class
+    cancellation_reason = Column(String(255), nullable=True)
 
 class RideBooking(Base):
     __tablename__ = "ride_bookings"
@@ -180,6 +182,7 @@ class RideBooking(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     ride = relationship("Ride", back_populates="bookings")
+    cancellation_reason = Column(String(255), nullable=True)
 
 class ShareActivity(Base):
     __tablename__ = "share_activity"
