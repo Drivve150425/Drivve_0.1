@@ -6413,9 +6413,9 @@ def search_rides(data: SearchRidesRequest, db: Session = Depends(get_db)):
     else:
         req_time_utc = req_time_utc.astimezone(timezone.utc)
 
-    # Build query - include both active and full rides
+    # Build query - Include BOTH active and full rides
     query = db.query(Ride).filter(
-        Ride.status.in_(["active", "full"]),
+        Ride.status.in_(["active", "full"]),  # ✅ Include "full" rides
         Ride.departure_time.between(
             req_time_utc - timedelta(minutes=TIME_WINDOW_MINUTES),
             req_time_utc + timedelta(minutes=TIME_WINDOW_MINUTES)
@@ -6436,9 +6436,10 @@ def search_rides(data: SearchRidesRequest, db: Session = Depends(get_db)):
         total_booked = get_total_booked_seats(db, ride.id)
         remaining_seats = max(0, ride.available_seats - total_booked)
         
-        # Skip only if no seats available for requested number
-        if remaining_seats < data.seats_required:
-            continue
+        # ✅ Show ride even if full - just mark it as full in the response
+        # Remove the condition that skips rides with no seats
+        # if remaining_seats < data.seats_required:
+        #     continue  # ← REMOVE OR COMMENT THIS OUT
         
         # Calculate distances if coordinates available
         pickup_distance_m = 0
@@ -6525,15 +6526,17 @@ def search_rides(data: SearchRidesRequest, db: Session = Depends(get_db)):
             "price": ride.price_per_seat,
             "matchPercentage": match_percentage,
             "matchLabel": build_match_label(match_percentage),
-            "seatsAvailable": remaining_seats,
-            "totalSeats": ride.available_seats,
-            "bookedSeats": total_booked,
+            "seatsAvailable": remaining_seats,  # Show actual remaining seats (could be 0)
+            "totalSeats": ride.available_seats,  # Total seats originally available
+            "bookedSeats": total_booked,  # Already booked seats
             "seatsRequested": data.seats_required,
+            "isFull": remaining_seats == 0,  # ✅ Add flag to indicate if ride is full
             "distanceKm": ride.distance_km,
             "durationText": ride.duration_text,
             "totalEstimatedPrice": ride.total_estimated_price,
             "timeDifferenceMin": round(time_diff_min),
             "routeCoordinates": ride.route_coordinates or [],
+            "status": ride.status,  # Include original status
         })
     
     rides.sort(
@@ -6545,8 +6548,6 @@ def search_rides(data: SearchRidesRequest, db: Session = Depends(get_db)):
     )
     
     return {"rides": rides}
-
-
 @router.post("/ride-bookings")
 def create_ride_booking(data: CreateRideBookingRequest, db: Session = Depends(get_db)):
     passenger_phone = normalize_phone(data.passenger_phone)
