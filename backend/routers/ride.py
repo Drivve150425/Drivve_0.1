@@ -1429,7 +1429,6 @@ def get_my_rides(phone: str, db: Session = Depends(get_db)):
                 }
         except Exception as e:
             print(f"Error fetching live session: {str(e)}")
-        
         posted_formatted.append({
             "id": ride.id,
             "phone_number": ride.phone_number,
@@ -1452,8 +1451,6 @@ def get_my_rides(phone: str, db: Session = Depends(get_db)):
             "vehicle_id": ride.vehicle_id,
             "vehicle": vehicle_data,
             "route_coordinates": ride.route_coordinates,
-            "suggested_pickup": ride.suggested_pickup,
-            "suggested_drop": ride.suggested_drop,
             "created_at": ride.created_at.isoformat() if ride.created_at else None,
             "bookings": bookings_map.get(ride.id, []),
             "live_session": live_session_data,
@@ -1524,8 +1521,7 @@ def get_my_rides(phone: str, db: Session = Depends(get_db)):
             "driver_rating": float(row["driver_rating"]) if row["driver_rating"] else 4.5,
             "profile_completed": row["profile_completed"],
             "route_coordinates": row["route_coordinates"],
-            "suggested_pickup": row["suggested_pickup"],
-            "suggested_drop": row["suggested_drop"],
+           
             "vehicle": vehicle_data,
         })
     

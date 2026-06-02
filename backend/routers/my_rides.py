@@ -327,8 +327,7 @@ def get_my_rides(phone: str, db: Session = Depends(get_db)):
             "driver_rating": float(row["driver_rating"]) if row["driver_rating"] else 4.5,
             "profile_completed": row["profile_completed"],
             "route_coordinates": row["route_coordinates"],
-            "suggested_pickup": row["suggested_pickup"],
-            "suggested_drop": row["suggested_drop"],
+           
             "vehicle": vehicle_data,
             "live_session": live_session_data,
         })
