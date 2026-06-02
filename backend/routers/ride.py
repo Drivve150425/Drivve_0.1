@@ -1979,3 +1979,36 @@ def expire_pending_requests(db: Session = Depends(get_db)):
         "expired_requests": expired_count,
         "notifications_sent": notification_count
     }
+@router.get("/ride/{ride_id}/pending-modifications")
+def get_pending_modifications_for_ride(ride_id: int, db: Session = Depends(get_db)):
+    print(f"🔍 DEBUG: get_pending_modifications_for_ride called with ride_id={ride_id}")
+    
+    pending_requests = db.query(RideSeatModificationRequest).join(RideBooking).filter(
+        RideSeatModificationRequest.ride_id == ride_id,
+        RideSeatModificationRequest.status == "pending"
+    ).order_by(RideSeatModificationRequest.created_at.desc()).all()
+    
+    print(f"🔍 DEBUG: Found {len(pending_requests)} pending requests")
+    
+    results = []
+    for req in pending_requests:
+        passenger = db.query(User).filter(User.phone_number == req.passenger_phone).first()
+        passenger_name = passenger.full_name if passenger else f"Passenger {req.passenger_phone[-4:]}"
+        
+        results.append({
+            "id": req.id,
+            "booking_id": req.booking_id,
+            "passenger_name": passenger_name,
+            "passenger_phone": req.passenger_phone,
+            "passenger_photo": passenger.profile_picture if passenger else None,
+            "current_seats": req.current_seats,
+            "requested_seats": req.requested_seats,
+            "created_at": req.created_at.isoformat(),
+            "ride_id": req.ride_id
+        })
+    
+    return {
+        "ride_id": ride_id,
+        "pending_requests": results,
+        "count": len(results)
+    }
