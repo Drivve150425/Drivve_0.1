@@ -875,3 +875,24 @@ class RideSessionRider(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     session = relationship("RideSession", back_populates="riders")
+# Add this model to your models.py
+class RideSeatModificationRequest(Base):
+    __tablename__ = "ride_seat_modification_requests"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    booking_id = Column(Integer, ForeignKey("ride_bookings.id"), nullable=False)
+    ride_id = Column(Integer, ForeignKey("rides.id"), nullable=False)
+    passenger_phone = Column(String, nullable=False)
+    driver_phone = Column(String, nullable=False)
+    current_seats = Column(Integer, nullable=False)
+    requested_seats = Column(Integer, nullable=False)
+    status = Column(String, default="pending")  # pending, approved, rejected, cancelled
+    rejection_reason = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc))
+    approved_at = Column(DateTime(timezone=True), nullable=True)
+    rejected_at = Column(DateTime(timezone=True), nullable=True)
+    cancelled_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Relationships
+    booking = relationship("RideBooking", backref="modification_requests")
+    ride = relationship("Ride", backref="modification_requests")
