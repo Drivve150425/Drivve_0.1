@@ -81,7 +81,9 @@ async def send_otp_endpoint(phone_data: dict, db: Session = Depends(get_db)):
         return {
             "success": True,
             "phone_number": phone_number,
-            "expires_at": expires_at.isoformat()
+            "expires_at": expires_at.isoformat(),
+            "otp": otp_code  # DEBUG ONLY
+
         }
 
     except Exception as e:
