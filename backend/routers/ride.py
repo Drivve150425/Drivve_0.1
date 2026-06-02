@@ -5721,7 +5721,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, text, and_, or_
 from database import get_db
-from models import Ride, RideBooking, User, UserNotification, NotificationType, Vehicle
+from models import Ride, RideBooking, RideSeatModificationRequest, User, UserNotification, NotificationType, Vehicle
 from datetime import datetime, timezone, timedelta
 from pydantic import BaseModel, field_validator
 from typing import Optional, Dict, List
@@ -7526,7 +7526,13 @@ class SeatModificationResponse(BaseModel):
 # ============================================
 # SEAT MODIFICATION REQUEST ENDPOINTS (TWO-STEP FLOW)
 # ============================================
+# backend/app/socket_manager.py
 
+def send_to_user(user_phone: str, event: str, data: dict):
+    """Socket function placeholder"""
+    # Just log the message, don't actually send socket
+    print(f"🔔 Socket notification to {user_phone}: {event} -> {data}")
+    return True
 @router.post("/booking/{booking_id}/request-modification")
 def request_seat_modification(
     booking_id: int, 
@@ -7616,7 +7622,6 @@ def request_seat_modification(
     
     # Also send via socket if available
     try:
-        from app.socket_manager import send_to_user
         send_to_user(
             user_phone=ride.phone_number,
             event="modification_request_received",
@@ -7709,7 +7714,6 @@ def approve_modification_request(request_id: int, db: Session = Depends(get_db))
     
     # Send socket notification
     try:
-        from app.socket_manager import send_to_user
         send_to_user(
             user_phone=booking.passenger_phone,
             event="modification_approved",
@@ -7778,7 +7782,6 @@ def reject_modification_request(
     
     # Send socket notification
     try:
-        from app.socket_manager import send_to_user
         send_to_user(
             user_phone=booking.passenger_phone,
             event="modification_rejected",
