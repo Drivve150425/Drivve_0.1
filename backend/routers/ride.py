@@ -97,8 +97,7 @@ class ModifySeatsRequest(BaseModel):
     new_seats: int
 
 import socketio
-
-# Global sio reference
+# At the top of ride.py, add these functions (you already have them)
 _sio = None
 
 def set_sio_instance(sio_instance):
@@ -106,28 +105,22 @@ def set_sio_instance(sio_instance):
     _sio = sio_instance
 
 def emit_to_user(user_phone: str, event: str, data: dict):
-    """Emit socket event to a specific user room"""
     global _sio
     if _sio:
         room_name = f"user_{user_phone}"
         _sio.emit(event, data, room=room_name)
-        print(f"📡 Socket emitted to {room_name}: {event} -> {data}")
+        print(f"📡 Socket emitted to {room_name}: {event}")
         return True
-    else:
-        print(f"⚠️ Socket.IO not initialized, can't emit to {user_phone}")
-        return False
+    return False
 
 def emit_to_ride(ride_id: int, event: str, data: dict):
-    """Emit socket event to a specific ride room"""
     global _sio
     if _sio:
         room_name = f"ride_{ride_id}"
         _sio.emit(event, data, room=room_name)
-        print(f"📡 Socket emitted to {room_name}: {event} -> {data}")
+        print(f"📡 Socket emitted to {room_name}: {event}")
         return True
-    else:
-        print(f"⚠️ Socket.IO not initialized, can't emit to ride {ride_id}")
-        return False
+    return False
 class SeatModificationRequest(BaseModel):
     requested_seats: int
 

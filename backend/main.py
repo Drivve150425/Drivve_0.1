@@ -1,24 +1,22 @@
 # =========================
 # STANDARD LIBRARIES
 # =========================
-from datetime import datetime, timezone, UTC
+from datetime import datetime, timezone
 import os
+from contextlib import asynccontextmanager
 
 # =========================
 # FASTAPI & RELATED
 # =========================
-from fastapi import (
-    Depends,
-    HTTPException,
-)
+from fastapi import FastAPI, Depends, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+import socketio
+import uvicorn
+
 # =========================
 # DATABASE & SQLALCHEMY
 # =========================
 from sqlalchemy.orm import Session
-import uvicorn
-
-from drivve_api.app_config import create_app
-# from drivve_api.createprofile import EMAIL_USER
 from database import engine, get_db, Base
 
 # =========================
@@ -37,10 +35,6 @@ from models import (
 from pydantic import BaseModel, EmailStr
 
 # =========================
-# SECURITY
-# =========================
-
-# =========================
 # ENV CONFIG
 # =========================
 from dotenv import load_dotenv
@@ -48,14 +42,9 @@ from dotenv import load_dotenv
 load_dotenv()
 EMAIL_USER = os.getenv("EMAIL_USER")
 
-app = create_app()
-# Add these imports at the top of main.py
-import socketio
-from fastapi import FastAPI
-from contextlib import asynccontextmanager
-from routers import ride
-
-# Create Socket.IO server
+# =========================
+# CREATE SOCKET.IO SERVER
+# =========================
 sio = socketio.AsyncServer(
     cors_allowed_origins='*',
     async_mode='asgi',
@@ -63,28 +52,35 @@ sio = socketio.AsyncServer(
     engineio_logger=True
 )
 
-# Create Socket.IO ASGI app
-socket_app = socketio.ASGIApp(sio, other_asgi_app=None)
-
-# Create a global variable to store sio instance for routers
-sio_instance = None
-
-def get_sio():
-    return sio_instance
-
+# =========================
+# LIFESPAN MANAGER
+# =========================
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global sio_instance
-    sio_instance = sio
-    print("🚀 Socket.IO initialized")
+    print("🚀 Starting DRIVVE Server...")
+    
+    # Setup database tables
+    try:
+        print("🏗️ Setting up database tables...")
+        Base.metadata.create_all(bind=engine)
+        print("✅ Database tables ready!")
+    except Exception as e:
+        print(f"⚠️ Database setup warning: {e}")
     
     # Setup PostGIS
     setup_postgis_and_ride_columns()
     
+    # Set sio instance in ride router
+    from routers import ride
+    ride.set_sio_instance(sio)
+    
     yield
-    print("🛑 Shutting down...")
+    
+    print("🛑 Shutting down DRIVVE Server...")
 
-# Create FastAPI app with lifespan
+# =========================
+# CREATE FASTAPI APP
+# =========================
 app = FastAPI(
     title="DRIVVE API",
     description="DRIVVE Carpooling API",
@@ -92,7 +88,20 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Socket event handlers
+# =========================
+# CORS MIDDLEWARE
+# =========================
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# =========================
+# SOCKET EVENT HANDLERS
+# =========================
 @sio.on('connect')
 def connect(sid, environ):
     print(f"🔌 Client connected: {sid}")
@@ -118,43 +127,33 @@ def leave_ride_room(sid, ride_id):
     room_name = f"ride_{ride_id}"
     sio.leave_room(sid, room_name)
     print(f"📡 Client {sid} left ride room: {room_name}")
-ride.set_sio_instance(sio)
 
-# Create tables
-try:
-    print("🏗️ Setting up database tables...")
-    Base.metadata.create_all(bind=engine)
-    print("✅ Database tables ready!")
-except Exception as e:
-    print(f"⚠️ Database setup warning: {e}")
-
-
+# =========================
+# BASIC ENDPOINTS
+# =========================
 @app.get("/")
 async def root():
     return {
         "message": "DRIVVE API v2.0.1 - Working! 🚀",
         "status": "active",
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "network": "accessible",
-        "endpoints": [
-            "/health - Server health"
-            
-        ]
+        "network": "accessible"
     }
-
 
 @app.get("/health")
 async def health_check():
     try:
+        # Check database connection
+        db = next(get_db())
+        db.execute("SELECT 1")
+        db.close()
+        
         return {
             "status": "healthy ✅",
             "version": "2.0.1",
-            "timestamp":datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "server": "FastAPI Running",
-            "network": "accessible on 0.0.0.0:8000",
-            "database": "connected",
-            "email_service": "configured" if EMAIL_USER != "your-email@gmail.com" else "not configured",
-            "message": "All systems operational"
+            "database": "connected"
         }
     except Exception as e:
         return {
@@ -163,12 +162,9 @@ async def health_check():
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
-
 @app.post("/api/v1/rides/complete")
 def complete_ride(data: dict, db: Session = Depends(get_db)):
     ride_booking_id = data.get("ride_booking_id")
-
-    print("🚦 COMPLETE RIDE CALLED WITH:", data)
 
     if not ride_booking_id:
         raise HTTPException(400, "ride_booking_id required")
@@ -177,13 +173,8 @@ def complete_ride(data: dict, db: Session = Depends(get_db)):
         RideBooking.id == ride_booking_id
     ).first()
 
-    print("📦 BOOKING FOUND:", booking)
-
     if not booking:
         raise HTTPException(404, "Ride booking not found")
-
-    print("📞 BOOKING PHONE:", booking.phone_number)
-    print("📌 BOOKING STATUS:", booking.status)
 
     if not booking.phone_number:
         raise HTTPException(
@@ -192,19 +183,12 @@ def complete_ride(data: dict, db: Session = Depends(get_db)):
         )
 
     if booking.status == "completed":
-        return {
-            "alreadyCompleted": True,
-            "message": "Ride already completed"
-        }
+        return {"alreadyCompleted": True, "message": "Ride already completed"}
 
-    # STEP 1: MARK COMPLETED
     booking.status = "completed"
     db.commit()
     db.refresh(booking)
 
-    print("✅ RIDE MARKED COMPLETED")
-
-    # STEP 2: CREDIT WALLET
     coins = 25
     rupees = coins / 25
 
@@ -218,45 +202,14 @@ def complete_ride(data: dict, db: Session = Depends(get_db)):
 
     db.add(credit)
     db.commit()
-    db.refresh(credit)
 
-    print("💰 DCOIN INSERTED:", credit.id)
-
-    return {
-        "success": True,
-        "coins": coins,
-        "rupees": rupees
-    }
-
-
-class SupportEmailRequest(BaseModel):
-    email: EmailStr
-    message: str
-#admin
-
-# @app.post("/api/v1/support/email")
-# async def send_support_email(data: SupportEmailRequest):
-#     try:
-#         await send_email(
-#             to_email="support@drivve.com",
-#             otp=f"Support Request\n\nFrom: {data.email}\n\n{data.message}"
-#         )
-#         return {
-#             "success": True,
-#             "message": "Support request sent successfully"
-#         }
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=str(e))
-
+    return {"success": True, "coins": coins, "rupees": rupees}
 
 @app.get("/api/v1/users/{user_id}/rating")
 def get_user_rating(user_id: int, db: Session = Depends(get_db)):
-
     user = db.get(User, user_id)
-
     if not user:
         raise HTTPException(404, "User not found")
-
     return {
         "avg_rating": user.avg_rating,
         "total_ratings": user.total_ratings
@@ -267,18 +220,9 @@ class LiveLocationPayload(BaseModel):
     lat: float
     lng: float
 
-
 @app.post("/api/v1/live-location/update")
-def update_live_location(
-    payload: LiveLocationPayload,
-    db: Session = Depends(get_db)
-):
-    location = (
-        db.query(LiveLocation)
-        .filter(LiveLocation.contact_id == payload.contact_id)
-        .first()
-    )
-
+def update_live_location(payload: LiveLocationPayload, db: Session = Depends(get_db)):
+    location = db.query(LiveLocation).filter(LiveLocation.contact_id == payload.contact_id).first()
     if location:
         location.lat = payload.lat
         location.lng = payload.lng
@@ -291,16 +235,12 @@ def update_live_location(
             updated_at=datetime.utcnow(),
         )
         db.add(location)
-
     db.commit()
+    return {"success": True, "contact_id": payload.contact_id, "lat": payload.lat, "lng": payload.lng}
 
-    return {
-        "success": True,
-        "contact_id": payload.contact_id,
-        "lat": payload.lat,
-        "lng": payload.lng,
-    }
-
+# =========================
+# IMPORT AND INCLUDE ROUTERS
+# =========================
 from drivve_api.otp import router as otp_router
 from drivve_api.accountmanagement import router as account_router
 from drivve_api.blocked_users import router as blocked_users_router
@@ -326,7 +266,9 @@ from drivve_api.myprofile import router as profile_router
 from drivve_api.chat import router as chat_router
 from drivve_api.chat_socket import socket_app
 from routers import ride_session
-
+from routers.routes import router as riderrouter
+from routers.ride import router as ridesrouter
+from routers.my_rides import router as myrides_router
 
 app.include_router(otp_router)
 app.include_router(account_router)
@@ -351,99 +293,57 @@ app.include_router(about_router)
 app.include_router(createprofile_router)
 app.include_router(profile_router)
 app.include_router(chat_router)
-
-# Mount Socket.IO ASGI app at /socket.io/
-app.mount("/socket.io", socket_app)
-from fastapi.staticfiles import StaticFiles
-from routers.routes import router as riderrouter
-from routers.routes import router as routes_router
-
-from routers.ride import router as ridesrouter
-from routers.my_rides import router as myrides_router
 app.include_router(riderrouter)
-app.include_router(routes_router)
 app.include_router(ridesrouter)
 app.include_router(myrides_router)
 app.include_router(ride_session.router)
 
+# Mount Socket.IO ASGI app
+app.mount("/socket.io", socket_app)
 
-
+# =========================
+# POSTGIS SETUP FUNCTION
+# =========================
 from sqlalchemy import text
-from database import engine
 
 def setup_postgis_and_ride_columns():
     try:
         with engine.begin() as conn:
             print("🚀 Running PostGIS setup...")
-
             conn.execute(text("CREATE EXTENSION IF NOT EXISTS postgis;"))
             print("✅ PostGIS extension checked")
 
-            conn.execute(text("""
-                ALTER TABLE rides
-                ADD COLUMN IF NOT EXISTS route_coordinates JSONB
-            """))
+            conn.execute(text("ALTER TABLE rides ADD COLUMN IF NOT EXISTS route_coordinates JSONB"))
             print("✅ route_coordinates checked")
 
-            conn.execute(text("""
-                ALTER TABLE rides
-                ADD COLUMN IF NOT EXISTS origin_lon DOUBLE PRECISION
-            """))
+            conn.execute(text("ALTER TABLE rides ADD COLUMN IF NOT EXISTS origin_lon DOUBLE PRECISION"))
             print("✅ origin_lon checked")
 
-            conn.execute(text("""
-                ALTER TABLE rides
-                ADD COLUMN IF NOT EXISTS origin_lat DOUBLE PRECISION
-            """))
+            conn.execute(text("ALTER TABLE rides ADD COLUMN IF NOT EXISTS origin_lat DOUBLE PRECISION"))
             print("✅ origin_lat checked")
 
-            conn.execute(text("""
-                ALTER TABLE rides
-                ADD COLUMN IF NOT EXISTS destination_lon DOUBLE PRECISION
-            """))
+            conn.execute(text("ALTER TABLE rides ADD COLUMN IF NOT EXISTS destination_lon DOUBLE PRECISION"))
             print("✅ destination_lon checked")
 
-            conn.execute(text("""
-                ALTER TABLE rides
-                ADD COLUMN IF NOT EXISTS destination_lat DOUBLE PRECISION
-            """))
+            conn.execute(text("ALTER TABLE rides ADD COLUMN IF NOT EXISTS destination_lat DOUBLE PRECISION"))
             print("✅ destination_lat checked")
 
-            conn.execute(text("""
-                ALTER TABLE rides
-                ADD COLUMN IF NOT EXISTS route_line geometry(LineString, 4326)
-            """))
+            conn.execute(text("ALTER TABLE rides ADD COLUMN IF NOT EXISTS route_line geometry(LineString, 4326)"))
             print("✅ route_line checked")
 
-            conn.execute(text("""
-                CREATE INDEX IF NOT EXISTS idx_rides_route_line_gist
-                ON rides
-                USING GIST (route_line)
-            """))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_rides_route_line_gist ON rides USING GIST (route_line)"))
             print("✅ route_line index checked")
 
     except Exception as e:
         print("❌ PostGIS setup failed:", str(e))
 
-
-# @asynccontextmanager
-# async def lifespan(app: FastAPI):
-#     print("🚀 App startup: initializing resources...")
-#     setup_postgis_and_ride_columns()
-#     yield
-#     print("🛑 App shutdown: cleanup complete")
-
-# app = FastAPI(
-#     title="DRIVVE API Working",
-#     description="DRIVVE Carpooling API",
-#     version="2.0.1"
-# )
-
+# =========================
+# RUN THE APP
+# =========================
 if __name__ == "__main__":
-    print("🚀 Starting DRIVVE Working Server...")
+    print("🚀 Starting DRIVVE Server...")
     print("🌐 Network accessible on:")
     print("   - http://localhost:8000")
-
     print("=" * 60)
    
     uvicorn.run(
