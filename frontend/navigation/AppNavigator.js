@@ -58,6 +58,8 @@ import ViewProfileScreen from '../screens/ViewProfileScreen';
 import StartRideConfirmScreen from '../screens/StartRideConfirmScreen';
 import OngoingRideDriverScreen from '../screens/OngoingRideDriverScreen';
 import OngoingRideRiderScreen from '../screens/OngoingRideRiderScreen';
+import ViewRoutePostedScreen from '../screens/ViewRoutePostedScreen';
+import ViewRouteRequestScreen from '../screens/ViewRouteRequestScreen';
 // Suppress warnings
 LogBox.ignoreLogs([
   'Non-serializable values were found in the navigation state',
@@ -502,6 +504,16 @@ export default function AppNavigator() {
         <Stack.Screen
           name="OngoingRideRiderScreen"
           component={OngoingRideRiderScreen}
+          options={{ headerShown: false }}
+        />
+          <Stack.Screen
+          name="ViewRoutePostedScreen"
+          component={ViewRoutePostedScreen}
+          options={{ headerShown: false }}
+        />  
+          <Stack.Screen
+          name="ViewRouteRequestScreen"
+          component={ViewRouteRequestScreen}
           options={{ headerShown: false }}
         />
       </Stack.Navigator>

@@ -301,8 +301,10 @@ export default function CreateProfileScreen({ navigation, route }) {
 
     setIsEmailLoading(true);
     try {
-      const result = await DatabaseService.sendEmailOTP(email);
-      
+const result = await DatabaseService.sendEmailOTP(
+  email,
+  firstName
+);      
       if (result.success) {
         setShowEmailOTPModal(true);
         setShowEmailSentAlert(true);
@@ -702,7 +704,7 @@ export default function CreateProfileScreen({ navigation, route }) {
               </View>
 
               {/* State */}
-              <View style={styles.fieldContainer}>
+              {/* <View style={styles.fieldContainer}>
                 <Text style={styles.label}>State </Text>
                 <TouchableOpacity
                   style={[styles.modernInputContainer, errors.state && styles.inputErrorContainer]}
@@ -717,7 +719,7 @@ export default function CreateProfileScreen({ navigation, route }) {
                 {errors.state && <Text style={styles.errorText}>{errors.state}</Text>}
               </View>
 
-              {/* City */}
+              {/*
               <View style={styles.fieldContainer}>
                 <Text style={styles.label}>City </Text>
                 <TouchableOpacity
@@ -737,7 +739,7 @@ export default function CreateProfileScreen({ navigation, route }) {
                   <MaterialIcons name="expand-more" size={20} color={Colors.gray} />
                 </TouchableOpacity>
                 {errors.city && <Text style={styles.errorText}>{errors.city}</Text>}
-              </View>
+              </View> */}
 
               {/* Continue Button */}
               <TouchableOpacity
@@ -877,7 +879,7 @@ export default function CreateProfileScreen({ navigation, route }) {
                 login({
                   user: {
                     phone_number: fullPhoneNumber || (countryCode + phoneNumber),
-                    id: successData?.userId,
+                    id: successData?.user?.id,
                     ...successData?.profileData,
                   },
 

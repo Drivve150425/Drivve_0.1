@@ -1,6 +1,11 @@
 import React, { useRef, useEffect } from 'react';
-import { View, TextInput, StyleSheet, Dimensions } from 'react-native';
-import { Colors, Typography } from '../constants/Colors';
+import { 
+  View, 
+  TextInput, 
+  StyleSheet,
+  Platform
+} from 'react-native';
+import { Colors } from '../constants/Colors';
 
 export default function OTPInputs({ 
   length = 6, 
@@ -9,112 +14,102 @@ export default function OTPInputs({
   onFocus, 
   onBlur, 
   error,
-  focused 
+  isLoading = false
 }) {
-  const inputRefs = useRef([]);
-  const digits = value.split('');
-  const { width } = Dimensions.get('window');
+  const inputRef = useRef(null);
 
-  const getBorderColor = (index) => {
-    if (error) return Colors.secondary; // Orange for error
-    if (digits[index]) return '#0FAB0F'; // Green when filled
-    if (focused && index === digits.length) return Colors.primary; // Blue when focused
-    return Colors.gray; // Default gray
+  useEffect(() => {
+    // Ensure cursor is positioned correctly when focused
+    if (inputRef.current && !isLoading) {
+      // Set cursor position to the end of the current text
+      const position = value ? value.length : 0;
+      inputRef.current.setSelection(position, position);
+    }
+  }, [value, isLoading]);
+
+  const handleChangeText = (text) => {
+    // Remove non-numeric characters and limit to length
+    const cleanText = text.replace(/[^0-9]/g, '').slice(0, length);
+    onChangeText(cleanText);
   };
 
-  const handleChangeText = (text, index) => {
-    if (text.length > 1) {
-      // Handle paste scenario
-      const pastedDigits = text.slice(0, length).split('');
-      const newValue = pastedDigits.join('');
-      onChangeText(newValue);
-      
-      // Focus the last filled input or next empty one
-      const nextIndex = Math.min(pastedDigits.length, length - 1);
-      inputRefs.current[nextIndex]?.focus();
-      return;
+  const handleFocus = () => {
+    // Set cursor to the end when focused
+    if (inputRef.current) {
+      const position = value ? value.length : 0;
+      inputRef.current.setSelection(position, position);
     }
-
-    // Handle single digit input
-    const newDigits = [...digits];
-    newDigits[index] = text;
-    
-    // Remove empty elements and join
-    const newValue = newDigits.join('').slice(0, length);
-    onChangeText(newValue);
-
-    // Auto-focus next input
-    if (text && index < length - 1) {
-      inputRefs.current[index + 1]?.focus();
-    }
-  };
-
-  const handleKeyPress = ({ nativeEvent }, index) => {
-    if (nativeEvent.key === 'Backspace' && !digits[index] && index > 0) {
-      // Focus previous input on backspace
-      inputRefs.current[index - 1]?.focus();
-    }
-  };
-
-  const handleFocus = (index) => {
     if (onFocus) onFocus();
   };
 
-  const handleBlur = () => {
-    if (onBlur) onBlur();
+  const getBorderColor = () => {
+    if (error) return '#EF4444'; // Red for error
+    if (value && value.length === length) return '#0FAB0F'; // Green when complete
+    if (inputRef.current?.isFocused()) return Colors.primary; // Blue when focused
+    return '#E5E7EB'; // Default gray
+  };
+
+  const getBackgroundColor = () => {
+    if (error) return '#FEE2E2';
+    if (value && value.length === length) return '#F0FDF4';
+    if (inputRef.current?.isFocused()) return `${Colors.primary}08`;
+    return '#F9FAFB';
   };
 
   return (
     <View style={styles.container}>
-      {Array.from({ length }, (_, index) => (
-        <TextInput
-          key={index}
-          ref={(ref) => (inputRefs.current[index] = ref)}
-          style={[
-            styles.input,
-            { borderColor: getBorderColor(index) },
-          ]}
-          value={digits[index] || ''}
-          onChangeText={(text) => handleChangeText(text, index)}
-          onKeyPress={(e) => handleKeyPress(e, index)}
-          onFocus={() => handleFocus(index)}
-          onBlur={handleBlur}
-          maxLength={1}
-          keyboardType="numeric"
-          textAlign="center"
-          selectTextOnFocus
-          blurOnSubmit={false}
-        />
-      ))}
+      <TextInput
+        ref={inputRef}
+        style={[
+          styles.input,
+          {
+            borderColor: getBorderColor(),
+            backgroundColor: getBackgroundColor(),
+          }
+        ]}
+        value={value}
+        onChangeText={handleChangeText}
+        onFocus={handleFocus}
+        onBlur={onBlur}
+        placeholder={`Enter ${length}-digit code`}
+        placeholderTextColor="#9CA3AF"
+        keyboardType="number-pad"
+        maxLength={length}
+        editable={!isLoading}
+        autoFocus={true}
+        returnKeyType="done"
+        textAlign="center"
+        textAlignVertical="center"
+        fontSize={18}
+        fontWeight="600"
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: 8, // Better spacing between inputs
-    paddingHorizontal: 10,
+    width: '80%',
+    marginBottom: 20,
   },
   input: {
-    width: 50,
-    height: 60,
-    borderWidth: 2,
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
     borderRadius: 12,
-    backgroundColor: Colors.white,
-    ...Typography.h3,
-    color: Colors.dark,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 18,
     fontWeight: '600',
+    color: Colors.primary,
     textAlign: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    textAlignVertical: 'center',
+    ...Platform.select({
+      ios: {
+        fontFamily: 'System',
+      },
+      android: {
+        fontFamily: 'Roboto',
+      },
+    }),
   },
 });

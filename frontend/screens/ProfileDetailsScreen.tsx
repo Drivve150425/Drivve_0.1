@@ -38,7 +38,7 @@ type RootStackParamList = {
   MyVehicleScreen: { phoneNumber: string };
   SavedAddressScreen: { phoneNumber: string };
   DocumentVerificationScreen: { phoneNumber: string };
-  // AdminDocumentApprovalScreen: { phoneNumber: string };
+  AdminDocumentApprovalScreen: { phoneNumber: string };
   MatchingPreferenceScreen: { phoneNumber: string };
   EmergencyContactsscreen: { phoneNumber: string };
   PaymentScreen: undefined;
@@ -60,7 +60,7 @@ type ScreensWithPhone =
   | "MyVehicleScreen"
   | "SavedAddressScreen"
   | "DocumentVerificationScreen"
-  // | "AdminDocumentApprovalScreen"
+  | "AdminDocumentApprovalScreen"
   | "MatchingPreferenceScreen"
   | "EmergencyContactsscreen"
   // | "DCoinScreen"
@@ -207,7 +207,7 @@ export default function ProfileScreen({ navigation, route }: Props) {
     { title: "My Vehicle", icon: "car-outline", screen: "MyVehicleScreen" },
     { title: "Saved Address", icon: "location-outline", screen: "SavedAddressScreen" },
     { title: "My Documents", icon: "document-text-outline", screen: "DocumentVerificationScreen" },
-    // { title:"Admin Documents", icon:"folder-open-outline", screen:"AdminDocumentApprovalScreen"},
+    { title:"Admin Documents", icon:"folder-open-outline", screen:"AdminDocumentApprovalScreen"},
 
     { title: "Matching Preferences", icon: "settings-outline", screen: "MatchingPreferenceScreen" },
     { title: "Emergency Contact", icon: "alert-circle-outline", screen: "EmergencyContactsscreen" },
@@ -264,7 +264,7 @@ export default function ProfileScreen({ navigation, route }: Props) {
       "MyVehicleScreen",
       "SavedAddressScreen",
       "DocumentVerificationScreen",
-      // "AdminDocumentApprovalScreen",
+       "AdminDocumentApprovalScreen",
       "MatchingPreferenceScreen",
       "EmergencyContactsscreen",
       // "DCoinScreen",

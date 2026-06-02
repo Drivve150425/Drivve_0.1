@@ -5,7 +5,7 @@ import React, {
   useCallback
 } from "react";
 import { useFocusEffect } from "@react-navigation/native";
-import { Colors,Typography } from '../constants/Colors';
+import { Colors, Typography } from '../constants/Colors';
 import LottieView from "lottie-react-native";
 
 import {
@@ -36,6 +36,8 @@ export default function MyVehicleScreen({ navigation, route }) {
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
+  const [vehicleRideStatus, setVehicleRideStatus] = useState({});
+  const [checkingRides, setCheckingRides] = useState(false);
   
   // Custom Alert states
   const [alertVisible, setAlertVisible] = useState(false);
@@ -117,13 +119,116 @@ export default function MyVehicleScreen({ navigation, route }) {
     }, [phoneNumber])
   );
 
+  // Function to fetch all rides for a vehicle using existing my-rides endpoint
+  const fetchVehicleRides = async (vehicleId) => {
+    try {
+      console.log(`🔍 Fetching rides for vehicle: ${vehicleId}`);
+      
+      // Use the existing my-rides endpoint
+      const response = await fetch(`${API_BASE_URL}/my-rides/${phoneNumber}`);
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log(`📡 Got rides data for driver`);
+        
+        // Get all posted rides (rides where user is driver)
+        const allPostedRides = data.posted_rides || [];
+        
+        // Filter rides for this specific vehicle
+        const vehicleRides = allPostedRides.filter(ride => ride.vehicle_id === vehicleId);
+        
+        console.log(`🎯 Vehicle ${vehicleId} has ${vehicleRides.length} posted rides`);
+        console.log(`📋 Ride statuses:`, vehicleRides.map(r => ({id: r.id, status: r.status})));
+        
+        // Convert to the format expected by your component
+        return vehicleRides.map(ride => ({
+          id: ride.id,
+          status: ride.status,
+          vehicle_id: ride.vehicle_id,
+          is_deleted: false,
+          origin: ride.origin,
+          destination: ride.destination,
+          departure_time: ride.departure_time
+        }));
+      }
+      return [];
+    } catch (error) {
+      console.error(`Error fetching rides for vehicle ${vehicleId}:`, error);
+      return [];
+    }
+  };
+
+  // Check if a ride has ongoing status
+  const isRideOngoing = (rideStatus) => {
+    // Statuses that indicate an ongoing ride
+    const ongoingStatuses = [
+     
+      'ongoing',
+    ];
+    
+    return ongoingStatuses.includes(rideStatus?.toLowerCase());
+  };
+
+  // Check all vehicles for ongoing rides
+  const checkVehiclesForOngoingRides = async (vehiclesList) => {
+    if (!vehiclesList || vehiclesList.length === 0) return;
+    
+    setCheckingRides(true);
+    const statusMap = {};
+    
+    for (const vehicle of vehiclesList) {
+      try {
+        const rides = await fetchVehicleRides(vehicle.id);
+        
+        // Check if any ride is ongoing
+        const hasOngoingRide = rides.some(ride => 
+          !ride.is_deleted && isRideOngoing(ride.status)
+        );
+        
+        // Get the ongoing ride details if exists
+        const ongoingRide = rides.find(ride => 
+          !ride.is_deleted && isRideOngoing(ride.status)
+        );
+        
+        if (hasOngoingRide) {
+          console.log(`🔒 Vehicle ${vehicle.id} (${vehicle.model}) has ONGOING ride!`);
+        }
+        
+        statusMap[vehicle.id] = {
+          has_ongoing_ride: hasOngoingRide,
+          ride_details: ongoingRide ? {
+            ride_id: ongoingRide.id,
+            status: ongoingRide.status,
+            departure_time: ongoingRide.departure_time,
+            origin: ongoingRide.origin,
+            destination: ongoingRide.destination
+          } : null
+        };
+      } catch (error) {
+        console.error(`Failed to check rides for vehicle ${vehicle.id}:`, error);
+        statusMap[vehicle.id] = { has_ongoing_ride: false, ride_details: null };
+      }
+    }
+    
+    console.log('📊 Final status map:', statusMap);
+    setVehicleRideStatus(statusMap);
+    setCheckingRides(false);
+  };
+
   const loadVehicles = async () => {
     try {
       setLoading(true);
       if (!phoneNumber) return;
 
       const data = await DatabaseService.getVehicles(phoneNumber);
-      setVehicles(Array.isArray(data) ? data : []);
+      const vehiclesList = Array.isArray(data) ? data : [];
+      setVehicles(vehiclesList);
+      
+      // Check for ongoing rides
+      if (vehiclesList.length > 0) {
+        await checkVehiclesForOngoingRides(vehiclesList);
+      }
+      
     } catch (e) {
       console.error("Load vehicles error", e);
       showCustomAlert("Error", "Failed to load vehicles", "error");
@@ -131,8 +236,32 @@ export default function MyVehicleScreen({ navigation, route }) {
       setLoading(false);
     }
   };
+  
+  // Check if vehicle can be edited/deleted
+  const isVehicleLocked = (vehicleId) => {
+    return vehicleRideStatus[vehicleId]?.has_ongoing_ride === true;
+  };
+  
+  // Get locked vehicle message
+  const getLockedMessage = (vehicle) => {
+    const rideDetails = vehicleRideStatus[vehicle.id]?.ride_details;
+    if (rideDetails) {
+      return `This vehicle is currently being used for an ongoing ride (${rideDetails.status}) from ${rideDetails.origin} to ${rideDetails.destination}. You cannot edit or delete it until the ride is completed.`;
+    }
+    return "This vehicle is currently associated with an ongoing ride and cannot be edited or deleted.";
+  };
 
   const confirmDelete = (vehicle) => {
+    // Check if vehicle has ongoing ride
+    if (isVehicleLocked(vehicle.id)) {
+      showCustomAlert(
+        "Cannot Delete Vehicle",
+        getLockedMessage(vehicle),
+        "warning"
+      );
+      return;
+    }
+    
     showConfirmationAlert(
       "Delete Vehicle",
       `Delete ${vehicle.make} ${vehicle.model}?`,
@@ -153,80 +282,126 @@ export default function MyVehicleScreen({ navigation, route }) {
       }
     );
   };
+  
+  const handleEdit = (vehicle) => {
+    // Check if vehicle has ongoing ride
+    if (isVehicleLocked(vehicle.id)) {
+      showCustomAlert(
+        "Cannot Edit Vehicle",
+        getLockedMessage(vehicle),
+        "warning"
+      );
+      return;
+    }
+    
+    navigation.navigate("AddNewVehicleScreen", {
+      phoneNumber,
+      vehicle: vehicle,
+    });
+  };
 
   // ✅ CARD UI
-  const renderVehicleCard = (v) => (
-    <View key={v.id} style={styles.card}>
-
-      {/* IMAGE */}
-      <Image
-        source={{
-          uri: v.photo_url || "https://via.placeholder.com/400x200?text=No+Image"
-        }}
-        style={styles.cardImage}
-      />
-
-      {/* DELETE */}
-      <TouchableOpacity
-        style={styles.deleteIcon}
-        onPress={() => confirmDelete(v)}
-        disabled={deleting}
-      >
-        {deleting && deletingId === v.id ? (
-          <ActivityIndicator size="small" color={Colors.primary} />
-        ) : (
-          <Ionicons name="trash-outline" size={22} color={Colors.primary} />
-        )}
-      </TouchableOpacity>
-
-      {/* CONTENT */}
-      <View style={styles.cardContent}>
-
-        {/* TITLE + EDIT */}
-        <View style={styles.rowBetween}>
-          <Text style={styles.title}>
-            {/* {v.make}  */}
-            {v.model}
-          </Text>
-
-          <TouchableOpacity
-            onPress={() =>
-              navigation.navigate("AddNewVehicleScreen", {
-                phoneNumber,
-                vehicle: v,
-              })
-            }
-            disabled={deleting}
-          >
-            <MaterialIcons name="edit" size={22} color={Colors.primary} />
-          </TouchableOpacity>
+  const renderVehicleCard = (v) => {
+    const isLocked = isVehicleLocked(v.id);
+    
+    return (
+      <View key={v.id} style={[styles.card, isLocked && styles.cardLocked]}>
+        
+        {/* IMAGE with overlay if locked */}
+        <View style={styles.imageContainer}>
+          <Image
+            source={{
+              uri: v.photo_url || "https://via.placeholder.com/400x200?text=No+Image"
+            }}
+            style={styles.cardImage}
+          />
+          {isLocked && (
+            <View style={styles.lockedOverlay}>
+              <MaterialIcons name="lock" size={30} color="#fff" />
+              <Text style={styles.lockedOverlayText}>Ride Ongoing</Text>
+            </View>
+          )}
         </View>
 
-        {/* REG NUMBER */}
-        <Text style={styles.regNo}>
-          {v.registration_number || "No Reg"}
-        </Text>
+        {/* DELETE BUTTON - Disabled when locked */}
+        <TouchableOpacity
+          style={[styles.deleteIcon, isLocked && styles.deleteIconDisabled]}
+          onPress={() => confirmDelete(v)}
+          disabled={deleting || isLocked}
+        >
+          {deleting && deletingId === v.id ? (
+            <ActivityIndicator size="small" color={Colors.primary} />
+          ) : (
+            <Ionicons 
+              name="trash-outline" 
+              size={22} 
+              color={isLocked ? "#9CA3AF" : Colors.primary} 
+            />
+          )}
+        </TouchableOpacity>
 
-        {/* CHIPS */}
-        <View style={styles.chipRow}>
-          {v.color && (
-            <View style={styles.chip}>
-              <Text style={styles.chipText}>{v.color}</Text>
+        {/* CONTENT */}
+        <View style={styles.cardContent}>
+
+          {/* TITLE + EDIT */}
+          <View style={styles.rowBetween}>
+            <View style={styles.titleContainer}>
+              <Text style={[styles.title, isLocked && styles.titleLocked]}>
+                {v.model}
+              </Text>
+              {isLocked && (
+                <MaterialIcons name="lock" size={16} color="#F59E0B" />
+              )}
+            </View>
+
+            <TouchableOpacity
+              onPress={() => handleEdit(v)}
+              disabled={deleting || isLocked}
+            >
+              <MaterialIcons 
+                name="edit" 
+                size={22} 
+                color={isLocked ? "#9CA3AF" : Colors.primary} 
+              />
+            </TouchableOpacity>
+          </View>
+
+          {/* REG NUMBER */}
+          <Text style={[styles.regNo, isLocked && styles.textLocked]}>
+            {v.registration_number || "No Reg"}
+          </Text>
+
+          {/* CHIPS */}
+          <View style={styles.chipRow}>
+            {v.color && (
+              <View style={[styles.chip, isLocked && styles.chipLocked]}>
+                <Text style={[styles.chipText, isLocked && styles.textLocked]}>{v.color}</Text>
+              </View>
+            )}
+
+            <View style={[styles.chip, isLocked && styles.chipLocked]}>
+              <Text style={[styles.chipText, isLocked && styles.textLocked]}>{v.max_seats} Seats</Text>
+            </View>
+
+            <View style={[styles.chip, isLocked && styles.chipLocked]}>
+              <Text style={[styles.chipText, isLocked && styles.textLocked]}>{v.fuel_type}</Text>
+            </View>
+          </View>
+          
+          {/* Show ride status warning if locked */}
+          {isLocked && vehicleRideStatus[v.id]?.ride_details && (
+            <View style={styles.warningContainer}>
+              <MaterialIcons name="info-outline" size={16} color="#F59E0B" />
+              <Text style={styles.warningText}>
+                Ongoing ride: {vehicleRideStatus[v.id].ride_details.status}
+              </Text>
             </View>
           )}
 
-          <View style={styles.chip}>
-            <Text style={styles.chipText}>{v.max_seats} Seats</Text>
-          </View>
-
-          <View style={styles.chip}>
-            <Text style={styles.chipText}>{v.fuel_type}</Text>
-          </View>
         </View>
-
       </View>
-    </View>
-  );
+    );
+  };
 
   // Show loader while fetching data
   if (loading && vehicles.length === 0) {
@@ -277,6 +452,13 @@ export default function MyVehicleScreen({ navigation, route }) {
             transform: [{ translateY: slideAnim }],
           }}
         >
+          {checkingRides && vehicles.length > 0 && (
+            <View style={styles.checkingContainer}>
+              <ActivityIndicator size="small" color={Colors.primary} />
+              <Text style={styles.checkingText}>Checking ride status...</Text>
+            </View>
+          )}
+          
           {vehicles.length === 0 ? (
             <View style={styles.center}>
               <MaterialIcons name="directions-car" size={60} color="#D1D5DB" />
@@ -319,6 +501,7 @@ export default function MyVehicleScreen({ navigation, route }) {
   );
 }
 
+// ... styles remain the same as before ...
 const styles = StyleSheet.create({
 
   container: {
@@ -361,7 +544,6 @@ const styles = StyleSheet.create({
     paddingBottom: 80,
   },
 
-  // LOADER STYLES
   loaderContainer: {
     flex: 1,
     justifyContent: "center",
@@ -369,31 +551,65 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
   },
   
-  loaderText: {
-    marginTop: 20,
-    fontSize: 16,
+  checkingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 10,
+    marginBottom: 10,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 10,
+  },
+  
+  checkingText: {
+    marginLeft: 10,
+    fontSize: 14,
     color: Colors.primary,
-    fontWeight: "500",
   },
 
-  // CARD
   card: {
     backgroundColor: "#fff",
     borderRadius: 18,
     marginBottom: 18,
     overflow: "hidden",
-
     elevation: 4,
     shadowColor: "#000",
     shadowOpacity: 0.08,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
   },
+  
+  cardLocked: {
+    opacity: 0.85,
+    backgroundColor: "#F9FAFB",
+  },
+  
+  imageContainer: {
+    position: 'relative',
+  },
 
   cardImage: {
     width: "100%",
     height: 150,
     backgroundColor: "#F3F4F6",
+  },
+  
+  lockedOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  
+  lockedOverlayText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+    marginTop: 8,
   },
 
   deleteIcon: {
@@ -405,6 +621,11 @@ const styles = StyleSheet.create({
     padding: 6,
     elevation: 3,
   },
+  
+  deleteIconDisabled: {
+    backgroundColor: "#F3F4F6",
+    elevation: 0,
+  },
 
   cardContent: {
     padding: 14,
@@ -415,11 +636,21 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
+  
+  titleContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
 
   title: {
     fontSize: 20,
     fontWeight: "700",
     color: Colors.primary,
+  },
+  
+  titleLocked: {
+    color: "#9CA3AF",
   },
 
   regNo: {
@@ -440,19 +671,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 14,
-
-    // ✅ BORDER
     borderWidth: 1,
     borderColor: "#E5E7EB",
-
-    // ✅ SHADOW (iOS)
     shadowColor: "#000",
     shadowOpacity: 0.06,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
-
-    // ✅ SHADOW (Android)
     elevation: 2,
+  },
+  
+  chipLocked: {
+    backgroundColor: "#F3F4F6",
+    borderColor: "#E5E7EB",
   },
   
   chipText: {
@@ -460,14 +690,27 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: Colors.primary,
   },
-
-  loading: {
-    textAlign: "center",
-    marginTop: 40,
-    color: "#6B7280",
+  
+  textLocked: {
+    color: "#9CA3AF",
+  },
+  
+  warningContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 12,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+    gap: 6,
+  },
+  
+  warningText: {
+    fontSize: 12,
+    color: '#F59E0B',
+    flex: 1,
   },
 
-  // ✅ FAB BUTTON
   fab: {
     position: "absolute",
     bottom: 30,
@@ -476,10 +719,8 @@ const styles = StyleSheet.create({
     height: 60,
     borderRadius: 30,
     backgroundColor: Colors.primary,
-
     justifyContent: "center",
     alignItems: "center",
-
     elevation: 8,
     shadowColor: "#000",
     shadowOpacity: 0.2,

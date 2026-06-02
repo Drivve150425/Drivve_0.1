@@ -44,12 +44,17 @@ async createUserProfile(data) {
   }
 }
 
-
-  // Email OTP methods with iOS optimizations - FIXED
-async sendEmailOTP(email) {
+// Email OTP methods with iOS optimizations - FIXED
+async sendEmailOTP(email, firstName) {
   try {
     console.log('📧 Sending email OTP to:', email);
-    console.log('🔗 Using API URL:', `${API_BASE_URL}/auth/send-email-otp`);
+
+    const payload = {
+      email: email,
+      first_name: firstName,
+    };
+
+    console.log('📦 Payload:', payload);
 
     const response = await fetch(
       `${API_BASE_URL}/auth/send-email-otp`,
@@ -59,7 +64,7 @@ async sendEmailOTP(email) {
           'Content-Type': 'application/json',
           Accept: 'application/json',
         },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify(payload),
       }
     );
 

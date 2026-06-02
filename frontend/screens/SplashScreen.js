@@ -26,7 +26,7 @@ export default function SplashScreen({ navigation, onFinish }) {
       navigation.replace('Login');
 
       if (onFinish) onFinish();
-    }, 2000); // Reduced to 2s for faster validation
+    }, 800); // Reduced to 2s for faster validation
 
 
     return () => clearTimeout(timer);
