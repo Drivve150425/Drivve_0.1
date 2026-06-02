@@ -96,7 +96,39 @@ class CreateRideBookingRequest(BaseModel):
 class ModifySeatsRequest(BaseModel):
     new_seats: int
 
+import socketio
+from main import sio, get_sio
 
+# Global sio reference
+_sio = None
+
+def set_sio_instance(sio_instance):
+    global _sio
+    _sio = sio_instance
+
+def emit_to_user(user_phone: str, event: str, data: dict):
+    """Emit socket event to a specific user room"""
+    global _sio
+    if _sio:
+        room_name = f"user_{user_phone}"
+        _sio.emit(event, data, room=room_name)
+        print(f"📡 Socket emitted to {room_name}: {event} -> {data}")
+        return True
+    else:
+        print(f"⚠️ Socket.IO not initialized, can't emit to {user_phone}")
+        return False
+
+def emit_to_ride(ride_id: int, event: str, data: dict):
+    """Emit socket event to a specific ride room"""
+    global _sio
+    if _sio:
+        room_name = f"ride_{ride_id}"
+        _sio.emit(event, data, room=room_name)
+        print(f"📡 Socket emitted to {room_name}: {event} -> {data}")
+        return True
+    else:
+        print(f"⚠️ Socket.IO not initialized, can't emit to ride {ride_id}")
+        return False
 class SeatModificationRequest(BaseModel):
     requested_seats: int
 
@@ -1606,7 +1638,6 @@ def get_ride_passengers(ride_id: int, db: Session = Depends(get_db)):
 # ============================================
 # SEAT MODIFICATION REQUEST ENDPOINTS
 # ============================================
-
 @router.post("/booking/{booking_id}/request-modification")
 def request_seat_modification(booking_id: int, data: SeatModificationRequest, db: Session = Depends(get_db)):
     booking = db.query(RideBooking).filter(RideBooking.id == booking_id).first()
@@ -1641,6 +1672,10 @@ def request_seat_modification(booking_id: int, data: SeatModificationRequest, db
     if existing_request:
         raise HTTPException(status_code=400, detail="You already have a pending modification request.")
     
+    # Get passenger name
+    passenger = db.query(User).filter(User.phone_number == booking.passenger_phone).first()
+    passenger_name = passenger.full_name or " ".join(filter(None, [passenger.first_name, passenger.last_name])) or "A passenger"
+    
     modification_request = RideSeatModificationRequest(
         booking_id=booking_id,
         ride_id=ride.id,
@@ -1656,6 +1691,45 @@ def request_seat_modification(booking_id: int, data: SeatModificationRequest, db
     db.commit()
     db.refresh(modification_request)
     
+    # ============================================
+    # EMIT SOCKET EVENT TO DRIVER (both user room and ride room)
+    # ============================================
+    socket_data = {
+        "ride_id": ride.id,
+        "booking_id": booking_id,
+        "request_id": modification_request.id,
+        "passenger_name": passenger_name,
+        "passenger_phone": booking.passenger_phone,
+        "current_seats": booking.seats_booked,
+        "requested_seats": data.requested_seats,
+        "message": f"{passenger_name} wants to change from {booking.seats_booked} to {data.requested_seats} seat(s)"
+    }
+    
+    # Emit to driver's user room
+    emit_to_user(ride.phone_number, "new-modification-request", socket_data)
+    # Also emit to ride room for all listeners
+    emit_to_ride(ride.id, "new-modification-request", socket_data)
+    
+    # Create notification for driver
+    try:
+        origin_short = ride.origin.split(",")[0].strip() if ride.origin else "pickup"
+        dest_short = ride.destination.split(",")[0].strip() if ride.destination else "destination"
+        
+        notification = UserNotification(
+            phone_number=ride.phone_number,
+            title="New Modification Request 🔄",
+            message=f"{passenger_name} wants to change from {booking.seats_booked} to {data.requested_seats} seat(s) for ride from {origin_short} to {dest_short}.",
+            type=NotificationType.RIDE,
+            action_type="modification",
+            action_value=str(modification_request.id),
+            is_read=False,
+            is_deleted=False
+        )
+        db.add(notification)
+        db.commit()
+    except Exception as e:
+        print(f"Error creating notification: {str(e)}")
+    
     return {
         "message": "Modification request sent to driver",
         "request_id": modification_request.id,
@@ -1664,8 +1738,6 @@ def request_seat_modification(booking_id: int, data: SeatModificationRequest, db
         "requested_seats": data.requested_seats,
         "status": "pending"
     }
-
-
 @router.put("/modification-request/{request_id}/approve")
 def approve_modification_request(request_id: int, db: Session = Depends(get_db)):
     mod_request = db.query(RideSeatModificationRequest).filter(
@@ -1708,14 +1780,30 @@ def approve_modification_request(request_id: int, db: Session = Depends(get_db))
     
     db.commit()
     
+    # ============================================
+    # EMIT SOCKET EVENT TO PASSENGER
+    # ============================================
+    socket_data = {
+        "ride_id": ride.id,
+        "booking_id": booking.id,
+        "request_id": request_id,
+        "status": "approved",
+        "action": "approved",
+        "new_seats": mod_request.requested_seats,
+        "old_seats": old_seats,
+        "message": f"Your seat change request from {old_seats} to {mod_request.requested_seats} seat(s) has been approved"
+    }
+    
+    emit_to_user(booking.passenger_phone, "modification-response", socket_data)
+    emit_to_ride(ride.id, "modification-response", socket_data)
+    
     return {
         "message": "Modification request approved",
         "booking_id": booking.id,
         "old_seats": old_seats,
         "new_seats": mod_request.requested_seats,
-        "new_total": booking.total_amount    }
-
-
+        "new_total": booking.total_amount
+    }
 @router.put("/modification-request/{request_id}/reject")
 def reject_modification_request(request_id: int, rejection_reason: Optional[str] = "Driver declined", db: Session = Depends(get_db)):
     mod_request = db.query(RideSeatModificationRequest).filter(
@@ -1728,46 +1816,32 @@ def reject_modification_request(request_id: int, rejection_reason: Optional[str]
     if mod_request.status != "pending":
         raise HTTPException(status_code=400, detail=f"Request already {mod_request.status}")
     
+    booking = db.query(RideBooking).filter(RideBooking.id == mod_request.booking_id).first()
+    ride = db.query(Ride).filter(Ride.id == mod_request.ride_id).first()
+    
     mod_request.status = "rejected"
     mod_request.rejection_reason = rejection_reason
     mod_request.rejected_at = datetime.now(timezone.utc)
     
     db.commit()
     
-    return {"message": "Modification request rejected", "booking_id": mod_request.booking_id}
-
-
-@router.get("/ride/{ride_id}/pending-modifications")
-def get_pending_modifications_for_ride(ride_id: int, db: Session = Depends(get_db)):
-    pending_requests = db.query(RideSeatModificationRequest).join(RideBooking).filter(
-        RideSeatModificationRequest.ride_id == ride_id,
-        RideSeatModificationRequest.status == "pending"
-    ).order_by(RideSeatModificationRequest.created_at.desc()).all()
-    
-    results = []
-    for req in pending_requests:
-        passenger = db.query(User).filter(User.phone_number == req.passenger_phone).first()
-        passenger_name = passenger.full_name if passenger else f"Passenger {req.passenger_phone[-4:]}"
-        
-        results.append({
-            "id": req.id,
-            "booking_id": req.booking_id,
-            "passenger_name": passenger_name,
-            "passenger_phone": req.passenger_phone,
-            "passenger_photo": passenger.profile_picture if passenger else None,
-            "current_seats": req.current_seats,
-            "requested_seats": req.requested_seats,
-            "created_at": req.created_at.isoformat(),
-            "ride_id": req.ride_id
-        })
-    
-    return {
-        "ride_id": ride_id,
-        "pending_requests": results,
-        "count": len(results)
+    # ============================================
+    # EMIT SOCKET EVENT TO PASSENGER
+    # ============================================
+    socket_data = {
+        "ride_id": ride.id,
+        "booking_id": booking.id,
+        "request_id": request_id,
+        "status": "rejected",
+        "action": "rejected",
+        "reason": rejection_reason,
+        "message": f"Your seat change request was rejected: {rejection_reason}"
     }
-
-
+    
+    emit_to_user(booking.passenger_phone, "modification-response", socket_data)
+    emit_to_ride(ride.id, "modification-response", socket_data)
+    
+    return {"message": "Modification request rejected", "booking_id": mod_request.booking_id}
 @router.get("/booking/{booking_id}/modification-request")
 def get_pending_modification_request(booking_id: int, db: Session = Depends(get_db)):
     pending_request = db.query(RideSeatModificationRequest).filter(

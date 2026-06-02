@@ -49,7 +49,76 @@ load_dotenv()
 EMAIL_USER = os.getenv("EMAIL_USER")
 
 app = create_app()
+# Add these imports at the top of main.py
+import socketio
+from fastapi import FastAPI
+from contextlib import asynccontextmanager
+from routers import ride
 
+# Create Socket.IO server
+sio = socketio.AsyncServer(
+    cors_allowed_origins='*',
+    async_mode='asgi',
+    logger=True,
+    engineio_logger=True
+)
+
+# Create Socket.IO ASGI app
+socket_app = socketio.ASGIApp(sio, other_asgi_app=None)
+
+# Create a global variable to store sio instance for routers
+sio_instance = None
+
+def get_sio():
+    return sio_instance
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global sio_instance
+    sio_instance = sio
+    print("🚀 Socket.IO initialized")
+    
+    # Setup PostGIS
+    setup_postgis_and_ride_columns()
+    
+    yield
+    print("🛑 Shutting down...")
+
+# Create FastAPI app with lifespan
+app = FastAPI(
+    title="DRIVVE API",
+    description="DRIVVE Carpooling API",
+    version="2.0.1",
+    lifespan=lifespan
+)
+
+# Socket event handlers
+@sio.on('connect')
+def connect(sid, environ):
+    print(f"🔌 Client connected: {sid}")
+
+@sio.on('disconnect')
+def disconnect(sid):
+    print(f"🔌 Client disconnected: {sid}")
+
+@sio.on('join-ride-room')
+def join_ride_room(sid, ride_id):
+    room_name = f"ride_{ride_id}"
+    sio.enter_room(sid, room_name)
+    print(f"📡 Client {sid} joined ride room: {room_name}")
+
+@sio.on('join-user-room')
+def join_user_room(sid, phone_number):
+    room_name = f"user_{phone_number}"
+    sio.enter_room(sid, room_name)
+    print(f"📡 Client {sid} joined user room: {room_name}")
+
+@sio.on('leave-ride-room')
+def leave_ride_room(sid, ride_id):
+    room_name = f"ride_{ride_id}"
+    sio.leave_room(sid, room_name)
+    print(f"📡 Client {sid} left ride room: {room_name}")
+ride.set_sio_instance(sio)
 
 # Create tables
 try:
