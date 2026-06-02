@@ -42,70 +42,6 @@ def get_total_booked_seats(db: Session, ride_id: int) -> int:
     return result or 0
 
 
-def get_available_seats(db: Session, ride_id: int) -> int:
-    """Calculate actual available seats = total seats - booked seats"""
-    ride = db.query(Ride).filter(Ride.id == ride_id).first()
-    if not ride:
-        return 0
-    total_booked = get_total_booked_seats(db, ride_id)
-    return max(0, ride.available_seats - total_booked)
-
-
-def get_ride_display_status(ride, db: Session):
-    """Determine the correct display status for a ride"""
-    now = datetime.now(timezone.utc)
-    
-    # If ride is already cancelled, return cancelled
-    if ride.status == "cancelled":
-        return "cancelled", getattr(ride, 'cancellation_reason', None)
-    
-    # If ride has passed its departure time by more than 1 hour, auto-cancel it
-    if ride.departure_time:
-        time_passed = now - ride.departure_time
-        if time_passed.total_seconds() > 3600:  # 1 hour past departure
-            # Auto-cancel the ride if not already cancelled
-            ride.status = "cancelled"
-            ride.cancellation_reason = "Auto-cancelled: Ride time has passed"
-            
-            # Cancel all accepted bookings
-            bookings = db.query(RideBooking).filter(
-                RideBooking.ride_id == ride.id,
-                RideBooking.status == "accepted"
-            ).all()
-            
-            for booking in bookings:
-                booking.status = "cancelled"
-                booking.cancellation_reason = "Ride auto-cancelled as departure time passed"
-                
-                # Notify passenger
-                try:
-                    notification = UserNotification(
-                        phone_number=booking.passenger_phone,
-                        title="Ride Auto-Cancelled ⏰",
-                        message=f"The ride from {ride.origin} to {ride.destination} scheduled at {to_ist(ride.departure_time).strftime('%I:%M %p')} has been auto-cancelled as the departure time has passed.",
-                        type=NotificationType.RIDE,
-                        action_type="ride",
-                        action_value=str(ride.id),
-                        is_read=False,
-                        is_deleted=False
-                    )
-                    db.add(notification)
-                except Exception as e:
-                    print(f"Error sending auto-cancel notification: {str(e)}")
-            
-            db.commit()
-            return "cancelled", "Auto-cancelled: Ride time has passed"
-    
-    # If ride has bookings and seats are full
-    total_booked = get_total_booked_seats(db, ride.id)
-    remaining_seats = ride.available_seats - total_booked
-    
-    if remaining_seats <= 0 and ride.status == "active":
-        return "full", None
-    
-    return ride.status, None
-
-
 @router.get("/my-rides/{phone}")
 def get_my_rides(phone: str, db: Session = Depends(get_db)):
     norm_phone = normalize_phone(phone)
@@ -190,7 +126,6 @@ def get_my_rides(phone: str, db: Session = Depends(get_db)):
             }
         
         # Get live session if exists
-        live_session = None
         live_session_data = None
         try:
             live_session = db.query(RideSession).filter(
@@ -234,8 +169,6 @@ def get_my_rides(phone: str, db: Session = Depends(get_db)):
             "vehicle_id": ride.vehicle_id,
             "vehicle": vehicle_data,
             "route_coordinates": ride.route_coordinates,
-            "suggested_pickup": ride.suggested_pickup,
-            "suggested_drop": ride.suggested_drop,
             "created_at": ride.created_at.isoformat() if ride.created_at else None,
             "bookings": bookings_map.get(ride.id, []),
             "live_session": live_session_data,
@@ -249,7 +182,7 @@ def get_my_rides(phone: str, db: Session = Depends(get_db)):
             rb.created_at, rb.total_amount, rb.cancellation_reason,
             r.origin, r.destination, r.departure_time, r.price_per_seat, r.available_seats,
             r.distance_km, r.duration_text, r.status as ride_status, r.women_only,
-            r.route_coordinates, r.suggested_pickup, r.suggested_drop,
+            r.route_coordinates,
             u.full_name as driver_name, u.first_name, u.last_name, u.phone_number as driver_phone,
             u.user_id as driver_user_id, u.profile_completed, 
             u.profile_picture as driver_profile_picture,
@@ -280,27 +213,6 @@ def get_my_rides(phone: str, db: Session = Depends(get_db)):
                 "registration_number": row["registration_number"],
             }
         
-        # Get live session info for this booking
-        live_session_data = None
-        try:
-            session_rider = db.query(RideSessionRider).filter(
-                RideSessionRider.booking_id == row["id"]
-            ).order_by(RideSessionRider.id.desc()).first()
-            
-            if session_rider:
-                session = db.query(RideSession).filter(RideSession.id == session_rider.session_id).first()
-                if session:
-                    live_session_data = {
-                        "session_id": session.id,
-                        "session_status": session.status,
-                        "current_phase": session.current_phase,
-                        "rider_status": session_rider.status,
-                        "pickup_confirmed": getattr(session_rider, 'pickup_confirmed', False),
-                        "dropoff_confirmed": getattr(session_rider, 'dropoff_confirmed', False)
-                    }
-        except Exception as e:
-            print(f"Error fetching session info: {str(e)}")
-        
         requested_formatted.append({
             "id": row["id"],
             "ride_id": row["ride_id"],
@@ -327,9 +239,7 @@ def get_my_rides(phone: str, db: Session = Depends(get_db)):
             "driver_rating": float(row["driver_rating"]) if row["driver_rating"] else 4.5,
             "profile_completed": row["profile_completed"],
             "route_coordinates": row["route_coordinates"],
-           
             "vehicle": vehicle_data,
-            "live_session": live_session_data,
         })
     
     return {
@@ -351,42 +261,18 @@ def accept_booking(booking_id: int, db: Session = Depends(get_db)):
     if not ride:
         raise HTTPException(status_code=404, detail="Ride not found")
 
-    # Check seat availability using proper calculation
     total_booked = get_total_booked_seats(db, ride.id)
     remaining_seats = ride.available_seats - total_booked
     
     if remaining_seats < booking.seats_booked:
         raise HTTPException(status_code=400, detail=f"Not enough seats available. Only {remaining_seats} seat(s) left.")
 
-    # Accept the booking (don't modify ride.available_seats directly)
     booking.status = "accepted"
 
-    # Mark ride as full if no seats left
     if remaining_seats - booking.seats_booked <= 0:
         ride.status = "full"
 
     db.commit()
-
-    # Create notification for passenger
-    try:
-        origin_short = ride.origin.split(",")[0].strip() if ride.origin else "pickup"
-        dest_short = ride.destination.split(",")[0].strip() if ride.destination else "destination"
-        
-        notification = UserNotification(
-            phone_number=booking.passenger_phone,
-            title="Booking Accepted! ✅",
-            message=f"Your request for {booking.seats_booked} seat(s) on the ride from {origin_short} to {dest_short} has been accepted by the driver.",
-            type=NotificationType.RIDE,
-            action_type="booking",
-            action_value=str(booking.id),
-            is_read=False,
-            is_deleted=False
-        )
-        db.add(notification)
-        db.commit()
-        print(f"✅ Booking acceptance notification sent to {booking.passenger_phone}")
-    except Exception as e:
-        print(f"❌ Error creating booking acceptance notification: {str(e)}")
 
     return {"message": "Booking accepted"}
 
@@ -403,28 +289,6 @@ def reject_booking(booking_id: int, db: Session = Depends(get_db)):
     booking.status = "rejected"
     db.commit()
 
-    # Create notification for passenger
-    try:
-        ride = db.query(Ride).filter(Ride.id == booking.ride_id).first()
-        if ride:
-            origin_short = ride.origin.split(",")[0].strip() if ride.origin else "pickup"
-            dest_short = ride.destination.split(",")[0].strip() if ride.destination else "destination"
-            
-            notification = UserNotification(
-                phone_number=booking.passenger_phone,
-                title="Booking Declined ❌",
-                message=f"Your request for the ride from {origin_short} to {dest_short} was declined by the driver.",
-                type=NotificationType.RIDE,
-                action_type="booking",
-                action_value=str(booking.id),
-                is_read=False,
-                is_deleted=False
-            )
-            db.add(notification)
-            db.commit()
-    except Exception as e:
-        print(f"❌ Error creating booking rejection notification: {str(e)}")
-
     return {"message": "Booking rejected"}
 
 
@@ -435,9 +299,7 @@ def cancel_ride(ride_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Ride not found")
 
     ride.status = "cancelled"
-    ride.cancellation_reason = "Cancelled by driver"
 
-    # Cancel all accepted bookings
     bookings = db.query(RideBooking).filter(
         RideBooking.ride_id == ride_id,
         RideBooking.status == "accepted"
@@ -445,23 +307,6 @@ def cancel_ride(ride_id: int, db: Session = Depends(get_db)):
 
     for booking in bookings:
         booking.status = "cancelled"
-        booking.cancellation_reason = "Ride cancelled by driver"
-        
-        # Notify each passenger
-        try:
-            notification = UserNotification(
-                phone_number=booking.passenger_phone,
-                title="Ride Cancelled ❌",
-                message=f"The ride from {ride.origin} to {ride.destination} has been cancelled by the driver.",
-                type=NotificationType.RIDE,
-                action_type="ride",
-                action_value=str(ride_id),
-                is_read=False,
-                is_deleted=False
-            )
-            db.add(notification)
-        except Exception as e:
-            print(f"❌ Error creating cancellation notification: {str(e)}")
 
     db.commit()
 
@@ -470,54 +315,26 @@ def cancel_ride(ride_id: int, db: Session = Depends(get_db)):
 
 @router.put("/booking/{booking_id}/cancel")
 def cancel_booking(booking_id: int, db: Session = Depends(get_db)):
-    booking = db.query(RideBooking).filter(
-        RideBooking.id == booking_id
-    ).first()
-
+    booking = db.query(RideBooking).filter(RideBooking.id == booking_id).first()
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
 
-    ride = db.query(Ride).filter(
-        Ride.id == booking.ride_id
-    ).first()
-
+    ride = db.query(Ride).filter(Ride.id == booking.ride_id).first()
     if not ride:
         raise HTTPException(status_code=404, detail="Ride not found")
 
-    # Update status (don't modify ride.available_seats directly)
     booking.status = "cancelled"
-    booking.cancellation_reason = "Cancelled by passenger"
     
-    # If ride was full, set back to active since a seat became available
     if ride.status == "full":
         ride.status = "active"
 
     db.commit()
-
-    # Notify driver
-    try:
-        notification = UserNotification(
-            phone_number=ride.phone_number,
-            title="Booking Cancelled",
-            message=f"A passenger has cancelled their booking for your ride from {ride.origin} to {ride.destination}.",
-            type=NotificationType.RIDE,
-            action_type="ride",
-            action_value=str(ride.id),
-            is_read=False,
-            is_deleted=False
-        )
-        db.add(notification)
-        db.commit()
-    except Exception as e:
-        print(f"❌ Error creating cancellation notification for driver: {str(e)}")
 
     return {"message": "Booking cancelled successfully"}
 
 
 @router.put("/booking/{booking_id}/modify-seats")
 def modify_booking_seats(booking_id: int, new_seats: int, db: Session = Depends(get_db)):
-    """Allow passenger to modify seat count on an accepted booking"""
-    
     booking = db.query(RideBooking).filter(RideBooking.id == booking_id).first()
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
@@ -532,7 +349,6 @@ def modify_booking_seats(booking_id: int, new_seats: int, db: Session = Depends(
     if new_seats <= 0:
         raise HTTPException(status_code=400, detail="Seat count must be at least 1")
     
-    # Calculate available seats excluding current booking
     total_booked = get_total_booked_seats(db, ride.id)
     other_booked = total_booked - booking.seats_booked
     available_seats_excluding_current = ride.available_seats - other_booked
@@ -543,29 +359,11 @@ def modify_booking_seats(booking_id: int, new_seats: int, db: Session = Depends(
             detail=f"Only {available_seats_excluding_current} seat(s) available. Cannot increase to {new_seats}."
         )
     
-    # Update booking
     old_seats = booking.seats_booked
     booking.seats_booked = new_seats
     booking.total_amount = ride.price_per_seat * new_seats
     
     db.commit()
-    
-    # Notify driver
-    try:
-        notification = UserNotification(
-            phone_number=ride.phone_number,
-            title="Booking Modified 🔄",
-            message=f"Passenger has modified seat request from {old_seats} to {new_seats} seat(s).",
-            type=NotificationType.RIDE,
-            action_type="booking",
-            action_value=str(booking.id),
-            is_read=False,
-            is_deleted=False
-        )
-        db.add(notification)
-        db.commit()
-    except Exception as e:
-        print(f"Error sending modification notification: {str(e)}")
     
     return {
         "message": f"Seats updated from {old_seats} to {new_seats}",
@@ -587,10 +385,8 @@ def get_ride_passengers(ride_id: int, db: Session = Depends(get_db)):
     ).order_by(RideBooking.created_at.asc()).all()
 
     passengers = []
-    for idx, bk in enumerate(bookings, start=1):
-        p = db.query(User).filter(
-            User.phone_number == bk.passenger_phone
-        ).first()
+    for bk in bookings:
+        p = db.query(User).filter(User.phone_number == bk.passenger_phone).first()
 
         passenger_name = None
         if p:
@@ -609,20 +405,9 @@ def get_ride_passengers(ride_id: int, db: Session = Depends(get_db)):
             "seats_booked": bk.seats_booked,
             "status": bk.status,
             "total_amount": float(bk.total_amount) if bk.total_amount else None,
-            "pickup_lat": bk.pickup_lat,
-            "pickup_lon": bk.pickup_lon,
-            "drop_lat": bk.drop_lat,
-            "drop_lon": bk.drop_lon,
-            "intersection_pickup_lat": bk.intersection_pickup_lat,
-            "intersection_pickup_lon": bk.intersection_pickup_lon,
-            "intersection_drop_lat": bk.intersection_drop_lat,
-            "intersection_drop_lon": bk.intersection_drop_lon,
-            "pickup_walk_distance_m": bk.pickup_walk_distance_m,
-            "drop_walk_distance_m": bk.drop_walk_distance_m,
             "created_at": bk.created_at.isoformat() if bk.created_at else None,
         })
 
-    # Calculate total booked and remaining seats
     total_booked = get_total_booked_seats(db, ride_id)
     remaining_seats = max(0, ride.available_seats - total_booked)
 
