@@ -97,7 +97,6 @@ class ModifySeatsRequest(BaseModel):
     new_seats: int
 
 import socketio
-from main import sio, get_sio
 
 # Global sio reference
 _sio = None
