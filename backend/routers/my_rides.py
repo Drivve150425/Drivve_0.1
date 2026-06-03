@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import func, text
+from sqlalchemy import and_, func, text
 from database import get_db
 from models import Ride, RideBooking, User, UserNotification, NotificationType, RideSession, RideSessionRider, Vehicle
 from datetime import datetime, timezone, timedelta
@@ -40,112 +40,153 @@ def get_total_booked_seats(db: Session, ride_id: int) -> int:
         RideBooking.status == "accepted"
     ).scalar()
     return result or 0
-
-
 @router.get("/my-rides/{phone}")
-def get_my_rides(phone: str, db: Session = Depends(get_db)):
+def get_my_rides(phone: str, filter: Optional[str] = Query(None), db: Session = Depends(get_db)):
     norm_phone = normalize_phone(phone)
     
-    # POSTED RIDES (Driver)
-    posted_rides = db.query(Ride).filter(
+    # ============================================
+    # OPTIMIZED: POSTED RIDES with ALL data in ONE query
+    # ============================================
+    
+    # Build base query with all necessary joins
+    posted_query = db.query(
+        Ride,
+        func.coalesce(func.sum(RideBooking.seats_booked).filter(RideBooking.status == "accepted"), 0).label("total_booked"),
+        User.full_name.label("driver_name"),
+        User.first_name,
+        User.last_name,
+        User.profile_picture.label("driver_profile_picture"),
+        Vehicle.id.label("vehicle_id"),
+        Vehicle.make,
+        Vehicle.model,
+        Vehicle.color,
+        Vehicle.registration_number,
+        Vehicle.photo_url.label("vehicle_photo_url"),
+        RideSession.id.label("session_id"),
+        RideSession.status.label("session_status"),
+        RideSession.current_phase,
+        func.count(RideSessionRider.id).filter(RideSessionRider.status.in_(["boarded", "dropped_off", "completed"])).label("boarded_count"),
+        func.count(RideSessionRider.id).filter(RideSessionRider.status.in_(["dropped_off", "completed"])).label("dropped_count"),
+        func.count(RideSessionRider.id).label("total_riders")
+    ).outerjoin(
+        RideBooking, and_(RideBooking.ride_id == Ride.id, RideBooking.status == "accepted")
+    ).outerjoin(
+        User, User.phone_number == Ride.phone_number
+    ).outerjoin(
+        Vehicle, Vehicle.id == Ride.vehicle_id
+    ).outerjoin(
+        RideSession, and_(
+            RideSession.ride_id == Ride.id,
+            RideSession.status.in_(["driver_started", "boarding", "en_route", "emergency_stopped"])
+        )
+    ).outerjoin(
+        RideSessionRider, RideSessionRider.session_id == RideSession.id
+    ).filter(
         Ride.phone_number == norm_phone,
         Ride.is_deleted == False
-    ).order_by(
-        Ride.departure_time.desc()
-    ).all()
+    )
     
-    # Get bookings for all posted rides
-    posted_ride_ids = [r.id for r in posted_rides]
+    # Apply filter if provided
+    if filter == "upcoming":
+        posted_query = posted_query.filter(Ride.departure_time > datetime.now(timezone.utc))
+    elif filter == "completed":
+        posted_query = posted_query.filter(
+            Ride.departure_time < datetime.now(timezone.utc) - timedelta(minutes=30)
+        )
+    elif filter == "cancelled":
+        posted_query = posted_query.filter(Ride.status == "cancelled")
+    
+    posted_query = posted_query.group_by(
+        Ride.id, User.id, Vehicle.id, RideSession.id
+    ).order_by(Ride.departure_time.desc())
+    
+    posted_results = posted_query.all()
+    
+    # Get all bookings for all posted rides in ONE query
+    posted_ride_ids = [r[0].id for r in posted_results]
     bookings_map = {}
     
     if posted_ride_ids:
-        bookings_raw = db.execute(text("""
-            SELECT 
-                rb.id, rb.ride_id, rb.passenger_phone, rb.seats_booked, rb.status,
-                rb.created_at, rb.total_amount, rb.cancellation_reason,
-                u.full_name as passenger_name, u.first_name, u.last_name, 
-                u.profile_picture as passenger_profile_picture,
-                u.gender as passenger_gender
-            FROM ride_bookings rb 
-            LEFT JOIN users u ON u.phone_number = rb.passenger_phone
-            WHERE rb.ride_id = ANY(:ride_ids)
-            ORDER BY rb.created_at DESC
-        """), {"ride_ids": posted_ride_ids}).mappings().all()
+        bookings_raw = db.query(
+            RideBooking.id,
+            RideBooking.ride_id,
+            RideBooking.passenger_phone,
+            RideBooking.seats_booked,
+            RideBooking.status,
+            RideBooking.created_at,
+            RideBooking.total_amount,
+            RideBooking.cancellation_reason,
+            User.full_name.label("passenger_name"),
+            User.first_name,
+            User.last_name,
+            User.profile_picture.label("passenger_profile_picture"),
+            User.gender.label("passenger_gender")
+        ).outerjoin(
+            User, User.phone_number == RideBooking.passenger_phone
+        ).filter(
+            RideBooking.ride_id.in_(posted_ride_ids)
+        ).order_by(
+            RideBooking.created_at.desc()
+        ).all()
         
         for bk in bookings_raw:
-            ride_id = bk["ride_id"]
+            ride_id = bk.ride_id
             if ride_id not in bookings_map:
                 bookings_map[ride_id] = []
             
-            passenger_name = bk["passenger_name"] or " ".join(
-                p for p in [bk["first_name"], bk["last_name"]] if p
-            ).strip() or f"Passenger {bk['passenger_phone'][-4:]}"
+            passenger_name = bk.passenger_name or " ".join(
+                p for p in [bk.first_name, bk.last_name] if p
+            ).strip() or f"Passenger {bk.passenger_phone[-4:]}"
             
             bookings_map[ride_id].append({
-                "id": bk["id"],
+                "id": bk.id,
                 "ride_id": ride_id,
-                "passenger_phone": bk["passenger_phone"],
+                "passenger_phone": bk.passenger_phone,
                 "passenger_name": passenger_name,
-                "passenger_photo": bk["passenger_profile_picture"],
-                "passenger_gender": bk["passenger_gender"],
-                "seats_requested": bk["seats_booked"],
-                "status": bk["status"],
-                "cancellation_reason": bk["cancellation_reason"],
-                "total_amount": float(bk["total_amount"]) if bk["total_amount"] else None,
-                "created_at": bk["created_at"].isoformat() if bk["created_at"] else None,
+                "passenger_photo": bk.passenger_profile_picture,
+                "passenger_gender": bk.passenger_gender,
+                "seats_requested": bk.seats_booked,
+                "status": bk.status,
+                "cancellation_reason": bk.cancellation_reason,
+                "total_amount": float(bk.total_amount) if bk.total_amount else None,
+                "created_at": bk.created_at.isoformat() if bk.created_at else None,
             })
     
-    # Format posted rides with complete data
+    # Format posted rides
     posted_formatted = []
-    for ride in posted_rides:
-        total_booked = get_total_booked_seats(db, ride.id)
-        remaining_seats = max(0, ride.available_seats - total_booked)
+    for ride, total_booked, driver_name, first_name, last_name, driver_profile_picture, \
+        vehicle_id, make, model, color, registration_number, vehicle_photo_url, \
+        session_id, session_status, current_phase, boarded_count, dropped_count, total_riders in posted_results:
+        
+        remaining_seats = max(0, ride.available_seats - (total_booked or 0))
         
         display_status = ride.status
         if remaining_seats == 0 and ride.status == "active":
             display_status = "full"
         
-        # Get driver's own profile picture
-        driver_info = db.query(User).filter(User.phone_number == ride.phone_number).first()
-        driver_profile_picture = driver_info.profile_picture if driver_info else None
-        
-        # Get vehicle details
-        vehicle = None
-        if ride.vehicle_id:
-            vehicle = db.query(Vehicle).filter(Vehicle.id == ride.vehicle_id).first()
+        driver_full_name = driver_name or " ".join(filter(None, [first_name, last_name])).strip()
         
         vehicle_data = None
-        if vehicle:
+        if vehicle_id:
             vehicle_data = {
-                "id": vehicle.id,
-                "make": vehicle.make,
-                "model": vehicle.model,
-                "color": vehicle.color,
-                "registration_number": vehicle.registration_number,
-                "photo_url": vehicle.photo_url,
+                "id": vehicle_id,
+                "make": make,
+                "model": model,
+                "color": color,
+                "registration_number": registration_number,
+                "photo_url": vehicle_photo_url,
             }
         
-        # Get live session if exists
         live_session_data = None
-        try:
-            live_session = db.query(RideSession).filter(
-                RideSession.ride_id == ride.id,
-                RideSession.status.in_(["driver_started", "boarding", "en_route", "emergency_stopped"])
-            ).order_by(RideSession.id.desc()).first()
-            
-            if live_session:
-                boarded_count = sum(1 for r in live_session.riders if r.status in ["boarded", "dropped_off", "completed"])
-                dropped_count = sum(1 for r in live_session.riders if r.status in ["dropped_off", "completed"])
-                live_session_data = {
-                    "session_id": live_session.id,
-                    "status": live_session.status,
-                    "current_phase": live_session.current_phase,
-                    "boarded_count": boarded_count,
-                    "dropped_count": dropped_count,
-                    "total_riders": len(live_session.riders)
-                }
-        except Exception as e:
-            print(f"Error fetching live session: {str(e)}")
+        if session_id:
+            live_session_data = {
+                "session_id": session_id,
+                "status": session_status,
+                "current_phase": current_phase,
+                "boarded_count": boarded_count or 0,
+                "dropped_count": dropped_count or 0,
+                "total_riders": total_riders or 0
+            }
         
         posted_formatted.append({
             "id": ride.id,
@@ -158,7 +199,7 @@ def get_my_rides(phone: str, db: Session = Depends(get_db)):
             "departure_time_display": to_ist(ride.departure_time).strftime("%d %b %Y, %I:%M %p") if ride.departure_time else None,
             "available_seats": ride.available_seats,
             "remaining_seats": remaining_seats,
-            "total_booked_seats": total_booked,
+            "total_booked_seats": int(total_booked or 0),
             "price_per_seat": ride.price_per_seat,
             "distance_km": ride.distance_km,
             "duration_text": ride.duration_text,
@@ -173,80 +214,127 @@ def get_my_rides(phone: str, db: Session = Depends(get_db)):
             "bookings": bookings_map.get(ride.id, []),
             "live_session": live_session_data,
             "driver_profile_picture": driver_profile_picture,
+            "started_at": ride.started_at.isoformat() if ride.started_at else None,
+            "cancellation_reason": ride.cancellation_reason,
         })
     
-    # REQUESTED RIDES (Passenger bookings)
-    requested_raw = db.execute(text("""
-        SELECT 
-            rb.id, rb.ride_id, rb.passenger_phone, rb.seats_booked, rb.status,
-            rb.created_at, rb.total_amount, rb.cancellation_reason,
-            r.origin, r.destination, r.departure_time, r.price_per_seat, r.available_seats,
-            r.distance_km, r.duration_text, r.status as ride_status, r.women_only,
-            r.route_coordinates,
-            u.full_name as driver_name, u.first_name, u.last_name, u.phone_number as driver_phone,
-            u.user_id as driver_user_id, u.profile_completed, 
-            u.profile_picture as driver_profile_picture,
-            u.avg_rating as driver_rating,
-            v.id as vehicle_id, v.make, v.model, v.color, v.registration_number
-        FROM ride_bookings rb
-        JOIN rides r ON r.id = rb.ride_id
-        LEFT JOIN users u ON u.phone_number = r.phone_number
-        LEFT JOIN vehicles v ON v.id = r.vehicle_id
-        WHERE rb.passenger_phone = :phone
-        ORDER BY rb.created_at DESC
-    """), {"phone": norm_phone}).mappings().all()
+    # ============================================
+    # OPTIMIZED: REQUESTED RIDES in ONE query
+    # ============================================
+    
+    requested_raw = db.query(
+        RideBooking.id,
+        RideBooking.ride_id,
+        RideBooking.passenger_phone,
+        RideBooking.seats_booked,
+        RideBooking.status,
+        RideBooking.created_at,
+        RideBooking.total_amount,
+        RideBooking.cancellation_reason,
+        Ride.origin,
+        Ride.destination,
+        Ride.departure_time,
+        Ride.price_per_seat,
+        Ride.available_seats,
+        Ride.distance_km,
+        Ride.duration_text,
+        Ride.status.label("ride_status"),
+        Ride.women_only,
+        Ride.route_coordinates,
+        Ride.started_at.label("ride_started_at"),
+        Ride.cancellation_reason.label("ride_cancellation_reason"),
+        User.full_name.label("driver_name"),
+        User.first_name,
+        User.last_name,
+        User.phone_number.label("driver_phone"),
+        User.user_id.label("driver_user_id"),
+        User.profile_completed,
+        User.profile_picture.label("driver_profile_picture"),
+        User.avg_rating.label("driver_rating"),
+        Vehicle.id.label("vehicle_id"),
+        Vehicle.make,
+        Vehicle.model,
+        Vehicle.color,
+        Vehicle.registration_number,
+        Vehicle.photo_url.label("vehicle_photo_url"),
+        RideSession.id.label("session_id"),
+        RideSession.status.label("session_status")
+    ).join(
+        Ride, Ride.id == RideBooking.ride_id
+    ).outerjoin(
+        User, User.phone_number == Ride.phone_number
+    ).outerjoin(
+        Vehicle, Vehicle.id == Ride.vehicle_id
+    ).outerjoin(
+        RideSession, and_(
+            RideSession.ride_id == Ride.id,
+            RideSession.status.in_(["driver_started", "boarding", "en_route"])
+        )
+    ).filter(
+        RideBooking.passenger_phone == norm_phone
+    ).order_by(
+        RideBooking.created_at.desc()
+    ).all()
     
     requested_formatted = []
     for row in requested_raw:
-        driver_name = row["driver_name"] or " ".join(
-            p for p in [row["first_name"], row["last_name"]] if p
-        ).strip() or f"Driver {row['driver_phone'][-4:] if row['driver_phone'] else 'Unknown'}"
+        driver_name = row.driver_name or " ".join(
+            p for p in [row.first_name, row.last_name] if p
+        ).strip() or f"Driver {row.driver_phone[-4:] if row.driver_phone else 'Unknown'}"
         
-        # Build vehicle object
         vehicle_data = None
-        if row["vehicle_id"]:
+        if row.vehicle_id:
             vehicle_data = {
-                "id": row["vehicle_id"],
-                "make": row["make"],
-                "model": row["model"],
-                "color": row["color"],
-                "registration_number": row["registration_number"],
+                "id": row.vehicle_id,
+                "make": row.make,
+                "model": row.model,
+                "color": row.color,
+                "registration_number": row.registration_number,
+                "photo_url": row.vehicle_photo_url,
+            }
+        
+        live_session_data = None
+        if row.session_id:
+            live_session_data = {
+                "session_id": row.session_id,
+                "status": row.session_status
             }
         
         requested_formatted.append({
-            "id": row["id"],
-            "ride_id": row["ride_id"],
-            "passenger_phone": row["passenger_phone"],
-            "seats_requested": row["seats_booked"],
-            "total_amount": float(row["total_amount"]) if row["total_amount"] else None,
-            "status": row["status"],
-            "cancellation_reason": row["cancellation_reason"],
-            "created_at": row["created_at"].isoformat() if row["created_at"] else None,
-            "origin": row["origin"],
-            "destination": row["destination"],
-            "departure_time": row["departure_time"].isoformat() if row["departure_time"] else None,
-            "departure_time_display": to_ist(row["departure_time"]).strftime("%d %b %Y, %I:%M %p") if row["departure_time"] else None,
-            "price_per_seat": row["price_per_seat"],
-            "available_seats": row["available_seats"],
-            "distance_km": row["distance_km"],
-            "duration_text": row["duration_text"],
-            "ride_status": row["ride_status"],
-            "women_only": row["women_only"],
+            "id": row.id,
+            "ride_id": row.ride_id,
+            "passenger_phone": row.passenger_phone,
+            "seats_requested": row.seats_booked,
+            "total_amount": float(row.total_amount) if row.total_amount else None,
+            "status": row.status,
+            "cancellation_reason": row.cancellation_reason,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+            "origin": row.origin,
+            "destination": row.destination,
+            "departure_time": row.departure_time.isoformat() if row.departure_time else None,
+            "departure_time_display": to_ist(row.departure_time).strftime("%d %b %Y, %I:%M %p") if row.departure_time else None,
+            "price_per_seat": row.price_per_seat,
+            "available_seats": row.available_seats,
+            "distance_km": row.distance_km,
+            "duration_text": row.duration_text,
+            "ride_status": row.ride_status,
+            "women_only": row.women_only,
             "driver_name": driver_name,
-            "driver_phone": row["driver_phone"],
-            "driver_user_id": row["driver_user_id"],
-            "driver_photo": row["driver_profile_picture"],
-            "driver_rating": float(row["driver_rating"]) if row["driver_rating"] else 4.5,
-            "profile_completed": row["profile_completed"],
-            "route_coordinates": row["route_coordinates"],
+            "driver_phone": row.driver_phone,
+            "driver_user_id": row.driver_user_id,
+            "driver_photo": row.driver_profile_picture,
+            "driver_rating": float(row.driver_rating) if row.driver_rating else 4.5,
+            "profile_completed": row.profile_completed,
+            "route_coordinates": row.route_coordinates,
             "vehicle": vehicle_data,
+            "live_session": live_session_data,
+            "started_at": row.ride_started_at.isoformat() if row.ride_started_at else None,
         })
     
     return {
         "posted_rides": posted_formatted,
         "requested_rides": requested_formatted
     }
-
 
 @router.put("/booking/{booking_id}/accept")
 def accept_booking(booking_id: int, db: Session = Depends(get_db)):
