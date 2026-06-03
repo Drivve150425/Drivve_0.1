@@ -899,3 +899,30 @@ class RideSeatModificationRequest(Base):
     # Relationships
     booking = relationship("RideBooking", backref="modification_requests")
     ride = relationship("Ride", backref="modification_requests")
+# Add this to your models.py file
+
+class ModificationRequest(Base):
+    __tablename__ = "modification_requests"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    ride_id = Column(Integer, ForeignKey("rides.id"), nullable=False)
+    rider_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    driver_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    
+    # Request details
+    request_type = Column(String(50), nullable=False)  # e.g., "change_time", "change_pickup", "add_passenger", "cancel"
+    old_value = Column(Text, nullable=True)
+    new_value = Column(Text, nullable=True)
+    
+    # Status tracking
+    status = Column(String(50), default="pending")  # pending, approved, rejected, cancelled
+    reason = Column(Text, nullable=True)  # Rejection reason if rejected
+    
+    # Timestamps
+    requested_at = Column(DateTime, default=datetime.utcnow)
+    responded_at = Column(DateTime, nullable=True)
+    
+    # Relationships
+    ride = relationship("Ride", back_populates="modification_requests")
+    rider = relationship("User", foreign_keys=[rider_id])
+    driver = relationship("User", foreign_keys=[driver_id])
