@@ -845,7 +845,7 @@ class RideSeatModificationRequest(Base):
     # Relationships
     booking = relationship("RideBooking", backref="seat_modification_requests")
     ride = relationship("Ride", backref="seat_modification_requests")
-# Add this to your models.py fileclass ModificationRequest(Base):
+class ModificationRequest(Base):
     __tablename__ = "modification_requests"
     
     id = Column(Integer, primary_key=True, index=True)
