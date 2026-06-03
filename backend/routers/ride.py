@@ -3624,7 +3624,6 @@ def check_can_modify_ride(ride_id: int, db: Session = Depends(get_db)):
 # ============================================
 # START RIDE ENDPOINT
 # ============================================
-
 @router.post("/ride/{ride_id}/start")
 def start_ride(ride_id: int, db: Session = Depends(get_db)):
     """Start a ride - only allowed within 15 minutes before to 30 minutes after departure"""
@@ -3655,7 +3654,6 @@ def start_ride(ride_id: int, db: Session = Depends(get_db)):
             ride.status = "cancelled"
             ride.cancellation_reason = "Auto-cancelled: Ride was not started within 30 minutes of departure time"
             
-            # Cancel all accepted bookings
             accepted_bookings = db.query(RideBooking).filter(
                 RideBooking.ride_id == ride_id,
                 RideBooking.status == "accepted"
@@ -3665,7 +3663,6 @@ def start_ride(ride_id: int, db: Session = Depends(get_db)):
                 booking.status = "cancelled"
                 booking.cancellation_reason = "Ride auto-cancelled - driver did not start on time"
                 
-                # Notify passenger
                 notification = UserNotification(
                     phone_number=booking.passenger_phone,
                     title="Ride Auto-Cancelled ❌",
@@ -3678,7 +3675,6 @@ def start_ride(ride_id: int, db: Session = Depends(get_db)):
                 )
                 db.add(notification)
                 
-                # Emit socket event
                 emit_to_user(booking.passenger_phone, "ride-auto-cancelled", {
                     "ride_id": ride.id,
                     "reason": "Driver did not start within 30 minutes"
@@ -3699,13 +3695,13 @@ def start_ride(ride_id: int, db: Session = Depends(get_db)):
         ride.started_at = now
         ride.status = "active"
         
-        # Create live session
-        session_id = str(uuid.uuid4())
+        # ✅ FIXED: Create live session with correct fields
         live_session = RideSession(
             ride_id=ride_id,
-            session_id=session_id,
+            driver_phone=ride.phone_number,  # ✅ Add this
             status="driver_started",
             started_at=now
+            # ❌ Remove session_id - it doesn't exist in the model
         )
         db.add(live_session)
         db.commit()
@@ -3722,10 +3718,16 @@ def start_ride(ride_id: int, db: Session = Depends(get_db)):
             rider_session = RideSessionRider(
                 session_id=live_session.id,
                 booking_id=booking.id,
-                passenger_phone=booking.passenger_phone,
+                rider_phone=booking.passenger_phone,  # ✅ Use rider_phone, not passenger_phone
                 status="pending"
             )
             db.add(rider_session)
+            
+            # Get passenger name
+            passenger = db.query(User).filter(User.phone_number == booking.passenger_phone).first()
+            if passenger:
+                rider_session.rider_name = passenger.full_name or f"{passenger.first_name or ''} {passenger.last_name or ''}".strip()
+                rider_session.rider_photo = passenger.profile_picture
             
             # Notify passenger
             notification = UserNotification(
@@ -3743,7 +3745,7 @@ def start_ride(ride_id: int, db: Session = Depends(get_db)):
             # Emit socket event
             emit_to_user(booking.passenger_phone, "ride-started", {
                 "ride_id": ride.id,
-                "session_id": session_id,
+                "session_id": live_session.id,  # ✅ Use live_session.id, not session_id
                 "booking_id": booking.id
             })
         
@@ -3752,13 +3754,12 @@ def start_ride(ride_id: int, db: Session = Depends(get_db)):
         # Emit to ride room
         emit_to_ride(ride.id, "ride-started", {
             "ride_id": ride.id,
-            "session_id": session_id
+            "session_id": live_session.id
         })
         
-        # Return JSON response
         return {
             "message": "Ride started successfully",
-            "session_id": session_id,
+            "session_id": live_session.id,
             "ride_id": ride.id
         }
         
@@ -3769,7 +3770,6 @@ def start_ride(ride_id: int, db: Session = Depends(get_db)):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
-
 
 @router.get("/ride/{ride_id}/live-session")
 def get_live_session(ride_id: int, db: Session = Depends(get_db)):
@@ -4540,3 +4540,181 @@ def get_batch_modification_requests(request: BatchModificationRequest, db: Sessi
         }
     
     return {"requests": result}
+# Add to your ride.py backend file
+@router.get("/my-rides-optimized/{phone}")
+def get_my_rides_optimized(
+    phone: str, 
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db)
+):
+    """Optimized version with pagination and batch loading"""
+    norm_phone = normalize_phone(phone)
+    
+    # Get posted rides with pagination
+    posted_rides_query = db.query(Ride).filter(
+        Ride.phone_number == norm_phone,
+        Ride.is_deleted == False
+    ).order_by(Ride.departure_time.desc())
+    
+    total_posted = posted_rides_query.count()
+    posted_rides = posted_rides_query.offset(offset).limit(limit).all()
+    
+    # Batch load bookings for all posted rides in ONE query
+    posted_ride_ids = [r.id for r in posted_rides]
+    bookings = {}
+    modification_requests = {}
+    
+    if posted_ride_ids:
+        # One query for all bookings
+        bookings_raw = db.execute(text("""
+            SELECT 
+                rb.id, rb.ride_id, rb.passenger_phone, rb.seats_booked, rb.status,
+                rb.created_at, rb.total_amount, rb.cancellation_reason,
+                u.full_name as passenger_name, u.first_name, u.last_name, 
+                u.profile_picture as passenger_profile_picture,
+                u.gender as passenger_gender
+            FROM ride_bookings rb 
+            LEFT JOIN users u ON u.phone_number = rb.passenger_phone
+            WHERE rb.ride_id = ANY(:ride_ids)
+            ORDER BY rb.created_at DESC
+        """), {"ride_ids": posted_ride_ids}).mappings().all()
+        
+        for bk in bookings_raw:
+            ride_id = bk["ride_id"]
+            if ride_id not in bookings:
+                bookings[ride_id] = []
+            
+            passenger_name = bk["passenger_name"] or " ".join(
+                p for p in [bk["first_name"], bk["last_name"]] if p
+            ).strip() or f"Passenger {bk['passenger_phone'][-4:]}"
+            
+            bookings[ride_id].append({
+                "id": bk["id"],
+                "ride_id": ride_id,
+                "passenger_phone": bk["passenger_phone"],
+                "passenger_name": passenger_name,
+                "passenger_photo": bk["passenger_profile_picture"],
+                "passenger_gender": bk["passenger_gender"],
+                "seats_requested": bk["seats_booked"],
+                "status": bk["status"],
+                "cancellation_reason": bk["cancellation_reason"],
+                "total_amount": float(bk["total_amount"]) if bk["total_amount"] else None,
+                "created_at": bk["created_at"].isoformat() if bk["created_at"] else None,
+            })
+        
+        # ONE query for all modification requests
+        all_booking_ids = [bk["id"] for bk in bookings_raw if bk["status"] == "accepted"]
+        if all_booking_ids:
+            mod_requests = db.execute(text("""
+                SELECT mr.* 
+                FROM ride_seat_modification_requests mr
+                WHERE mr.booking_id = ANY(:booking_ids)
+                AND mr.status = 'pending'
+            """), {"booking_ids": all_booking_ids}).mappings().all()
+            
+            for mr in mod_requests:
+                modification_requests[mr["booking_id"]] = {
+                    "id": mr["id"],
+                    "current_seats": mr["current_seats"],
+                    "requested_seats": mr["requested_seats"],
+                    "status": mr["status"],
+                    "created_at": mr["created_at"].isoformat() if mr["created_at"] else None
+                }
+    
+    # Get requested rides with pagination
+    requested_rides_query = db.execute(text("""
+        SELECT 
+            rb.id, rb.ride_id, rb.passenger_phone, rb.seats_booked, rb.status,
+            rb.created_at, rb.total_amount, rb.cancellation_reason,
+            r.origin, r.destination, r.departure_time, r.price_per_seat, r.available_seats,
+            r.distance_km, r.duration_text, r.status as ride_status, r.women_only,
+            r.route_coordinates, r.started_at as ride_started_at,
+            u.full_name as driver_name, u.first_name, u.last_name, u.phone_number as driver_phone,
+            u.user_id as driver_user_id, u.profile_completed, 
+            u.profile_picture as driver_profile_picture,
+            u.avg_rating as driver_rating,
+            v.id as vehicle_id, v.make, v.model, v.color, v.registration_number
+        FROM ride_bookings rb
+        JOIN rides r ON r.id = rb.ride_id
+        LEFT JOIN users u ON u.phone_number = r.phone_number
+        LEFT JOIN vehicles v ON v.id = r.vehicle_id
+        WHERE rb.passenger_phone = :phone
+        ORDER BY rb.created_at DESC
+        LIMIT :limit OFFSET :offset
+    """), {
+        "phone": norm_phone,
+        "limit": limit,
+        "offset": offset
+    }).mappings().all()
+    
+    total_requested = db.execute(text("""
+        SELECT COUNT(*) FROM ride_bookings rb
+        WHERE rb.passenger_phone = :phone
+    """), {"phone": norm_phone}).scalar()
+    
+    # Format response
+    posted_formatted = []
+    for ride in posted_rides:
+        total_booked = sum(b["seats_requested"] for b in bookings.get(ride.id, []) if b["status"] == "accepted")
+        remaining_seats = max(0, ride.available_seats - total_booked)
+        
+        # Get modification requests for this ride's bookings
+        ride_modifications = {}
+        for booking in bookings.get(ride.id, []):
+            if booking["id"] in modification_requests:
+                ride_modifications[booking["id"]] = modification_requests[booking["id"]]
+        
+        posted_formatted.append({
+            "id": ride.id,
+            "origin": ride.origin,
+            "destination": ride.destination,
+            "departure_time": ride.departure_time.isoformat() if ride.departure_time else None,
+            "available_seats": ride.available_seats,
+            "remaining_seats": remaining_seats,
+            "total_booked_seats": total_booked,
+            "price_per_seat": ride.price_per_seat,
+            "status": ride.status,
+            "route_coordinates": ride.route_coordinates,
+            "bookings": bookings.get(ride.id, []),
+            "modification_requests": ride_modifications,
+            "started_at": ride.started_at.isoformat() if ride.started_at else None,
+            "cancellation_reason": ride.cancellation_reason
+        })
+    
+    requested_formatted = []
+    for row in requested_rides_query:
+        driver_name = row["driver_name"] or " ".join(
+            p for p in [row["first_name"], row["last_name"]] if p
+        ).strip() or f"Driver {row['driver_phone'][-4:] if row['driver_phone'] else 'Unknown'}"
+        
+        requested_formatted.append({
+            "id": row["id"],
+            "ride_id": row["ride_id"],
+            "seats_requested": row["seats_booked"],
+            "status": row["status"],
+            "cancellation_reason": row["cancellation_reason"],
+            "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+            "origin": row["origin"],
+            "destination": row["destination"],
+            "departure_time": row["departure_time"].isoformat() if row["departure_time"] else None,
+            "price_per_seat": row["price_per_seat"],
+            "driver_name": driver_name,
+            "driver_phone": row["driver_phone"],
+            "driver_photo": row["driver_profile_picture"],
+            "driver_rating": float(row["driver_rating"]) if row["driver_rating"] else 4.5,
+            "route_coordinates": row["route_coordinates"],
+            "started_at": row["ride_started_at"].isoformat() if row["ride_started_at"] else None
+        })
+    
+    return {
+        "posted_rides": posted_formatted,
+        "requested_rides": requested_formatted,
+        "pagination": {
+            "total_posted": total_posted,
+            "total_requested": total_requested,
+            "limit": limit,
+            "offset": offset,
+            "has_more": len(posted_rides) == limit or total_requested > offset + limit
+        }
+    }
