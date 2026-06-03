@@ -845,32 +845,25 @@ class RideSeatModificationRequest(Base):
     # Relationships
     booking = relationship("RideBooking", backref="seat_modification_requests")
     ride = relationship("Ride", backref="seat_modification_requests")
-# Add this to your models.py file
-class ModificationRequest(Base):
+# Add this to your models.py fileclass ModificationRequest(Base):
     __tablename__ = "modification_requests"
     
     id = Column(Integer, primary_key=True, index=True)
+    booking_id = Column(Integer, ForeignKey("ride_bookings.id"), nullable=False)
     ride_id = Column(Integer, ForeignKey("rides.id"), nullable=False)
-    rider_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    driver_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    passenger_phone = Column(String(20), nullable=False, index=True)
+    current_seats = Column(Integer, nullable=False)
+    requested_seats = Column(Integer, nullable=False)
+    status = Column(String(20), default="pending")  # pending, approved, rejected, cancelled
+    rejection_reason = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    approved_at = Column(DateTime(timezone=True), nullable=True)
+    rejected_at = Column(DateTime(timezone=True), nullable=True)
+    cancelled_at = Column(DateTime(timezone=True), nullable=True)
     
-    # Request details
-    request_type = Column(String(50), nullable=False)
-    old_value = Column(Text, nullable=True)
-    new_value = Column(Text, nullable=True)
-    
-    # Status tracking
-    status = Column(String(50), default="pending")
-    reason = Column(Text, nullable=True)
-    
-    # Timestamps
-    requested_at = Column(DateTime, default=datetime.utcnow)
-    responded_at = Column(DateTime, nullable=True)
-    
-    # ✅ FIXED: Use STRING references (with quotes)
-    ride = relationship("Ride", back_populates="modification_requests")
-    rider = relationship("User", foreign_keys="ModificationRequest.rider_id", back_populates="modification_requests_as_rider")
-    driver = relationship("User", foreign_keys="ModificationRequest.driver_id", back_populates="modification_requests_as_driver")
+    # Relationships
+    booking = relationship("RideBooking", backref="modification_requests")
+    ride = relationship("Ride", backref="modification_requests")
 class User(Base):
     __tablename__ = "users"
     

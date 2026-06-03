@@ -3489,99 +3489,6 @@ async def request_modification(
     }
 
 
-@router.put("/modification-request/{request_id}/approve")
-def approve_modification_request(request_id: int, db: Session = Depends(get_db)):
-    mod_request = db.query(ModificationRequest).filter(
-        ModificationRequest.id == request_id
-    ).first()
-    
-    if not mod_request:
-        raise HTTPException(status_code=404, detail="Modification request not found")
-    
-    if mod_request.status != "pending":
-        raise HTTPException(status_code=400, detail=f"Request already {mod_request.status}")
-    
-    booking = db.query(RideBooking).filter(RideBooking.id == mod_request.booking_id).first()
-    if not booking:
-        raise HTTPException(status_code=404, detail="Booking not found")
-    
-    ride = db.query(Ride).filter(Ride.id == mod_request.ride_id).first()
-    if not ride:
-        raise HTTPException(status_code=404, detail="Ride not found")
-    
-    # ============================================
-    # CHECK - ONLY BLOCK IF RIDE HAS STARTED OR 30+ MINUTES PAST
-    # ============================================
-    now = datetime.now(timezone.utc)
-    minutes_since_departure = (now - ride.departure_time).total_seconds() / 60
-    
-    # Only block if ride has started
-    if ride.started_at:
-        mod_request.status = "rejected"
-        mod_request.rejection_reason = "Cannot modify - Ride has already started"
-        db.commit()
-        raise HTTPException(
-            status_code=400,
-            detail="Cannot approve modification - Ride has already started"
-        )
-    
-    # Auto-reject if more than 30 minutes past departure (ride should be auto-cancelled)
-    if minutes_since_departure > 30 and not ride.started_at:
-        mod_request.status = "rejected"
-        mod_request.rejection_reason = "Cannot modify - Ride window expired"
-        db.commit()
-        raise HTTPException(
-            status_code=400,
-            detail="Cannot approve modification - Ride window has expired (30+ minutes past departure)"
-        )
-    # ============================================
-    
-    # Calculate available seats
-    total_booked = get_total_booked_seats(db, ride.id)
-    other_booked = total_booked - booking.seats_booked
-    available_seats_excluding_this = ride.available_seats - other_booked
-    
-    if mod_request.requested_seats > available_seats_excluding_this:
-        mod_request.status = "rejected"
-        mod_request.rejection_reason = "Not enough seats available"
-        db.commit()
-        raise HTTPException(
-            status_code=400,
-            detail=f"Cannot approve: Only {available_seats_excluding_this} seat(s) available"
-        )
-    
-    old_seats = booking.seats_booked
-    booking.seats_booked = mod_request.requested_seats
-    booking.total_amount = ride.price_per_seat * mod_request.requested_seats
-    
-    mod_request.status = "approved"
-    mod_request.approved_at = datetime.now(timezone.utc)
-    
-    db.commit()
-    
-    socket_data = {
-        "ride_id": ride.id,
-        "booking_id": booking.id,
-        "request_id": request_id,
-        "status": "approved",
-        "action": "approved",
-        "new_seats": mod_request.requested_seats,
-        "old_seats": old_seats,
-        "message": f"Your seat change request from {old_seats} to {mod_request.requested_seats} seat(s) has been approved"
-    }
-    
-    emit_to_user(booking.passenger_phone, "modification-response", socket_data)
-    emit_to_ride(ride.id, "modification-response", socket_data)
-    
-    return {
-        "message": "Modification request approved",
-        "booking_id": booking.id,
-        "old_seats": old_seats,
-        "new_seats": mod_request.requested_seats,
-        "new_total": booking.total_amount
-    }
-
-
 @router.put("/modification-request/{request_id}/reject")
 def reject_modification_request(request_id: int, rejection_reason: Optional[str] = "Driver declined", db: Session = Depends(get_db)):
     mod_request = db.query(ModificationRequest).filter(
@@ -3657,52 +3564,6 @@ def cancel_modification_request(booking_id: int, db: Session = Depends(get_db)):
     db.commit()
     
     return {"message": "Modification request cancelled successfully"}
-
-
-@router.get("/ride/{ride_id}/pending-modifications")
-def get_pending_modifications_for_ride(ride_id: int, db: Session = Depends(get_db)):
-    print(f"🔍 DEBUG: get_pending_modifications_for_ride called with ride_id={ride_id}")
-    
-    ride = db.query(Ride).filter(Ride.id == ride_id).first()
-    if not ride:
-        raise HTTPException(status_code=404, detail="Ride not found")
-    
-    # Check if modifications are allowed - ONLY block if ride started
-    now = datetime.now(timezone.utc)
-    minutes_since_departure = (now - ride.departure_time).total_seconds() / 60
-    modifications_locked = ride.started_at or (minutes_since_departure > 30)
-    
-    pending_requests = db.query(ModificationRequest).filter(
-        ModificationRequest.ride_id == ride_id,
-        ModificationRequest.status == "pending"
-    ).order_by(ModificationRequest.created_at.desc()).all()
-    
-    print(f"🔍 DEBUG: Found {len(pending_requests)} pending requests")
-    
-    results = []
-    for req in pending_requests:
-        passenger = db.query(User).filter(User.phone_number == req.passenger_phone).first()
-        passenger_name = passenger.full_name if passenger else f"Passenger {req.passenger_phone[-4:]}"
-        
-        results.append({
-            "id": req.id,
-            "booking_id": req.booking_id,
-            "passenger_name": passenger_name,
-            "passenger_phone": req.passenger_phone,
-            "passenger_photo": passenger.profile_picture if passenger else None,
-            "current_seats": req.current_seats,
-            "requested_seats": req.requested_seats,
-            "created_at": req.created_at.isoformat(),
-            "ride_id": req.ride_id
-        })
-    
-    return {
-        "ride_id": ride_id,
-        "pending_requests": results,
-        "count": len(results),
-        "modifications_locked": modifications_locked,
-        "minutes_since_departure": round(minutes_since_departure) if minutes_since_departure > 0 else 0
-    }
 
 
 @router.get("/ride/{ride_id}/modification-request-for-chat")
@@ -4506,145 +4367,299 @@ def cancel_ride(ride_id: int, db: Session = Depends(get_db)):
     db.commit()
 
     return {"message": "Ride cancelled successfully", "affected_passengers": len(bookings)}
-@router.get("/ride/{ride_id}/modification-requests")
-def get_ride_modification_requests(ride_id: int, db: Session = Depends(get_db)):
-    """Get all modification requests for a ride (for driver view)"""
+# ============================================
+# MODIFICATION REQUEST ENDPOINTS - PERMANENT FIX
+# ============================================
+
+@router.post("/booking/{booking_id}/request-modification")
+async def request_modification(
+    booking_id: int,
+    request: ModificationRequestSchema,
+    db: Session = Depends(get_db)
+):
+    """Request to modify seat count for a booking"""
     try:
-        # Check if ride exists
-        ride = db.query(Ride).filter(Ride.id == ride_id).first()
+        # Get booking
+        booking = db.query(RideBooking).filter(RideBooking.id == booking_id).first()
+        if not booking:
+            return {"success": False, "message": "Booking not found"}
+        
+        # Get the ride
+        ride = db.query(Ride).filter(Ride.id == booking.ride_id).first()
         if not ride:
+            return {"success": False, "message": "Ride not found"}
+        
+        # Check conditions
+        if ride.started_at:
+            return {"success": False, "message": "Cannot modify seats - Ride has already started"}
+        
+        if ride.cancellation_reason:
+            return {"success": False, "message": "Cannot modify seats - Ride has been cancelled"}
+        
+        if booking.status != "accepted":
+            return {"success": False, "message": "Cannot modify seats - Booking is not confirmed yet"}
+        
+        # Check for existing pending request
+        existing = db.query(ModificationRequest).filter(
+            ModificationRequest.booking_id == booking_id,
+            ModificationRequest.status == "pending"
+        ).first()
+        
+        if existing:
+            return {"success": False, "message": "You already have a pending modification request"}
+        
+        # Calculate available seats
+        total_booked = db.query(func.sum(RideBooking.seats_booked)).filter(
+            RideBooking.ride_id == ride.id,
+            RideBooking.status == "accepted"
+        ).scalar() or 0
+        
+        other_booked = total_booked - booking.seats_booked
+        available_seats = ride.available_seats - other_booked
+        
+        # Validate requested seats
+        if request.requested_seats > available_seats:
+            return {"success": False, "message": f"Only {available_seats} seat(s) available"}
+        
+        if request.requested_seats < 1:
+            return {"success": False, "message": "Minimum 1 seat required"}
+        
+        # Create modification request
+        mod_request = ModificationRequest(
+            booking_id=booking_id,
+            ride_id=ride.id,
+            passenger_phone=booking.passenger_phone,
+            current_seats=booking.seats_booked,
+            requested_seats=request.requested_seats,
+            status="pending",
+            created_at=datetime.now(timezone.utc)
+        )
+        
+        db.add(mod_request)
+        db.commit()
+        db.refresh(mod_request)
+        
+        # Get passenger info
+        passenger = db.query(User).filter(User.phone_number == booking.passenger_phone).first()
+        
+        # Notify driver via socket
+        await notify_driver_of_modification(
+            ride_id=ride.id,
+            booking_id=booking_id,
+            passenger_name=passenger.full_name if passenger else "Passenger",
+            passenger_photo=passenger.profile_picture if passenger else None,
+            current_seats=booking.seats_booked,
+            requested_seats=request.requested_seats
+        )
+        
+        return {
+            "success": True, 
+            "message": "Modification request sent to driver",
+            "request": {
+                "id": mod_request.id,
+                "current_seats": mod_request.current_seats,
+                "requested_seats": mod_request.requested_seats,
+                "status": mod_request.status,
+                "created_at": mod_request.created_at.isoformat()
+            }
+        }
+        
+    except Exception as e:
+        print(f"Error in request_modification: {str(e)}")
+        db.rollback()
+        return {"success": False, "message": str(e)}
+
+
+@router.get("/booking/{booking_id}/modification-request")
+def get_pending_modification_request(booking_id: int, db: Session = Depends(get_db)):
+    """Get pending modification request for a booking"""
+    try:
+        # Find pending modification request
+        pending_request = db.query(ModificationRequest).filter(
+            ModificationRequest.booking_id == booking_id,
+            ModificationRequest.status == "pending"
+        ).first()
+        
+        if pending_request:
             return {
-                "success": False,
-                "message": "Ride not found",
-                "requests": []
+                "has_pending": True,
+                "request": {
+                    "id": pending_request.id,
+                    "requested_seats": pending_request.requested_seats,
+                    "current_seats": pending_request.current_seats,
+                    "status": pending_request.status,
+                    "created_at": pending_request.created_at.isoformat() if pending_request.created_at else None
+                }
             }
         
-        # Get pending modification requests
+        return {"has_pending": False}
+        
+    except Exception as e:
+        print(f"Error in get_pending_modification_request: {str(e)}")
+        return {"has_pending": False, "error": str(e)}
+
+
+@router.get("/ride/{ride_id}/pending-modifications")
+def get_pending_modifications_for_ride(ride_id: int, db: Session = Depends(get_db)):
+    """Get all pending modification requests for a ride (for driver)"""
+    try:
+        ride = db.query(Ride).filter(Ride.id == ride_id).first()
+        if not ride:
+            return {"success": False, "message": "Ride not found"}
+        
+        # Check if modifications are locked
+        now = datetime.now(timezone.utc)
+        minutes_since_departure = (now - ride.departure_time).total_seconds() / 60
+        modifications_locked = ride.started_at or (minutes_since_departure > 30)
+        
+        # Get pending requests
         pending_requests = db.query(ModificationRequest).filter(
             ModificationRequest.ride_id == ride_id,
             ModificationRequest.status == "pending"
         ).order_by(ModificationRequest.created_at.desc()).all()
         
-        # Get approved/rejected requests (last 10)
-        other_requests = db.query(ModificationRequest).filter(
-            ModificationRequest.ride_id == ride_id,
-            ModificationRequest.status.in_(["approved", "rejected", "cancelled"])
-        ).order_by(ModificationRequest.created_at.desc()).limit(10).all()
-        
         results = []
-        
-        # Process pending requests
         for req in pending_requests:
             # Get booking to find passenger
             booking = db.query(RideBooking).filter(RideBooking.id == req.booking_id).first()
             passenger = None
             passenger_name = "Unknown"
-            passenger_phone = req.passenger_phone
             
-            if booking:
-                passenger = db.query(User).filter(User.phone_number == booking.passenger_phone).first()
-                if passenger:
-                    passenger_name = passenger.full_name or f"{passenger.first_name or ''} {passenger.last_name or ''}".strip() or f"Passenger {booking.passenger_phone[-4:]}"
-            
-            results.append({
-                "id": req.id,
-                "booking_id": req.booking_id,
-                "passenger_name": passenger_name,
-                "passenger_phone": passenger_phone,
-                "passenger_photo": passenger.profile_picture if passenger else None,
-                "current_seats": req.current_seats,
-                "requested_seats": req.requested_seats,
-                "status": req.status,
-                "created_at": req.created_at.isoformat() if req.created_at else None,
-                "type": "pending"
-            })
-        
-        # Process other requests
-        for req in other_requests:
-            booking = db.query(RideBooking).filter(RideBooking.id == req.booking_id).first()
-            passenger_name = "Unknown"
             if booking:
                 passenger = db.query(User).filter(User.phone_number == booking.passenger_phone).first()
                 if passenger:
                     passenger_name = passenger.full_name or f"{passenger.first_name or ''} {passenger.last_name or ''}".strip()
+                if not passenger_name or passenger_name == "":
+                    passenger_name = f"Passenger {booking.passenger_phone[-4:]}"
             
             results.append({
                 "id": req.id,
                 "booking_id": req.booking_id,
                 "passenger_name": passenger_name,
+                "passenger_phone": req.passenger_phone,
+                "passenger_photo": passenger.profile_picture if passenger else None,
                 "current_seats": req.current_seats,
                 "requested_seats": req.requested_seats,
-                "status": req.status,
-                "rejection_reason": req.rejection_reason if req.status == "rejected" else None,
                 "created_at": req.created_at.isoformat() if req.created_at else None,
-                "responded_at": req.approved_at.isoformat() if req.approved_at else (req.rejected_at.isoformat() if req.rejected_at else None),
-                "type": "history"
+                "ride_id": req.ride_id
             })
         
         return {
             "success": True,
             "ride_id": ride_id,
-            "pending_count": len(pending_requests),
-            "total_count": len(results),
-            "requests": results
+            "pending_requests": results,
+            "count": len(results),
+            "modifications_locked": modifications_locked,
+            "minutes_since_departure": round(minutes_since_departure) if minutes_since_departure > 0 else 0
         }
         
     except Exception as e:
-        print(f"Error in get_ride_modification_requests: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return {
-            "success": False,
-            "message": str(e),
-            "requests": []
-        }
+        print(f"Error in get_pending_modifications_for_ride: {str(e)}")
+        return {"success": False, "message": str(e), "pending_requests": []}
 
 
-@router.get("/ride/{ride_id}/modification-request-status")
-def check_modification_status(ride_id: int, passenger_phone: str, db: Session = Depends(get_db)):
-    """Check if passenger has a pending modification request for this ride"""
+@router.put("/modification-request/{request_id}/approve")
+def approve_modification_request(request_id: int, db: Session = Depends(get_db)):
+    """Approve a modification request"""
     try:
-        # Find booking for this passenger and ride
-        booking = db.query(RideBooking).filter(
-            RideBooking.ride_id == ride_id,
-            RideBooking.passenger_phone == passenger_phone
-        ).first()
+        mod_request = db.query(ModificationRequest).filter(ModificationRequest.id == request_id).first()
         
+        if not mod_request:
+            return {"success": False, "message": "Modification request not found"}
+        
+        if mod_request.status != "pending":
+            return {"success": False, "message": f"Request already {mod_request.status}"}
+        
+        booking = db.query(RideBooking).filter(RideBooking.id == mod_request.booking_id).first()
         if not booking:
-            return {
-                "success": False,
-                "has_pending": False,
-                "message": "No booking found"
-            }
+            return {"success": False, "message": "Booking not found"}
         
-        # Check for pending modification
-        pending = db.query(ModificationRequest).filter(
-            ModificationRequest.booking_id == booking.id,
-            ModificationRequest.status == "pending"
-        ).first()
+        ride = db.query(Ride).filter(Ride.id == mod_request.ride_id).first()
+        if not ride:
+            return {"success": False, "message": "Ride not found"}
         
-        if pending:
-            return {
-                "success": True,
-                "has_pending": True,
-                "request": {
-                    "id": pending.id,
-                    "current_seats": pending.current_seats,
-                    "requested_seats": pending.requested_seats,
-                    "status": pending.status,
-                    "created_at": pending.created_at.isoformat() if pending.created_at else None
-                }
-            }
+        # Check if modification is still allowed
+        if ride.started_at:
+            mod_request.status = "rejected"
+            mod_request.rejection_reason = "Cannot modify - Ride has already started"
+            db.commit()
+            return {"success": False, "message": "Cannot approve - Ride has already started"}
+        
+        # Calculate available seats
+        total_booked = db.query(func.sum(RideBooking.seats_booked)).filter(
+            RideBooking.ride_id == ride.id,
+            RideBooking.status == "accepted"
+        ).scalar() or 0
+        
+        other_booked = total_booked - booking.seats_booked
+        available_seats = ride.available_seats - other_booked
+        
+        if mod_request.requested_seats > available_seats:
+            mod_request.status = "rejected"
+            mod_request.rejection_reason = "Not enough seats available"
+            db.commit()
+            return {"success": False, "message": f"Only {available_seats} seat(s) available"}
+        
+        # Update booking
+        old_seats = booking.seats_booked
+        booking.seats_booked = mod_request.requested_seats
+        booking.total_amount = ride.price_per_seat * mod_request.requested_seats
+        
+        # Update modification request
+        mod_request.status = "approved"
+        mod_request.approved_at = datetime.now(timezone.utc)
+        
+        db.commit()
+        
+        # Notify passenger
+        socket_data = {
+            "success": True,
+            "booking_id": booking.id,
+            "request_id": request_id,
+            "status": "approved",
+            "new_seats": mod_request.requested_seats,
+            "old_seats": old_seats,
+            "message": f"Your seat change request from {old_seats} to {mod_request.requested_seats} seat(s) has been approved"
+        }
+        
+        emit_to_user(booking.passenger_phone, "modification-response", socket_data)
+        emit_to_ride(ride.id, "modification-response", socket_data)
         
         return {
             "success": True,
-            "has_pending": False
+            "message": "Modification request approved",
+            "booking_id": booking.id,
+            "old_seats": old_seats,
+            "new_seats": mod_request.requested_seats,
+            "new_total": booking.total_amount
         }
         
     except Exception as e:
-        print(f"Error checking modification status: {str(e)}")
-        return {
-            "success": False,
-            "has_pending": False,
-            "error": str(e)
-        }
+        print(f"Error in approve_modification_request: {str(e)}")
+        db.rollback()
+        return {"success": False, "message": str(e)}
+
+
+@router.delete("/booking/{booking_id}/cancel-modification-request")
+def cancel_modification_request(booking_id: int, db: Session = Depends(get_db)):
+    """Cancel a pending modification request"""
+    try:
+        mod_request = db.query(ModificationRequest).filter(
+            ModificationRequest.booking_id == booking_id,
+            ModificationRequest.status == "pending"
+        ).first()
+        
+        if not mod_request:
+            return {"success": False, "message": "No pending modification request found"}
+        
+        mod_request.status = "cancelled"
+        mod_request.cancelled_at = datetime.now(timezone.utc)
+        
+        db.commit()
+        
+        return {"success": True, "message": "Modification request cancelled successfully"}
+        
+    except Exception as e:
+        print(f"Error in cancel_modification_request: {str(e)}")
+        db.rollback()
+        return {"success": False, "message": str(e)}
