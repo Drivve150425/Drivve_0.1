@@ -855,23 +855,22 @@ class ModificationRequest(Base):
     driver_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     
     # Request details
-    request_type = Column(String(50), nullable=False)  # e.g., "change_time", "change_pickup", "add_passenger", "cancel"
+    request_type = Column(String(50), nullable=False)
     old_value = Column(Text, nullable=True)
     new_value = Column(Text, nullable=True)
     
     # Status tracking
-    status = Column(String(50), default="pending")  # pending, approved, rejected, cancelled
-    reason = Column(Text, nullable=True)  # Rejection reason if rejected
+    status = Column(String(50), default="pending")
+    reason = Column(Text, nullable=True)
     
     # Timestamps
     requested_at = Column(DateTime, default=datetime.utcnow)
     responded_at = Column(DateTime, nullable=True)
     
-    # Relationships - FIXED
+    # ✅ FIXED: Use STRING references (with quotes)
     ride = relationship("Ride", back_populates="modification_requests")
-    rider = relationship("User", foreign_keys=[rider_id], back_populates="modification_requests_as_rider")
-    driver = relationship("User", foreign_keys=[driver_id], back_populates="modification_requests_as_driver")
-
+    rider = relationship("User", foreign_keys="ModificationRequest.rider_id", back_populates="modification_requests_as_rider")
+    driver = relationship("User", foreign_keys="ModificationRequest.driver_id", back_populates="modification_requests_as_driver")
 class User(Base):
     __tablename__ = "users"
     
@@ -925,8 +924,8 @@ class User(Base):
     avg_rating = Column(Float, default=5.0)
     total_ratings = Column(Integer, default=0)
     modification_requests_as_rider = relationship("ModificationRequest", 
-                                                   foreign_keys=[ModificationRequest.rider_id], 
+                                                   foreign_keys="ModificationRequest.rider_id", 
                                                    back_populates="rider")
     modification_requests_as_driver = relationship("ModificationRequest", 
-                                                    foreign_keys=[ModificationRequest.driver_id], 
+                                                    foreign_keys="ModificationRequest.driver_id", 
                                                     back_populates="driver")
