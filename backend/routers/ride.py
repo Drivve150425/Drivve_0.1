@@ -1626,10 +1626,6 @@ def get_ride_passengers(ride_id: int, db: Session = Depends(get_db)):
         "passengers": passengers
     }
 
-
-# ============================================
-# SEAT MODIFICATION REQUEST ENDPOINTS
-# ============================================
 @router.post("/booking/{booking_id}/request-modification")
 def request_seat_modification(booking_id: int, data: SeatModificationRequest, db: Session = Depends(get_db)):
     booking = db.query(RideBooking).filter(RideBooking.id == booking_id).first()
@@ -1639,12 +1635,31 @@ def request_seat_modification(booking_id: int, data: SeatModificationRequest, db
     if booking.status != "accepted":
         raise HTTPException(status_code=400, detail="Only accepted bookings can be modified")
     
-    if data.requested_seats <= 0:
-        raise HTTPException(status_code=400, detail="Seat count must be at least 1")
-    
     ride = db.query(Ride).filter(Ride.id == booking.ride_id).first()
     if not ride:
         raise HTTPException(status_code=404, detail="Ride not found")
+    
+    # ============================================
+    # ADD THIS CHECK - MODIFICATION LOCK
+    # ============================================
+    now = datetime.now(timezone.utc)
+    minutes_to_departure = (ride.departure_time - now).total_seconds() / 60
+    
+    if minutes_to_departure <= 15:
+        raise HTTPException(
+            status_code=400,
+            detail="Modifications are locked within 15 minutes of departure time. Please contact driver directly."
+        )
+    
+    if ride.started_at:
+        raise HTTPException(status_code=400, detail="Cannot modify after ride has started")
+    
+    if ride.cancellation_reason:
+        raise HTTPException(status_code=400, detail="Cannot modify cancelled ride")
+    # ============================================
+    
+    if data.requested_seats <= 0:
+        raise HTTPException(status_code=400, detail="Seat count must be at least 1")
     
     total_booked = get_total_booked_seats(db, ride.id)
     other_booked = total_booked - booking.seats_booked
@@ -1683,9 +1698,7 @@ def request_seat_modification(booking_id: int, data: SeatModificationRequest, db
     db.commit()
     db.refresh(modification_request)
     
-    # ============================================
-    # EMIT SOCKET EVENT TO DRIVER (both user room and ride room)
-    # ============================================
+    # Emit socket event to driver
     socket_data = {
         "ride_id": ride.id,
         "booking_id": booking_id,
@@ -1697,9 +1710,7 @@ def request_seat_modification(booking_id: int, data: SeatModificationRequest, db
         "message": f"{passenger_name} wants to change from {booking.seats_booked} to {data.requested_seats} seat(s)"
     }
     
-    # Emit to driver's user room
     emit_to_user(ride.phone_number, "new-modification-request", socket_data)
-    # Also emit to ride room for all listeners
     emit_to_ride(ride.id, "new-modification-request", socket_data)
     
     # Create notification for driver
@@ -1750,6 +1761,22 @@ def approve_modification_request(request_id: int, db: Session = Depends(get_db))
     if not ride:
         raise HTTPException(status_code=404, detail="Ride not found")
     
+    # ============================================
+    # ADD THIS CHECK - MODIFICATION LOCK
+    # ============================================
+    now = datetime.now(timezone.utc)
+    minutes_to_departure = (ride.departure_time - now).total_seconds() / 60
+    
+    if minutes_to_departure <= 15:
+        mod_request.status = "rejected"
+        mod_request.rejection_reason = "Modification window closed (within 15 minutes of departure)"
+        db.commit()
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot approve modification within 15 minutes of departure"
+        )
+    # ============================================
+    
     total_booked = get_total_booked_seats(db, ride.id)
     other_booked = total_booked - booking.seats_booked
     available_seats_excluding_this = ride.available_seats - other_booked
@@ -1772,9 +1799,6 @@ def approve_modification_request(request_id: int, db: Session = Depends(get_db))
     
     db.commit()
     
-    # ============================================
-    # EMIT SOCKET EVENT TO PASSENGER
-    # ============================================
     socket_data = {
         "ride_id": ride.id,
         "booking_id": booking.id,
@@ -1983,6 +2007,15 @@ def expire_pending_requests(db: Session = Depends(get_db)):
 def get_pending_modifications_for_ride(ride_id: int, db: Session = Depends(get_db)):
     print(f"🔍 DEBUG: get_pending_modifications_for_ride called with ride_id={ride_id}")
     
+    ride = db.query(Ride).filter(Ride.id == ride_id).first()
+    if not ride:
+        raise HTTPException(status_code=404, detail="Ride not found")
+    
+    # Check if modifications are allowed
+    now = datetime.now(timezone.utc)
+    minutes_to_departure = (ride.departure_time - now).total_seconds() / 60
+    modifications_locked = minutes_to_departure <= 15 or ride.started_at or ride.cancellation_reason
+    
     pending_requests = db.query(RideSeatModificationRequest).join(RideBooking).filter(
         RideSeatModificationRequest.ride_id == ride_id,
         RideSeatModificationRequest.status == "pending"
@@ -2010,5 +2043,255 @@ def get_pending_modifications_for_ride(ride_id: int, db: Session = Depends(get_d
     return {
         "ride_id": ride_id,
         "pending_requests": results,
-        "count": len(results)
+        "count": len(results),
+        "modifications_locked": modifications_locked,
+        "minutes_to_departure": round(minutes_to_departure)
     }
+# Add this helper function at the top with other helper functions
+def can_modify_ride(ride: Ride) -> bool:
+    """Check if modifications are allowed (not within 15 minutes of departure and not started)"""
+    now = datetime.now(timezone.utc)
+    minutes_to_departure = (ride.departure_time - now).total_seconds() / 60
+    # Modifications allowed only if more than 15 minutes to departure, not started, not cancelled
+    return minutes_to_departure > 15 and not ride.started_at and not ride.cancellation_reason
+
+
+# Add this endpoint after your existing endpoints (before the modification request endpoints)
+@router.post("/ride/{ride_id}/start")
+def start_ride(ride_id: int, db: Session = Depends(get_db)):
+    """Start a ride - only allowed within 15 minutes before to 30 minutes after departure"""
+    ride = db.query(Ride).filter(Ride.id == ride_id).first()
+    if not ride:
+        raise HTTPException(status_code=404, detail="Ride not found")
+    
+    if ride.started_at:
+        raise HTTPException(status_code=400, detail="Ride already started")
+    
+    if ride.cancellation_reason:
+        raise HTTPException(status_code=400, detail=f"Cannot start cancelled ride: {ride.cancellation_reason}")
+    
+    now = datetime.now(timezone.utc)
+    minutes_to_departure = (ride.departure_time - now).total_seconds() / 60
+    minutes_since_departure = (now - ride.departure_time).total_seconds() / 60
+    
+    # Check if within valid start window: 15 min before to 30 min after departure
+    if minutes_to_departure > 15:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Ride can only be started within 15 minutes of departure time. {int(minutes_to_departure)} minutes remaining."
+        )
+    
+    if minutes_since_departure > 30:
+        # Auto-cancel the ride
+        ride.status = "cancelled"
+        ride.cancellation_reason = "Auto-cancelled: Ride was not started within 30 minutes of departure time"
+        
+        # Cancel all accepted bookings
+        accepted_bookings = db.query(RideBooking).filter(
+            RideBooking.ride_id == ride_id,
+            RideBooking.status == "accepted"
+        ).all()
+        
+        for booking in accepted_bookings:
+            booking.status = "cancelled"
+            booking.cancellation_reason = "Ride auto-cancelled - driver did not start on time"
+            
+            # Notify passenger
+            notification = UserNotification(
+                phone_number=booking.passenger_phone,
+                title="Ride Auto-Cancelled ❌",
+                message=f"The ride from {ride.origin} to {ride.destination} has been auto-cancelled as the driver did not start within 30 minutes.",
+                type=NotificationType.RIDE,
+                action_type="ride",
+                action_value=str(ride.id),
+                is_read=False,
+                is_deleted=False
+            )
+            db.add(notification)
+            
+            # Emit socket event
+            emit_to_user(booking.passenger_phone, "ride-auto-cancelled", {
+                "ride_id": ride.id,
+                "reason": "Driver did not start within 30 minutes"
+            })
+        
+        db.commit()
+        emit_to_ride(ride.id, "ride-auto-cancelled", {
+            "ride_id": ride.id,
+            "reason": "Driver did not start within 30 minutes"
+        })
+        
+        raise HTTPException(
+            status_code=400,
+            detail="Ride has been auto-cancelled as it was not started within 30 minutes of departure time."
+        )
+    
+    # Start the ride
+    ride.started_at = now
+    ride.status = "active"
+    
+    # Create live session
+    import uuid
+    session_id = str(uuid.uuid4())
+    live_session = RideSession(
+        ride_id=ride_id,
+        session_id=session_id,
+        status="driver_started",
+        started_at=now
+    )
+    db.add(live_session)
+    db.commit()
+    db.refresh(live_session)
+    
+    # Notify all accepted passengers
+    accepted_bookings = db.query(RideBooking).filter(
+        RideBooking.ride_id == ride_id,
+        RideBooking.status == "accepted"
+    ).all()
+    
+    for booking in accepted_bookings:
+        # Create rider session entry
+        rider_session = RideSessionRider(
+            session_id=live_session.id,
+            booking_id=booking.id,
+            passenger_phone=booking.passenger_phone,
+            status="pending"
+        )
+        db.add(rider_session)
+        
+        # Notify passenger
+        notification = UserNotification(
+            phone_number=booking.passenger_phone,
+            title="Ride Started! 🚗",
+            message=f"The driver has started the ride from {ride.origin} to {ride.destination}. You can now track the journey live.",
+            type=NotificationType.RIDE,
+            action_type="ride",
+            action_value=str(ride.id),
+            is_read=False,
+            is_deleted=False
+        )
+        db.add(notification)
+        
+        # Emit socket event
+        emit_to_user(booking.passenger_phone, "ride-started", {
+            "ride_id": ride.id,
+            "session_id": session_id,
+            "booking_id": booking.id
+        })
+    
+    db.commit()
+    
+    # Emit to ride room
+    emit_to_ride(ride.id, "ride-started", {
+        "ride_id": ride.id,
+        "session_id": session_id
+    })
+    
+    return {
+        "message": "Ride started successfully",
+        "session_id": session_id,
+        "ride_id": ride.id
+    }
+
+
+@router.put("/ride/{ride_id}/auto-cancel")
+def auto_cancel_ride(ride_id: int, db: Session = Depends(get_db)):
+    """Auto-cancel a ride that wasn't started within 30 minutes"""
+    ride = db.query(Ride).filter(Ride.id == ride_id).first()
+    if not ride:
+        raise HTTPException(status_code=404, detail="Ride not found")
+    
+    if ride.started_at:
+        return {"message": "Ride already started", "cancelled": False}
+    
+    if ride.cancellation_reason:
+        return {"message": "Ride already cancelled", "cancelled": False}
+    
+    now = datetime.now(timezone.utc)
+    minutes_since_departure = (now - ride.departure_time).total_seconds() / 60
+    
+    if minutes_since_departure <= 30:
+        return {"message": "Ride still within start window", "cancelled": False}
+    
+    # Auto-cancel the ride
+    ride.status = "cancelled"
+    ride.cancellation_reason = "Auto-cancelled: Ride was not started within 30 minutes of departure time"
+    
+    # Cancel all accepted bookings
+    accepted_bookings = db.query(RideBooking).filter(
+        RideBooking.ride_id == ride_id,
+        RideBooking.status == "accepted"
+    ).all()
+    
+    for booking in accepted_bookings:
+        booking.status = "cancelled"
+        booking.cancellation_reason = "Ride auto-cancelled - driver did not start on time"
+        
+        notification = UserNotification(
+            phone_number=booking.passenger_phone,
+            title="Ride Auto-Cancelled ❌",
+            message=f"The ride from {ride.origin} to {ride.destination} has been auto-cancelled as the driver did not start within 30 minutes.",
+            type=NotificationType.RIDE,
+            action_type="ride",
+            action_value=str(ride.id),
+            is_read=False,
+            is_deleted=False
+        )
+        db.add(notification)
+        
+        emit_to_user(booking.passenger_phone, "ride-auto-cancelled", {
+            "ride_id": ride.id,
+            "reason": "Driver did not start within 30 minutes"
+        })
+    
+    db.commit()
+    
+    emit_to_ride(ride.id, "ride-auto-cancelled", {
+        "ride_id": ride.id,
+        "reason": "Driver did not start within 30 minutes"
+    })
+    
+    return {
+        "message": "Ride auto-cancelled successfully",
+        "cancelled": True,
+        "affected_passengers": len(accepted_bookings)
+    }
+
+
+@router.get("/ride/{ride_id}/can-modify")
+def check_can_modify_ride(ride_id: int, db: Session = Depends(get_db)):
+    """Check if modifications are allowed for this ride"""
+    ride = db.query(Ride).filter(Ride.id == ride_id).first()
+    if not ride:
+        raise HTTPException(status_code=404, detail="Ride not found")
+    
+    now = datetime.now(timezone.utc)
+    minutes_to_departure = (ride.departure_time - now).total_seconds() / 60
+    
+    return {
+        "can_modify": minutes_to_departure > 15 and not ride.started_at and not ride.cancellation_reason,
+        "minutes_to_departure": round(minutes_to_departure),
+        "is_started": ride.started_at is not None,
+        "is_cancelled": ride.cancellation_reason is not None
+    }
+
+
+@router.get("/ride/{ride_id}/live-session")
+def get_live_session(ride_id: int, db: Session = Depends(get_db)):
+    """Get active live session for a ride"""
+    live_session = db.query(RideSession).filter(
+        RideSession.ride_id == ride_id,
+        RideSession.status.in_(["driver_started", "boarding", "en_route"])
+    ).order_by(RideSession.id.desc()).first()
+    
+    if live_session:
+        return {
+            "success": True,
+            "session": {
+                "session_id": live_session.id,
+                "status": live_session.status,
+                "started_at": live_session.started_at.isoformat() if live_session.started_at else None
+            }
+        }
+    
+    return {"success": False, "session": None}
