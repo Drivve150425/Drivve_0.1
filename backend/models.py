@@ -132,7 +132,7 @@ class RideBooking(Base):
 
     ride = relationship("Ride", back_populates="bookings")
     cancellation_reason = Column(String(255), nullable=True)
-
+    modification_requests = relationship("ModificationRequest", back_populates="booking", cascade="all, delete-orphan")
 class ShareActivity(Base):
     __tablename__ = "share_activity"
 
@@ -835,16 +835,15 @@ class RideSeatModificationRequest(Base):
     driver_phone = Column(String, nullable=False)
     current_seats = Column(Integer, nullable=False)
     requested_seats = Column(Integer, nullable=False)
-    status = Column(String, default="pending")  # pending, approved, rejected, cancelled
+    status = Column(String, default="pending")
     rejection_reason = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc))
     approved_at = Column(DateTime(timezone=True), nullable=True)
     rejected_at = Column(DateTime(timezone=True), nullable=True)
     cancelled_at = Column(DateTime(timezone=True), nullable=True)
     
-    # Relationships
     booking = relationship("RideBooking", backref="seat_modification_requests")
-    ride = relationship("Ride", backref="seat_modification_requests")
+    ride = relationship("Ride", backref="seat_modification_requests")  # This conflicts!
 class ModificationRequest(Base):
     __tablename__ = "modification_requests"
     
@@ -861,9 +860,9 @@ class ModificationRequest(Base):
     rejected_at = Column(DateTime(timezone=True), nullable=True)
     cancelled_at = Column(DateTime(timezone=True), nullable=True)
     
-    # Relationships
-    booking = relationship("RideBooking", backref="modification_requests")
-    ride = relationship("Ride", backref="modification_requests")
+    # Relationships - Use back_populates, NOT backref
+    booking = relationship("RideBooking", back_populates="modification_requests")
+    ride = relationship("Ride", back_populates="modification_requests")  # No backref here!
 class User(Base):
     __tablename__ = "users"
     
@@ -916,9 +915,4 @@ class User(Base):
     bio = Column(String(500), nullable=True)
     avg_rating = Column(Float, default=5.0)
     total_ratings = Column(Integer, default=0)
-    modification_requests_as_rider = relationship("ModificationRequest", 
-                                                   foreign_keys="ModificationRequest.rider_id", 
-                                                   back_populates="rider")
-    modification_requests_as_driver = relationship("ModificationRequest", 
-                                                    foreign_keys="ModificationRequest.driver_id", 
-                                                    back_populates="driver")
+  
