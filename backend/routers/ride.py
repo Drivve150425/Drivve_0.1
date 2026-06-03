@@ -4512,17 +4512,20 @@ def cancel_modification_request(booking_id: int, db: Session = Depends(get_db)):
         print(f"Error in cancel_modification_request: {str(e)}")
         db.rollback()
         return {"success": False, "message": str(e)}
+
+# Add this Pydantic model at the top with your other models
+class BatchModificationRequest(BaseModel):
+    booking_ids: List[int]
+
 @router.post("/bookings/modification-requests/batch")
-def get_batch_modification_requests(booking_ids: List[int], db: Session = Depends(get_db)):
+def get_batch_modification_requests(request: BatchModificationRequest, db: Session = Depends(get_db)):
     """Get pending modification requests for multiple bookings in one call"""
-    if not booking_ids:
+    if not request.booking_ids:
         return {"requests": {}}
     
     # Single query for all bookings
-    mod_requests = db.query(
-        ModificationRequest
-    ).filter(
-        ModificationRequest.booking_id.in_(booking_ids),
+    mod_requests = db.query(ModificationRequest).filter(
+        ModificationRequest.booking_id.in_(request.booking_ids),
         ModificationRequest.status == "pending"
     ).all()
     
