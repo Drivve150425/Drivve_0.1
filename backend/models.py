@@ -145,6 +145,9 @@ class Ride(Base):
 
     # Relationships
     bookings = relationship("RideBooking", back_populates="ride")
+    # ADD THIS FIELD
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    
     # In Ride class
     cancellation_reason = Column(String(255), nullable=True)
 
