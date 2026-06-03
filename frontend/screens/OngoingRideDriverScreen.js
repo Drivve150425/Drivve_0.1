@@ -12,6 +12,7 @@ import {
   Image,
   TextInput,
   Modal,
+  Alert,
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import axios from 'axios';
@@ -38,12 +39,48 @@ export default function OngoingRideDriverScreen({ route, navigation }) {
 
   const fetchSession = useCallback(async () => {
     try {
+      console.log('Fetching session for ride:', rideId, 'driver:', user?.phonenumber);
+      
       const res = await axios.get(`${API_BASE_URL}/ride-sessions/driver/${rideId}`, {
         params: { driver_phone: user?.phonenumber },
       });
+      
+      console.log('Session response:', res.data);
       setSession(res.data);
     } catch (error) {
       console.log('Driver session fetch error:', error?.response?.data || error.message);
+      
+      // If session not found (404), try to get the live session from the main endpoint
+      if (error?.response?.status === 404) {
+        try {
+          console.log('Session not found, trying live-session endpoint...');
+          const liveRes = await axios.get(`${API_BASE_URL}/ride/${rideId}/live-session`);
+          
+          if (liveRes.data.success && liveRes.data.session) {
+            console.log('Found live session:', liveRes.data.session);
+            // Transform to match expected format
+            setSession({
+              session_id: liveRes.data.session.session_id,
+              status: liveRes.data.session.status,
+              current_phase: liveRes.data.session.status === 'driver_started' ? 'boarding' : liveRes.data.session.status,
+              ride_id: rideId,
+              riders: [],
+              boarded_count: 0,
+              dropped_count: 0,
+              total_riders: 0,
+              qr_code_token: liveRes.data.session.qr_code_token || 'N/A'
+            });
+          } else {
+            console.log('No live session found');
+            setSession(null);
+          }
+        } catch (liveError) {
+          console.log('No live session found yet:', liveError);
+          setSession(null);
+        }
+      } else {
+        setSession(null);
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -68,7 +105,7 @@ export default function OngoingRideDriverScreen({ route, navigation }) {
       });
       fetchSession();
     } catch (error) {
-      alert(error?.response?.data?.detail || 'Could not mark rider as boarded');
+      Alert.alert('Error', error?.response?.data?.detail || 'Could not mark rider as boarded');
     }
   };
 
@@ -79,44 +116,85 @@ export default function OngoingRideDriverScreen({ route, navigation }) {
       });
       fetchSession();
     } catch (error) {
-      alert(error?.response?.data?.detail || 'Could not drop off rider');
+      Alert.alert('Error', error?.response?.data?.detail || 'Could not drop off rider');
     }
   };
 
   const handleCompleteRide = async () => {
-    try {
-      await axios.post(`${API_BASE_URL}/ride-sessions/${session.session_id}/complete`, {
-        driver_phone: user?.phonenumber,
-      });
-      fetchSession();
-      alert('Ride completed successfully');
-    } catch (error) {
-      alert(error?.response?.data?.detail || 'Could not complete ride');
-    }
+    Alert.alert(
+      'Complete Ride',
+      'Are you sure you want to complete this ride?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Complete',
+          onPress: async () => {
+            try {
+              await axios.post(`${API_BASE_URL}/ride-sessions/${session.session_id}/complete`, {
+                driver_phone: user?.phonenumber,
+              });
+              fetchSession();
+              Alert.alert('Success', 'Ride completed successfully');
+              setTimeout(() => {
+                navigation.navigate('DriverHomeScreen');
+              }, 2000);
+            } catch (error) {
+              Alert.alert('Error', error?.response?.data?.detail || 'Could not complete ride');
+            }
+          }
+        }
+      ]
+    );
   };
 
   const handleSOS = async () => {
-    try {
-      await axios.post(`${API_BASE_URL}/ride-sessions/${session.session_id}/sos`, {
-        note: 'SOS triggered by driver',
-      });
-      fetchSession();
-      alert('SOS triggered');
-    } catch (error) {
-      alert('Could not trigger SOS');
-    }
+    Alert.alert(
+      'Trigger SOS',
+      'This will alert emergency contacts. Are you sure?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Trigger SOS',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await axios.post(`${API_BASE_URL}/ride-sessions/${session.session_id}/sos`, {
+                note: 'SOS triggered by driver',
+              });
+              fetchSession();
+              Alert.alert('SOS Triggered', 'Emergency contacts have been notified');
+            } catch (error) {
+              Alert.alert('Error', 'Could not trigger SOS');
+            }
+          }
+        }
+      ]
+    );
   };
 
   const handleEmergencyStop = async () => {
-    try {
-      await axios.post(`${API_BASE_URL}/ride-sessions/${session.session_id}/emergency-stop`, {
-        note: 'Emergency stop triggered by driver',
-      });
-      fetchSession();
-      alert('Emergency stop activated');
-    } catch (error) {
-      alert('Could not trigger emergency stop');
-    }
+    Alert.alert(
+      'Emergency Stop',
+      'This will stop the ride and notify all passengers. Are you sure?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Emergency Stop',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await axios.post(`${API_BASE_URL}/ride-sessions/${session.session_id}/emergency-stop`, {
+                note: 'Emergency stop triggered by driver',
+              });
+              fetchSession();
+              Alert.alert('Emergency Stop', 'Emergency stop has been activated');
+            } catch (error) {
+              Alert.alert('Error', 'Could not trigger emergency stop');
+            }
+          }
+        }
+      ]
+    );
   };
 
   const openRateModal = (rider) => {
@@ -128,6 +206,11 @@ export default function OngoingRideDriverScreen({ route, navigation }) {
 
   const submitRiderRating = async () => {
     if (!selectedRider) return;
+    if (rating === 0) {
+      Alert.alert('Rating Required', 'Please select a rating before submitting');
+      return;
+    }
+    
     try {
       await axios.post(`${API_BASE_URL}/ride-sessions/${session.session_id}/rate-rider`, {
         booking_id: selectedRider.booking_id,
@@ -136,8 +219,9 @@ export default function OngoingRideDriverScreen({ route, navigation }) {
       });
       setRatingModalVisible(false);
       fetchSession();
+      Alert.alert('Success', 'Thank you for rating this rider');
     } catch (error) {
-      alert('Could not submit rider rating');
+      Alert.alert('Error', 'Could not submit rider rating');
     }
   };
 
@@ -164,7 +248,74 @@ export default function OngoingRideDriverScreen({ route, navigation }) {
     );
   }
 
+  // If no session exists
+  if (!session) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.circleBtn}>
+            <Ionicons name="arrow-back" size={22} color="#fff" />
+          </TouchableOpacity>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.headerTitle}>Ride Session</Text>
+          </View>
+        </View>
+        
+        <View style={styles.noSessionContainer}>
+          <Ionicons name="car-sport-outline" size={80} color="#D1D5DB" />
+          <Text style={styles.noSessionTitle}>No Active Session</Text>
+          <Text style={styles.noSessionText}>
+            The ride session hasn't been started yet.{"\n"}
+            Please start the ride from the ride details screen.
+          </Text>
+          <TouchableOpacity 
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Text style={styles.backButtonText}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   const allDropped = session?.dropped_count === session?.total_riders && session?.total_riders > 0;
+  const hasRiders = session?.riders && session.riders.length > 0;
+
+  if (!hasRiders) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.circleBtn}>
+            <Ionicons name="arrow-back" size={22} color="#fff" />
+          </TouchableOpacity>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.headerTitle}>Ride in Progress</Text>
+            <Text style={styles.headerSubtitle}>No riders yet</Text>
+          </View>
+          <TouchableOpacity onPress={handleSOS} style={[styles.circleBtn, { backgroundColor: '#E11D48' }]}>
+            <Ionicons name="shield-outline" size={20} color="#fff" />
+          </TouchableOpacity>
+        </View>
+        
+        <View style={styles.noRidersContainer}>
+          <Ionicons name="people-outline" size={80} color="#D1D5DB" />
+          <Text style={styles.noRidersTitle}>No Riders Yet</Text>
+          <Text style={styles.noRidersText}>
+            Waiting for riders to join this ride.{"\n"}
+            Share the QR code with passengers to board.
+          </Text>
+          <TouchableOpacity 
+            style={styles.refreshButton}
+            onPress={onRefresh}
+          >
+            <Ionicons name="refresh-outline" size={20} color="#184080" />
+            <Text style={styles.refreshButtonText}>Refresh</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -201,8 +352,8 @@ export default function OngoingRideDriverScreen({ route, navigation }) {
           </Text>
           <Text style={styles.progressCount}>
             {session?.current_phase === 'boarding'
-              ? `${session?.boarded_count}/${session?.total_riders}`
-              : `${session?.dropped_count}/${session?.total_riders}`}
+              ? `${session?.boarded_count || 0}/${session?.total_riders || 0}`
+              : `${session?.dropped_count || 0}/${session?.total_riders || 0}`}
           </Text>
           <View style={styles.progressBarBg}>
             <View
@@ -228,7 +379,7 @@ export default function OngoingRideDriverScreen({ route, navigation }) {
             <Text style={styles.cardSub}>Ask riders to scan this code token</Text>
             <View style={styles.qrBox}>
               <Ionicons name="qr-code" size={76} color="#111827" />
-              <Text style={styles.qrToken}>{session?.qr_code_token}</Text>
+              <Text style={styles.qrToken}>{session?.qr_code_token || 'N/A'}</Text>
             </View>
           </View>
         )}
@@ -285,7 +436,7 @@ export default function OngoingRideDriverScreen({ route, navigation }) {
                         },
                       ]}
                     >
-                      {isDropped ? 'Dropped Off' : isBoarded ? 'On Board' : rider.status}
+                      {isDropped ? 'Dropped Off' : isBoarded ? 'On Board' : 'Pending'}
                     </Text>
                   </View>
                 </View>
@@ -298,7 +449,7 @@ export default function OngoingRideDriverScreen({ route, navigation }) {
 
                 {session?.current_phase !== 'boarding' && !isDropped && (
                   <TouchableOpacity style={styles.dropBtn} onPress={() => handleDropOff(rider.booking_id)}>
-                    <Text style={styles.dropBtnText}>Slide to Drop Off</Text>
+                    <Text style={styles.dropBtnText}>Drop Off Rider</Text>
                   </TouchableOpacity>
                 )}
 
@@ -312,13 +463,14 @@ export default function OngoingRideDriverScreen({ route, navigation }) {
           })}
         </View>
 
-        <TouchableOpacity
-          style={[styles.completeRideBtn, !allDropped && { opacity: 0.5 }]}
-          onPress={handleCompleteRide}
-          disabled={!allDropped}
-        >
-          <Text style={styles.completeRideText}>Complete Ride & Rate Riders</Text>
-        </TouchableOpacity>
+        {allDropped && (
+          <TouchableOpacity
+            style={styles.completeRideBtn}
+            onPress={handleCompleteRide}
+          >
+            <Text style={styles.completeRideText}>Complete Ride</Text>
+          </TouchableOpacity>
+        )}
 
         <TouchableOpacity style={styles.emergencyBtn} onPress={handleEmergencyStop}>
           <Text style={styles.emergencyBtnText}>Emergency Stop</Text>
@@ -345,9 +497,9 @@ export default function OngoingRideDriverScreen({ route, navigation }) {
 
             <View style={styles.modalActions}>
               <TouchableOpacity style={styles.skipBtn} onPress={() => setRatingModalVisible(false)}>
-                <Text style={styles.skipBtnText}>Skip</Text>
+                <Text style={styles.skipBtnText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.submitBtn} onPress={submitRiderRating}>
+              <TouchableOpacity style={[styles.submitBtn, rating === 0 && { opacity: 0.5 }]} onPress={submitRiderRating} disabled={rating === 0}>
                 <Text style={styles.submitBtnText}>Submit</Text>
               </TouchableOpacity>
             </View>
@@ -424,7 +576,7 @@ const styles = StyleSheet.create({
   dropBtn: {
     backgroundColor: '#7C3AED',
     marginTop: 14,
-    borderRadius: 999,
+    borderRadius: 12,
     paddingVertical: 14,
     alignItems: 'center',
   },
@@ -486,10 +638,79 @@ const styles = StyleSheet.create({
   skipBtnText: { color: '#6B7280', fontWeight: '600' },
   submitBtn: {
     flex: 1,
-    backgroundColor: '#D1D5DB',
+    backgroundColor: '#184080',
     borderRadius: 999,
     paddingVertical: 14,
     alignItems: 'center',
   },
   submitBtnText: { color: '#fff', fontWeight: '700' },
+  noSessionContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 30,
+    backgroundColor: '#F4F7FB',
+  },
+  noSessionTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#111827',
+    marginTop: 20,
+    marginBottom: 8,
+  },
+  noSessionText: {
+    fontSize: 14,
+    color: '#6B7280',
+    textAlign: 'center',
+    marginBottom: 30,
+    lineHeight: 20,
+  },
+  backButton: {
+    backgroundColor: '#184080',
+    paddingHorizontal: 30,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  backButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 16,
+  },
+  noRidersContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 30,
+    backgroundColor: '#F4F7FB',
+  },
+  noRidersTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#111827',
+    marginTop: 20,
+    marginBottom: 8,
+  },
+  noRidersText: {
+    fontSize: 14,
+    color: '#6B7280',
+    textAlign: 'center',
+    marginBottom: 30,
+    lineHeight: 20,
+  },
+  refreshButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#fff',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#184080',
+  },
+  refreshButtonText: {
+    color: '#184080',
+    fontWeight: '600',
+    fontSize: 16,
+  },
 });

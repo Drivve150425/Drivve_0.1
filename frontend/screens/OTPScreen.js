@@ -419,7 +419,7 @@ tokens = {
     });
     
     const result = await response.json();
-    
+    console.log('OTP Response:', result);
     if (result.success) {
       setTimeLeft(30);
       setCanResend(false);
