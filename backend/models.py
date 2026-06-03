@@ -843,8 +843,8 @@ class RideSeatModificationRequest(Base):
     cancelled_at = Column(DateTime(timezone=True), nullable=True)
     
     # Relationships
-    booking = relationship("RideBooking", backref="modification_requests")
-    ride = relationship("Ride", backref="modification_requests")
+    booking = relationship("RideBooking", backref="seat_modification_requests")
+    ride = relationship("Ride", backref="seat_modification_requests")
 # Add this to your models.py file
 class ModificationRequest(Base):
     __tablename__ = "modification_requests"
