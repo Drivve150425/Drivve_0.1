@@ -17,60 +17,6 @@ class UserStatus(enum.Enum):
     ACTIVE = "active"            # Profile completed
     SUSPENDED = "suspended"      # Account suspended
 
-class User(Base):
-    __tablename__ = "users"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    
-    # NEW: Custom User ID (D-AJ8600 format)
-    user_id = Column(String(10), unique=True, index=True, nullable=True)  # Will be generated
-    
-    # Phone verification
-    phone_number = Column(String(20), unique=True, index=True, nullable=False)
-    country_code = Column(String(10), nullable=False, default="+91")
-    is_phone_verified = Column(Boolean, default=False)
-    
-    # Profile information (from Create Profile screen)
-    first_name = Column(String(100), nullable=True)
-    last_name = Column(String(100), nullable=True)
-    full_name = Column(String(200), nullable=True)  # Computed field
-    email = Column(String(255), nullable=True)
-    email_verified = Column(Boolean, default=False)
-    date_of_birth = Column(Date, nullable=True)
-    gender = Column(String(50), nullable=True)
-    
-    # Location
-    state = Column(String(100), nullable=True)
-    city = Column(String(100), nullable=True)
-    
-    # Profile image and avatar
-
-    profile_picture = Column(Text, nullable=True)
-    avatar = Column(JSON, nullable=True)  # Avatar data as JSON
-    
-    # Additional info
-    referral_code = Column(String(20), nullable=True)
-    
-    # User status and type
-    user_type = Column(Enum(UserType), nullable=True)
-    status = Column(Enum(UserStatus), default=UserStatus.PENDING)
-    profile_completed = Column(Boolean, default=False)
-    
-    # Driver specific info (if user_type includes DRIVER)
-    has_vehicle = Column(Boolean, default=False)
-    vehicle_type = Column(String(50), nullable=True)
-    vehicle_number = Column(String(20), nullable=True)
-    license_number = Column(String(50), nullable=True)
-    
-    # Timestamps
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-    # About / Bio
-    bio = Column(String(500), nullable=True)
-    avg_rating = Column(Float, default=5.0)
-    total_ratings = Column(Integer, default=0)
-
-
 class OTPVerification(Base):
     __tablename__ = "otp_verifications"
     
@@ -150,7 +96,7 @@ class Ride(Base):
     
     # In Ride class
     cancellation_reason = Column(String(255), nullable=True)
-
+    modification_requests = relationship("ModificationRequest", back_populates="ride", cascade="all, delete-orphan")
 class RideBooking(Base):
     __tablename__ = "ride_bookings"
 
@@ -900,7 +846,6 @@ class RideSeatModificationRequest(Base):
     booking = relationship("RideBooking", backref="modification_requests")
     ride = relationship("Ride", backref="modification_requests")
 # Add this to your models.py file
-
 class ModificationRequest(Base):
     __tablename__ = "modification_requests"
     
@@ -922,7 +867,66 @@ class ModificationRequest(Base):
     requested_at = Column(DateTime, default=datetime.utcnow)
     responded_at = Column(DateTime, nullable=True)
     
-    # Relationships
+    # Relationships - FIXED
     ride = relationship("Ride", back_populates="modification_requests")
-    rider = relationship("User", foreign_keys=[rider_id])
-    driver = relationship("User", foreign_keys=[driver_id])
+    rider = relationship("User", foreign_keys=[rider_id], back_populates="modification_requests_as_rider")
+    driver = relationship("User", foreign_keys=[driver_id], back_populates="modification_requests_as_driver")
+
+class User(Base):
+    __tablename__ = "users"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    
+    # NEW: Custom User ID (D-AJ8600 format)
+    user_id = Column(String(10), unique=True, index=True, nullable=True)  # Will be generated
+    
+    # Phone verification
+    phone_number = Column(String(20), unique=True, index=True, nullable=False)
+    country_code = Column(String(10), nullable=False, default="+91")
+    is_phone_verified = Column(Boolean, default=False)
+    
+    # Profile information (from Create Profile screen)
+    first_name = Column(String(100), nullable=True)
+    last_name = Column(String(100), nullable=True)
+    full_name = Column(String(200), nullable=True)  # Computed field
+    email = Column(String(255), nullable=True)
+    email_verified = Column(Boolean, default=False)
+    date_of_birth = Column(Date, nullable=True)
+    gender = Column(String(50), nullable=True)
+    
+    # Location
+    state = Column(String(100), nullable=True)
+    city = Column(String(100), nullable=True)
+    
+    # Profile image and avatar
+
+    profile_picture = Column(Text, nullable=True)
+    avatar = Column(JSON, nullable=True)  # Avatar data as JSON
+    
+    # Additional info
+    referral_code = Column(String(20), nullable=True)
+    
+    # User status and type
+    user_type = Column(Enum(UserType), nullable=True)
+    status = Column(Enum(UserStatus), default=UserStatus.PENDING)
+    profile_completed = Column(Boolean, default=False)
+    
+    # Driver specific info (if user_type includes DRIVER)
+    has_vehicle = Column(Boolean, default=False)
+    vehicle_type = Column(String(50), nullable=True)
+    vehicle_number = Column(String(20), nullable=True)
+    license_number = Column(String(50), nullable=True)
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    # About / Bio
+    bio = Column(String(500), nullable=True)
+    avg_rating = Column(Float, default=5.0)
+    total_ratings = Column(Integer, default=0)
+    modification_requests_as_rider = relationship("ModificationRequest", 
+                                                   foreign_keys=[ModificationRequest.rider_id], 
+                                                   back_populates="rider")
+    modification_requests_as_driver = relationship("ModificationRequest", 
+                                                    foreign_keys=[ModificationRequest.driver_id], 
+                                                    back_populates="driver")
