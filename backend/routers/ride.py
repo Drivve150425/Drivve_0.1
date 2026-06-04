@@ -3530,7 +3530,9 @@ def get_ride_passengers(ride_id: int, db: Session = Depends(get_db)):
         "total_booked_seats": total_booked,
         "remaining_seats": remaining_seats,
         "status": ride.status,
-        "passengers": passengers
+        "passengers": passengers,"duration_text": ride.duration_text,  # ✅ ADD THIS
+        "distance_km": ride.distance_km,      # ✅ ADD THIS
+        "price_per_seat": ride.price_per_seat, # ✅ ADD THIS
     }
 
 
