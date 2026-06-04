@@ -673,6 +673,8 @@ async def get_rider_session(booking_id: int, rider_phone: str, db: Session = Dep
         "rider_status": rider_session.status,
         "pickup_location": rider_session.pickup_location,
         "dropoff_location": rider_session.dropoff_location,
+        "pickup_lat": rider_session.pickup_lat,  # ✅ ADD THIS
+        "pickup_lng": rider_session.pickup_lng,  # ✅ ADD THIS
         "current_lat": session.current_lat,
         "current_lng": session.current_lng,
         "sos_active": session.sos_active,
