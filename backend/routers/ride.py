@@ -5408,27 +5408,87 @@ def cancel_booking(booking_id: int, db: Session = Depends(get_db)):
 
     return {"message": "Booking cancelled successfully"}
 
-
 @router.put("/ride/{ride_id}/cancel")
 def cancel_ride(ride_id: int, db: Session = Depends(get_db)):
     ride = db.query(Ride).filter(Ride.id == ride_id).first()
     if not ride:
         raise HTTPException(status_code=404, detail="Ride not found")
-
+    
+    # Check if ride can be cancelled
+    if ride.started_at:
+        raise HTTPException(status_code=400, detail="Cannot cancel ride that has already started")
+    
+    if ride.status == "completed":
+        raise HTTPException(status_code=400, detail="Cannot cancel completed ride")
+    
+    # Update ride status
     ride.status = "cancelled"
-
-    bookings = db.query(RideBooking).filter(
+    ride.cancellation_reason = "Cancelled by driver"
+    
+    # Cancel all pending modification requests for this ride
+    pending_modifications = db.query(ModificationRequest).filter(
+        ModificationRequest.ride_id == ride_id,
+        ModificationRequest.status == "pending"
+    ).all()
+    
+    for mod_request in pending_modifications:
+        mod_request.status = "cancelled"
+        mod_request.cancelled_at = datetime.now(timezone.utc)
+        mod_request.rejection_reason = "Ride was cancelled by driver"
+    
+    # Cancel all accepted bookings
+    accepted_bookings = db.query(RideBooking).filter(
         RideBooking.ride_id == ride_id,
         RideBooking.status == "accepted"
     ).all()
-
-    for booking in bookings:
+    
+    for booking in accepted_bookings:
         booking.status = "cancelled"
-
+        booking.cancellation_reason = "Ride cancelled by driver"
+        
+        # Notify each passenger
+        notification = UserNotification(
+            phone_number=booking.passenger_phone,
+            title="Ride Cancelled ❌",
+            message=f"The ride from {ride.origin} to {ride.destination} has been cancelled by the driver.",
+            type="ride",
+            action_type="cancellation",
+            action_value=str(ride.id),
+            is_read=False,
+            is_deleted=False
+        )
+        db.add(notification)
+        
+        # Emit socket event to passenger
+        emit_to_user(booking.passenger_phone, "ride-cancelled", {
+            "ride_id": ride_id,
+            "booking_id": booking.id,
+            "message": f"Your ride from {ride.origin} to {ride.destination} has been cancelled"
+        })
+    
+    # Also cancel any pending bookings
+    pending_bookings = db.query(RideBooking).filter(
+        RideBooking.ride_id == ride_id,
+        RideBooking.status == "pending"
+    ).all()
+    
+    for booking in pending_bookings:
+        booking.status = "rejected"
+        booking.cancellation_reason = "Ride cancelled by driver"
+    
     db.commit()
-
-    return {"message": "Ride cancelled successfully", "affected_passengers": len(bookings)}
-
+    
+    # Emit to all riders in the ride room
+    emit_to_ride(ride_id, "ride-cancelled", {
+        "ride_id": ride_id,
+        "message": f"Ride from {ride.origin} to {ride.destination} has been cancelled"
+    })
+    
+    return {
+        "message": "Ride cancelled successfully", 
+        "affected_passengers": len(accepted_bookings),
+        "cancelled_modifications": len(pending_modifications)
+    }
 
 # ============================================
 # MODIFICATION REQUEST ENDPOINTS
@@ -6826,3 +6886,73 @@ def modify_booking_seats(booking_id: int, new_seats: int, db: Session = Depends(
         "new_seats": new_seats,
         "new_total": booking.total_amount
     }
+def check_and_auto_cancel_expired_rides(db: Session):
+    """Check for rides that haven't started within 30 minutes of departure and auto-cancel them"""
+    now = datetime.now(timezone.utc)
+    cutoff_time = now - timedelta(minutes=30)
+    
+    expired_rides = db.query(Ride).filter(
+        Ride.departure_time <= cutoff_time,
+        Ride.started_at.is_(None),
+        Ride.status.in_(["active", "full"]),
+        Ride.cancellation_reason.is_(None)
+    ).all()
+    
+    auto_cancelled_count = 0
+    
+    for ride in expired_rides:
+        ride.status = "cancelled"
+        ride.cancellation_reason = "Auto-cancelled: Ride was not started within 30 minutes of departure time"
+        
+        # Cancel all pending modification requests
+        pending_mods = db.query(ModificationRequest).filter(
+            ModificationRequest.ride_id == ride.id,
+            ModificationRequest.status == "pending"
+        ).all()
+        
+        for mod in pending_mods:
+            mod.status = "cancelled"
+            mod.rejection_reason = "Ride auto-cancelled - not started on time"
+            mod.cancelled_at = now
+        
+        # Cancel all accepted bookings
+        accepted_bookings = db.query(RideBooking).filter(
+            RideBooking.ride_id == ride.id,
+            RideBooking.status == "accepted"
+        ).all()
+        
+        for booking in accepted_bookings:
+            booking.status = "cancelled"
+            booking.cancellation_reason = "Ride auto-cancelled - not started on time"
+            
+            # Notify passenger
+            notification = UserNotification(
+                phone_number=booking.passenger_phone,
+                title="Ride Auto-cancelled ⏰",
+                message=f"The ride from {ride.origin} to {ride.destination} has been auto-cancelled as it was not started on time.",
+                type="ride",
+                action_type="cancellation",
+                action_value=str(ride.id),
+                is_read=False,
+                is_deleted=False
+            )
+            db.add(notification)
+            
+            emit_to_user(booking.passenger_phone, "ride-auto-cancelled", {
+                "ride_id": ride.id,
+                "booking_id": booking.id,
+                "message": "Ride was not started on time and has been auto-cancelled"
+            })
+        
+        auto_cancelled_count += 1
+    
+    if auto_cancelled_count > 0:
+        db.commit()
+        print(f"Auto-cancelled {auto_cancelled_count} expired rides")
+    
+    return auto_cancelled_count
+@router.post("/rides/check-auto-cancel")
+def check_auto_cancel_rides(db: Session = Depends(get_db)):
+    """Endpoint to manually trigger auto-cancellation check"""
+    count = check_and_auto_cancel_expired_rides(db)
+    return {"message": f"Auto-cancelled {count} expired rides", "count": count}
