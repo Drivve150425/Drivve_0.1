@@ -630,6 +630,7 @@ async def get_driver_session(ride_id: int, driver_phone: str, db: Session = Depe
         "ride_id": ride_id,
         "ride_origin": ride.origin if ride else None,
         "ride_destination": ride.destination if ride else None,
+        "departure_time": ride.departure_time.isoformat() if ride and ride.departure_time else None,  # ✅ ADD THIS
         "status": session.status,
         "current_phase": session.current_phase,
         "qr_code_token": session.qr_code_token,
