@@ -474,12 +474,832 @@
 #     db.commit()
 
 #     return {"message": "Emergency stop activated", "status": session.status}
+# from fastapi import APIRouter, Depends, HTTPException
+# from sqlalchemy.orm import Session
+# from sqlalchemy import text
+# from database import get_db
+# from models import Ride, RideBooking, User, RideSession, RideSessionRider
+# from datetime import datetime, timedelta
+# import secrets
+
+# router = APIRouter()
+
+# # This will be set from main.py
+# sio_instance = None
+
+# def set_sio_instance(sio):
+#     global sio_instance
+#     sio_instance = sio
+
+
+# def normalize_phone(phone: str) -> str:
+#     phone = phone.replace(" ", "").replace("-", "")
+#     if phone.startswith("+91"):
+#         return phone
+#     if phone.startswith("91") and len(phone) == 12:
+#         return f"+{phone}"
+#     if phone.startswith("+"):
+#         return phone
+#     return f"+91{phone}"
+
+
+# def phone_last10(phone: str) -> str:
+#     """Compare phone numbers by India last-10 digits to avoid formatting mismatches."""
+#     if not phone:
+#         return ""
+#     digits = "".join(ch for ch in str(phone) if ch.isdigit())
+#     return digits[-10:] if len(digits) >= 10 else digits
+
+
+# async def emit_to_user(phone_number: str, event: str, data: dict):
+#     """Emit socket event to a specific user's room"""
+#     if sio_instance:
+#         room_name = f"user_{phone_number}"
+#         await sio_instance.emit(event, data, room=room_name)
+#         print(f"📡 Emitted {event} to {room_name}")
+
+
+# @router.post("/ride-sessions/start/{ride_id}")
+# async def start_ride_session(ride_id: int, payload: dict, db: Session = Depends(get_db)):
+#     driver_phone = normalize_phone(payload.get("driver_phone", ""))
+
+#     ride = db.query(Ride).filter(Ride.id == ride_id).first()
+#     if not ride:
+#         raise HTTPException(status_code=404, detail="Ride not found")
+
+#     if not driver_phone:
+#         raise HTTPException(status_code=403, detail="Only ride driver can start this ride")
+
+#     ride_last10 = phone_last10(normalize_phone(ride.phone_number))
+#     driver_last10 = phone_last10(driver_phone)
+#     if ride_last10 != driver_last10:
+#         raise HTTPException(status_code=403, detail="Only ride driver can start this ride")
+
+#     existing = db.query(RideSession).filter(
+#         RideSession.ride_id == ride_id,
+#         RideSession.status.in_(["driver_started", "boarding", "en_route"])
+#     ).first()
+
+#     if existing:
+#         return {
+#             "message": "Ride session already active",
+#             "session_id": existing.id,
+#             "status": existing.status
+#         }
+
+#     accepted_bookings = db.query(RideBooking).filter(
+#         RideBooking.ride_id == ride_id,
+#         RideBooking.status == "accepted"
+#     ).all()
+
+#     if not accepted_bookings:
+#         raise HTTPException(status_code=400, detail="No accepted riders found for this ride")
+
+#     qr_token = secrets.token_hex(16)
+
+#     session = RideSession(
+#         ride_id=ride_id,
+#         driver_phone=driver_phone,
+#         status="driver_started",
+#         current_phase="boarding",
+#         qr_code_token=qr_token,
+#         qr_expires_at=datetime.utcnow() + timedelta(hours=8),
+#         started_at=datetime.utcnow()
+#     )
+#     db.add(session)
+#     db.flush()
+
+#     rider_rows = []
+#     for booking in accepted_bookings:
+#         rider_user = db.query(User).filter(User.phone_number == booking.passenger_phone).first()
+
+#         rider_row = RideSessionRider(
+#             session_id=session.id,
+#             booking_id=booking.id,
+#             rider_phone=booking.passenger_phone,
+#             rider_name=rider_user.full_name if rider_user else None,
+#             rider_photo=rider_user.profile_picture if rider_user else None,
+#             pickup_location=getattr(booking, "pickup_location", ride.origin),
+#             dropoff_location=getattr(booking, "dropoff_location", ride.destination),
+#             status="accepted"
+#         )
+#         db.add(rider_row)
+#         rider_rows.append(rider_row)
+
+#     ride.status = "active"
+#     ride.started_at = datetime.utcnow()
+#     db.commit()
+#     db.refresh(session)
+
+#     # Emit ride-started event to all riders
+#     for rider in rider_rows:
+#         await emit_to_user(rider.rider_phone, 'ride-started', {
+#             'ride_id': ride_id,
+#             'session_id': session.id,
+#             'message': 'The driver has started the ride!'
+#         })
+
+#     return {
+#         "message": "Ride started successfully",
+#         "session_id": session.id,
+#         "ride_id": ride.id,
+#         "status": session.status,
+#         "current_phase": session.current_phase,
+#         "qr_code_token": session.qr_code_token
+#     }
+
+
+# @router.get("/ride-sessions/driver/{ride_id}")
+# async def get_driver_session(ride_id: int, driver_phone: str, db: Session = Depends(get_db)):
+#     driver_phone = normalize_phone(driver_phone)
+
+#     session = db.query(RideSession).filter(
+#         RideSession.ride_id == ride_id,
+#         RideSession.driver_phone == driver_phone
+#     ).order_by(RideSession.id.desc()).first()
+
+#     if not session:
+#         raise HTTPException(status_code=404, detail="Ride session not found")
+
+#     ride = db.query(Ride).filter(Ride.id == ride_id).first()
+
+#     riders = []
+#     boarded_count = 0
+#     dropped_count = 0
+
+#     for rider in session.riders:
+#         if rider.status in ["boarded", "dropped_off", "completed"]:
+#             boarded_count += 1
+#         if rider.status in ["dropped_off", "completed"]:
+#             dropped_count += 1
+
+#         riders.append({
+#             "id": rider.id,
+#             "booking_id": rider.booking_id,
+#             "rider_phone": rider.rider_phone,
+#             "rider_name": rider.rider_name or f"Rider {rider.rider_phone[-4:]}",
+#             "rider_photo": rider.rider_photo,
+#             "pickup_location": rider.pickup_location,
+#             "dropoff_location": rider.dropoff_location,
+#             "status": rider.status,
+#             "boarded_at": rider.boarded_at.isoformat() if rider.boarded_at else None,
+#             "dropped_off_at": rider.dropped_off_at.isoformat() if rider.dropped_off_at else None,
+#             "completed_at": rider.completed_at.isoformat() if rider.completed_at else None,
+#         })
+
+#     return {
+#         "session_id": session.id,
+#         "ride_id": ride_id,
+#         "ride_origin": ride.origin if ride else None,
+#         "ride_destination": ride.destination if ride else None,
+#         "departure_time": ride.departure_time.isoformat() if ride and ride.departure_time else None,
+#         "status": session.status,
+#         "current_phase": session.current_phase,
+#         "qr_code_token": session.qr_code_token,
+#         "boarded_count": boarded_count,
+#         "dropped_count": dropped_count,
+#         "total_riders": len(session.riders),
+#         "sos_active": session.sos_active,
+#         "emergency_stop_active": session.emergency_stop_active,
+#         "riders": riders
+#     }
+
+
+# @router.get("/ride-sessions/rider/{booking_id}")
+# async def get_rider_session(booking_id: int, rider_phone: str, db: Session = Depends(get_db)):
+#     rider_phone = normalize_phone(rider_phone)
+
+#     rider_session = db.query(RideSessionRider).filter(
+#         RideSessionRider.booking_id == booking_id,
+#         RideSessionRider.rider_phone == rider_phone
+#     ).order_by(RideSessionRider.id.desc()).first()
+
+#     if not rider_session:
+#         raise HTTPException(status_code=404, detail="Rider session not found")
+
+#     session = db.query(RideSession).filter(RideSession.id == rider_session.session_id).first()
+#     ride = db.query(Ride).filter(Ride.id == session.ride_id).first()
+#     driver = db.query(User).filter(User.phone_number == session.driver_phone).first()
+
+#     return {
+#         "session_id": session.id,
+#         "booking_id": booking_id,
+#         "ride_id": session.ride_id,
+#         "session_status": session.status,
+#         "current_phase": session.current_phase,
+#         "driver_phone": session.driver_phone,
+#         "driver_name": driver.full_name if driver else "Driver",
+#         "driver_photo": driver.profile_picture if driver else None,
+#         "origin": ride.origin if ride else None,
+#         "destination": ride.destination if ride else None,
+#         "rider_status": rider_session.status,
+#         "pickup_location": rider_session.pickup_location,
+#         "dropoff_location": rider_session.dropoff_location,
+#         "pickup_lat": rider_session.pickup_lat,
+#         "pickup_lng": rider_session.pickup_lng,
+#         "current_lat": session.current_lat,
+#         "current_lng": session.current_lng,
+#         "sos_active": session.sos_active,
+#         "emergency_stop_active": session.emergency_stop_active
+#     }
+
+
+# @router.post("/ride-sessions/{session_id}/reached-pickup")
+# async def rider_reached_pickup(session_id: int, payload: dict, db: Session = Depends(get_db)):
+#     booking_id = payload.get("booking_id")
+#     rider_phone = normalize_phone(payload.get("rider_phone", ""))
+
+#     rider = db.query(RideSessionRider).filter(
+#         RideSessionRider.session_id == session_id,
+#         RideSessionRider.booking_id == booking_id,
+#         RideSessionRider.rider_phone == rider_phone
+#     ).first()
+
+#     if not rider:
+#         raise HTTPException(status_code=404, detail="Rider not found in session")
+
+#     rider.status = "reached_pickup"
+#     rider.reached_pickup_at = datetime.utcnow()
+#     db.commit()
+
+#     return {"message": "Pickup arrival marked", "status": rider.status}
+
+
+# # ============================================================
+# # RIDER ENDPOINTS FOR LIVE TRACKING (ADD THESE)
+# # ============================================================
+
+# @router.post("/ride-sessions/{session_id}/rider-reached-pickup")
+# async def rider_reached_pickup_endpoint(
+#     session_id: int, 
+#     payload: dict, 
+#     db: Session = Depends(get_db)
+# ):
+#     """Rider notifies that they've reached pickup location"""
+#     booking_id = payload.get("booking_id")
+#     rider_phone = normalize_phone(payload.get("rider_phone", ""))
+
+#     rider = db.query(RideSessionRider).filter(
+#         RideSessionRider.session_id == session_id,
+#         RideSessionRider.booking_id == booking_id,
+#         RideSessionRider.rider_phone == rider_phone
+#     ).first()
+
+#     if not rider:
+#         raise HTTPException(status_code=404, detail="Rider not found in session")
+
+#     if rider.status in ["boarded", "dropped_off", "completed"]:
+#         raise HTTPException(status_code=400, detail="Ride already in progress")
+
+#     rider.status = "reached_pickup"
+#     rider.reached_pickup_at = datetime.utcnow()
+#     db.commit()
+
+#     # Notify driver that rider has reached pickup
+#     session = db.query(RideSession).filter(RideSession.id == session_id).first()
+#     if session:
+#         await emit_to_user(session.driver_phone, 'rider-reached-pickup', {
+#             'booking_id': booking_id,
+#             'rider_phone': rider_phone,
+#             'rider_name': rider.rider_name,
+#             'message': f"{rider.rider_name or 'Rider'} has reached the pickup location"
+#         })
+
+#     return {
+#         "message": "Pickup arrival marked", 
+#         "status": rider.status,
+#         "rider_status": rider.status
+#     }
+
+
+# @router.post("/ride-sessions/{session_id}/rider-board")
+# async def rider_board_endpoint(
+#     session_id: int, 
+#     payload: dict, 
+#     db: Session = Depends(get_db)
+# ):
+#     """Rider scans QR code to board the vehicle"""
+#     booking_id = payload.get("booking_id")
+#     rider_phone = normalize_phone(payload.get("rider_phone", ""))
+#     qr_code_token = payload.get("qr_code_token")
+
+#     session = db.query(RideSession).filter(RideSession.id == session_id).first()
+#     if not session:
+#         raise HTTPException(status_code=404, detail="Ride session not found")
+
+#     # Verify QR code
+#     if session.qr_code_token != qr_code_token:
+#         raise HTTPException(status_code=400, detail="Invalid QR code")
+
+#     # Check if QR code is expired
+#     if session.qr_expires_at and session.qr_expires_at < datetime.utcnow():
+#         raise HTTPException(status_code=400, detail="QR code has expired")
+
+#     rider = db.query(RideSessionRider).filter(
+#         RideSessionRider.session_id == session_id,
+#         RideSessionRider.booking_id == booking_id,
+#         RideSessionRider.rider_phone == rider_phone
+#     ).first()
+
+#     if not rider:
+#         raise HTTPException(status_code=404, detail="Rider not found")
+
+#     if rider.status in ["boarded", "dropped_off", "completed"]:
+#         raise HTTPException(status_code=400, detail="Rider already boarded")
+
+#     rider.status = "boarded"
+#     rider.boarded_at = datetime.utcnow()
+    
+#     # Update session status
+#     all_boarded = all(r.status in ["boarded", "dropped_off", "completed"] for r in session.riders)
+#     if all_boarded:
+#         session.status = "en_route"
+#         session.current_phase = "en_route"
+#     else:
+#         session.status = "boarding"
+#         session.current_phase = "boarding"
+    
+#     db.commit()
+
+#     # Emit rider-boarded event to driver
+#     await emit_to_user(session.driver_phone, 'rider-boarded', {
+#         'booking_id': booking_id,
+#         'rider_phone': rider_phone,
+#         'rider_name': rider.rider_name,
+#         'message': f"{rider.rider_name or 'Rider'} has boarded the vehicle"
+#     })
+
+#     # Emit to the rider themselves
+#     await emit_to_user(rider_phone, 'rider-boarded', {
+#         'booking_id': booking_id,
+#         'session_id': session_id,
+#         'message': "You have been boarded successfully!"
+#     })
+
+#     return {
+#         "message": "Boarding successful",
+#         "rider_status": rider.status,
+#         "session_status": session.status,
+#         "current_phase": session.current_phase
+#     }
+
+
+# @router.post("/ride-sessions/{session_id}/rider-dropped-off")
+# async def rider_dropped_off_endpoint(
+#     session_id: int, 
+#     payload: dict, 
+#     db: Session = Depends(get_db)
+# ):
+#     """Rider marks that they've been dropped off"""
+#     booking_id = payload.get("booking_id")
+#     rider_phone = normalize_phone(payload.get("rider_phone", ""))
+
+#     rider = db.query(RideSessionRider).filter(
+#         RideSessionRider.session_id == session_id,
+#         RideSessionRider.booking_id == booking_id,
+#         RideSessionRider.rider_phone == rider_phone
+#     ).first()
+
+#     if not rider:
+#         raise HTTPException(status_code=404, detail="Rider not found")
+
+#     if rider.status != "boarded":
+#         raise HTTPException(status_code=400, detail="Rider must be boarded before drop off")
+
+#     rider.status = "dropped_off"
+#     rider.dropped_off_at = datetime.utcnow()
+#     db.commit()
+
+#     session = db.query(RideSession).filter(RideSession.id == session_id).first()
+    
+#     # Emit rider-dropped-off event to driver
+#     if session:
+#         await emit_to_user(session.driver_phone, 'rider-dropped-off', {
+#             'booking_id': booking_id,
+#             'rider_phone': rider_phone,
+#             'rider_name': rider.rider_name,
+#             'message': f"{rider.rider_name or 'Rider'} has been dropped off"
+#         })
+
+#         # Emit to the rider
+#         await emit_to_user(rider_phone, 'rider-dropped-off', {
+#             'booking_id': booking_id,
+#             'session_id': session_id,
+#             'message': "You have been dropped off. Please confirm to complete the ride."
+#         })
+
+#     return {
+#         "message": "Dropped off successfully", 
+#         "rider_status": rider.status
+#     }
+
+
+# @router.post("/ride-sessions/{session_id}/rider-complete")
+# async def rider_complete_endpoint(
+#     session_id: int, 
+#     payload: dict, 
+#     db: Session = Depends(get_db)
+# ):
+#     """Rider completes the ride"""
+#     booking_id = payload.get("booking_id")
+#     rider_phone = normalize_phone(payload.get("rider_phone", ""))
+
+#     rider = db.query(RideSessionRider).filter(
+#         RideSessionRider.session_id == session_id,
+#         RideSessionRider.booking_id == booking_id,
+#         RideSessionRider.rider_phone == rider_phone
+#     ).first()
+
+#     if not rider:
+#         raise HTTPException(status_code=404, detail="Rider not found")
+
+#     if rider.status != "dropped_off":
+#         raise HTTPException(status_code=400, detail="Ride must be completed after drop off")
+
+#     rider.status = "completed"
+#     rider.completed_at = datetime.utcnow()
+#     db.commit()
+
+#     session = db.query(RideSession).filter(RideSession.id == session_id).first()
+    
+#     # Check if all riders have completed
+#     if session:
+#         all_completed = all(r.status == "completed" for r in session.riders)
+#         if all_completed:
+#             session.status = "completed"
+#             session.current_phase = "completed"
+#             session.completed_at = datetime.utcnow()
+            
+#             # Update ride status
+#             ride = db.query(Ride).filter(Ride.id == session.ride_id).first()
+#             if ride:
+#                 ride.status = "completed"
+            
+#             db.commit()
+
+#             # Emit ride-completed event to driver
+#             await emit_to_user(session.driver_phone, 'ride-completed', {
+#                 'ride_id': session.ride_id,
+#                 'session_id': session_id,
+#                 'message': "All riders have completed the ride"
+#             })
+
+#     # Emit ride-completed event to rider
+#     await emit_to_user(rider_phone, 'ride-completed', {
+#         'booking_id': booking_id,
+#         'ride_id': session.ride_id if session else None,
+#         'message': "Your ride has been completed! Thank you for riding with us."
+#     })
+
+#     return {
+#         "message": "Ride marked completed", 
+#         "status": rider.status
+#     }
+
+
+# # ============================================================
+# # EXISTING ENDPOINTS (keep as is)
+# # ============================================================
+
+# @router.post("/ride-sessions/{session_id}/scan-qr")
+# async def scan_driver_qr(session_id: int, payload: dict, db: Session = Depends(get_db)):
+#     booking_id = payload.get("booking_id")
+#     rider_phone = normalize_phone(payload.get("rider_phone", ""))
+#     qr_code_token = payload.get("qr_code_token")
+
+#     session = db.query(RideSession).filter(RideSession.id == session_id).first()
+#     if not session:
+#         raise HTTPException(status_code=404, detail="Ride session not found")
+
+#     if session.qr_code_token != qr_code_token:
+#         raise HTTPException(status_code=400, detail="Invalid QR code")
+
+#     rider = db.query(RideSessionRider).filter(
+#         RideSessionRider.session_id == session_id,
+#         RideSessionRider.booking_id == booking_id,
+#         RideSessionRider.rider_phone == rider_phone
+#     ).first()
+
+#     if not rider:
+#         raise HTTPException(status_code=404, detail="Rider not found")
+
+#     if rider.status in ["boarded", "dropped_off", "completed"]:
+#         raise HTTPException(status_code=400, detail="Rider already boarded")
+
+#     rider.status = "boarded"
+#     rider.boarded_at = datetime.utcnow()
+
+#     all_boarded = all(r.status in ["boarded", "dropped_off", "completed"] for r in session.riders)
+#     if all_boarded:
+#         session.status = "en_route"
+#         session.current_phase = "en_route"
+#     else:
+#         session.status = "boarding"
+#         session.current_phase = "boarding"
+
+#     db.commit()
+
+#     return {
+#         "message": "Boarding successful",
+#         "rider_status": rider.status,
+#         "session_status": session.status,
+#         "current_phase": session.current_phase
+#     }
+
+
+# @router.post("/ride-sessions/{session_id}/riders/{booking_id}/mark-boarded")
+# async def driver_mark_boarded(session_id: int, booking_id: int, payload: dict, db: Session = Depends(get_db)):
+#     driver_phone = normalize_phone(payload.get("driver_phone", ""))
+
+#     session = db.query(RideSession).filter(
+#         RideSession.id == session_id,
+#         RideSession.driver_phone == driver_phone
+#     ).first()
+
+#     if not session:
+#         raise HTTPException(status_code=404, detail="Ride session not found")
+
+#     rider = db.query(RideSessionRider).filter(
+#         RideSessionRider.session_id == session_id,
+#         RideSessionRider.booking_id == booking_id
+#     ).first()
+
+#     if not rider:
+#         raise HTTPException(status_code=404, detail="Rider not found")
+
+#     if rider.status in ["boarded", "dropped_off", "completed"]:
+#         raise HTTPException(status_code=400, detail="Rider already boarded")
+
+#     rider.status = "boarded"
+#     rider.boarded_at = datetime.utcnow()
+
+#     all_boarded = all(r.status in ["boarded", "dropped_off", "completed"] for r in session.riders)
+#     if all_boarded:
+#         session.status = "en_route"
+#         session.current_phase = "en_route"
+#     else:
+#         session.status = "boarding"
+#         session.current_phase = "boarding"
+
+#     db.commit()
+    
+#     # Notify rider that they've been boarded
+#     await emit_to_user(rider.rider_phone, 'rider-boarded', {
+#         'booking_id': booking_id,
+#         'session_id': session_id,
+#         'message': "You have been boarded by the driver!"
+#     })
+
+#     return {
+#         "message": "Rider marked as boarded",
+#         "rider_status": rider.status,
+#         "session_status": session.status,
+#         "current_phase": session.current_phase
+#     }
+
+
+# @router.post("/ride-sessions/{session_id}/riders/{booking_id}/drop-off")
+# async def driver_dropoff_rider(session_id: int, booking_id: int, payload: dict, db: Session = Depends(get_db)):
+#     driver_phone = normalize_phone(payload.get("driver_phone", ""))
+
+#     session = db.query(RideSession).filter(
+#         RideSession.id == session_id,
+#         RideSession.driver_phone == driver_phone
+#     ).first()
+
+#     if not session:
+#         raise HTTPException(status_code=404, detail="Ride session not found")
+
+#     rider = db.query(RideSessionRider).filter(
+#         RideSessionRider.session_id == session_id,
+#         RideSessionRider.booking_id == booking_id
+#     ).first()
+
+#     if not rider:
+#         raise HTTPException(status_code=404, detail="Rider not found")
+
+#     if rider.status in ["dropped_off", "completed"]:
+#         raise HTTPException(status_code=400, detail="Rider already dropped off")
+
+#     if rider.status != "boarded":
+#         raise HTTPException(status_code=400, detail="Rider must be boarded before drop off")
+
+#     rider.status = "dropped_off"
+#     rider.dropped_off_at = datetime.utcnow()
+
+#     all_dropped = all(r.status in ["dropped_off", "completed"] for r in session.riders)
+#     if all_dropped:
+#         session.current_phase = "completed"
+#         session.status = "en_route"
+
+#     db.commit()
+    
+#     # Notify rider they've been dropped off
+#     await emit_to_user(rider.rider_phone, 'rider-dropped-off', {
+#         'booking_id': booking_id,
+#         'session_id': session_id,
+#         'message': "You have been dropped off. Please complete the ride."
+#     })
+
+#     return {
+#         "message": "Rider dropped off successfully",
+#         "rider_status": rider.status,
+#         "current_phase": session.current_phase
+#     }
+
+
+# @router.post("/ride-sessions/{session_id}/mark-completed")
+# async def rider_mark_completed(session_id: int, payload: dict, db: Session = Depends(get_db)):
+#     booking_id = payload.get("booking_id")
+#     rider_phone = normalize_phone(payload.get("rider_phone", ""))
+
+#     rider = db.query(RideSessionRider).filter(
+#         RideSessionRider.session_id == session_id,
+#         RideSessionRider.booking_id == booking_id,
+#         RideSessionRider.rider_phone == rider_phone
+#     ).first()
+
+#     if not rider:
+#         raise HTTPException(status_code=404, detail="Rider not found")
+
+#     if rider.status != "dropped_off":
+#         raise HTTPException(status_code=400, detail="Ride must be completed after drop off")
+
+#     rider.status = "completed"
+#     rider.completed_at = datetime.utcnow()
+#     db.commit()
+    
+#     # Notify driver
+#     session = db.query(RideSession).filter(RideSession.id == session_id).first()
+#     if session:
+#         await emit_to_user(session.driver_phone, 'ride-completed', {
+#             'booking_id': booking_id,
+#             'session_id': session_id,
+#             'message': f"Rider has completed the ride"
+#         })
+
+#     return {"message": "Ride marked completed", "status": rider.status}
+
+
+# @router.post("/ride-sessions/{session_id}/complete")
+# async def complete_ride(session_id: int, payload: dict, db: Session = Depends(get_db)):
+#     driver_phone = normalize_phone(payload.get("driver_phone", ""))
+
+#     session = db.query(RideSession).filter(
+#         RideSession.id == session_id,
+#         RideSession.driver_phone == driver_phone
+#     ).first()
+
+#     if not session:
+#         raise HTTPException(status_code=404, detail="Ride session not found")
+
+#     all_dropped = all(r.status in ["dropped_off", "completed"] for r in session.riders)
+#     if not all_dropped:
+#         raise HTTPException(status_code=400, detail="All riders must be dropped before completing the ride")
+
+#     session.status = "completed"
+#     session.current_phase = "completed"
+#     session.completed_at = datetime.utcnow()
+
+#     ride = db.query(Ride).filter(Ride.id == session.ride_id).first()
+#     if ride:
+#         ride.status = "completed"
+
+#     db.commit()
+
+#     return {
+#         "message": "Ride completed successfully",
+#         "status": session.status
+#     }
+
+
+# @router.post("/ride-sessions/{session_id}/rate-rider")
+# async def rate_rider(session_id: int, payload: dict, db: Session = Depends(get_db)):
+#     booking_id = payload.get("booking_id")
+#     rating = payload.get("rating")
+#     feedback = payload.get("feedback", "")
+
+#     if rating < 1 or rating > 5:
+#         raise HTTPException(status_code=400, detail="Rating must be between 1 and 5")
+
+#     rider = db.query(RideSessionRider).filter(
+#         RideSessionRider.session_id == session_id,
+#         RideSessionRider.booking_id == booking_id
+#     ).first()
+
+#     if not rider:
+#         raise HTTPException(status_code=404, detail="Rider not found")
+
+#     if rider.driver_rating:
+#         raise HTTPException(status_code=400, detail="Rating already submitted")
+
+#     rider.driver_rating = rating
+#     rider.driver_feedback = feedback
+#     db.commit()
+
+#     return {"message": "Rider rated successfully"}
+
+
+# @router.post("/ride-sessions/{session_id}/rate-driver")
+# async def rate_driver(session_id: int, payload: dict, db: Session = Depends(get_db)):
+#     booking_id = payload.get("booking_id")
+#     rating = payload.get("rating")
+#     feedback = payload.get("feedback", "")
+
+#     if rating < 1 or rating > 5:
+#         raise HTTPException(status_code=400, detail="Rating must be between 1 and 5")
+
+#     rider = db.query(RideSessionRider).filter(
+#         RideSessionRider.session_id == session_id,
+#         RideSessionRider.booking_id == booking_id
+#     ).first()
+
+#     if not rider:
+#         raise HTTPException(status_code=404, detail="Session rider not found")
+
+#     if rider.rider_rating:
+#         raise HTTPException(status_code=400, detail="Rating already submitted")
+
+#     rider.rider_rating = rating
+#     rider.rider_feedback = feedback
+#     db.commit()
+
+#     return {"message": "Driver rated successfully"}
+
+
+# @router.post("/ride-sessions/{session_id}/location")
+# async def update_driver_location(session_id: int, payload: dict, db: Session = Depends(get_db)):
+#     lat = payload.get("lat")
+#     lng = payload.get("lng")
+
+#     if lat is None or lng is None:
+#         raise HTTPException(status_code=400, detail="Latitude and longitude required")
+
+#     session = db.query(RideSession).filter(RideSession.id == session_id).first()
+#     if not session:
+#         raise HTTPException(status_code=404, detail="Ride session not found")
+
+#     session.current_lat = lat
+#     session.current_lng = lng
+#     db.commit()
+    
+#     # Broadcast location to all riders in this session
+#     for rider in session.riders:
+#         if rider.status in ["accepted", "reached_pickup", "boarded"]:
+#             await emit_to_user(rider.rider_phone, 'driver-location-update', {
+#                 'latitude': lat,
+#                 'longitude': lng,
+#                 'session_id': session_id
+#             })
+
+#     return {"message": "Location updated"}
+
+
+# @router.post("/ride-sessions/{session_id}/sos")
+# async def trigger_sos(session_id: int, payload: dict, db: Session = Depends(get_db)):
+#     session = db.query(RideSession).filter(RideSession.id == session_id).first()
+#     if not session:
+#         raise HTTPException(status_code=404, detail="Ride session not found")
+
+#     session.sos_active = True
+#     session.emergency_note = payload.get("note")
+#     db.commit()
+    
+#     # Notify all riders about SOS
+#     for rider in session.riders:
+#         await emit_to_user(rider.rider_phone, 'sos-triggered', {
+#             'session_id': session_id,
+#             'message': "Emergency SOS has been triggered"
+#         })
+
+#     return {"message": "SOS triggered successfully"}
+
+
+# @router.post("/ride-sessions/{session_id}/emergency-stop")
+# async def trigger_emergency_stop(session_id: int, payload: dict, db: Session = Depends(get_db)):
+#     session = db.query(RideSession).filter(RideSession.id == session_id).first()
+#     if not session:
+#         raise HTTPException(status_code=404, detail="Ride session not found")
+
+#     session.emergency_stop_active = True
+#     session.status = "emergency_stopped"
+#     session.emergency_note = payload.get("note")
+#     db.commit()
+    
+#     # Notify all riders about emergency stop
+#     for rider in session.riders:
+#         await emit_to_user(rider.rider_phone, 'emergency-stop', {
+#             'session_id': session_id,
+#             'message': "Emergency stop has been activated"
+#         })
+
+#     return {"message": "Emergency stop activated", "status": session.status}
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from database import get_db
-from models import Ride, RideBooking, User, RideSession, RideSessionRider
-from datetime import datetime, timedelta
+from models import Ride, RideBooking, User, RideSession, RideSessionRider, UserNotification, NotificationType
+from datetime import datetime, timezone, timedelta
 import secrets
 
 router = APIRouter()
@@ -491,6 +1311,7 @@ def set_sio_instance(sio):
     global sio_instance
     sio_instance = sio
 
+IST = timezone(timedelta(hours=5, minutes=30))
 
 def normalize_phone(phone: str) -> str:
     phone = phone.replace(" ", "").replace("-", "")
@@ -502,6 +1323,12 @@ def normalize_phone(phone: str) -> str:
         return phone
     return f"+91{phone}"
 
+def to_ist(dt: datetime) -> datetime:
+    if dt is None:
+        return dt
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(IST)
 
 def phone_last10(phone: str) -> str:
     """Compare phone numbers by India last-10 digits to avoid formatting mismatches."""
@@ -510,11 +1337,17 @@ def phone_last10(phone: str) -> str:
     digits = "".join(ch for ch in str(phone) if ch.isdigit())
     return digits[-10:] if len(digits) >= 10 else digits
 
-
 async def emit_to_user(phone_number: str, event: str, data: dict):
     """Emit socket event to a specific user's room"""
     if sio_instance:
         room_name = f"user_{phone_number}"
+        await sio_instance.emit(event, data, room=room_name)
+        print(f"📡 Emitted {event} to {room_name}")
+
+async def emit_to_ride(ride_id: int, event: str, data: dict):
+    """Emit socket event to a ride's room"""
+    if sio_instance:
+        room_name = f"ride_{ride_id}"
         await sio_instance.emit(event, data, room=room_name)
         print(f"📡 Emitted {event} to {room_name}")
 
@@ -535,6 +1368,17 @@ async def start_ride_session(ride_id: int, payload: dict, db: Session = Depends(
     if ride_last10 != driver_last10:
         raise HTTPException(status_code=403, detail="Only ride driver can start this ride")
 
+    # Check if ride can be started (within 15 min before to 30 min after departure)
+    now_utc = datetime.now(timezone.utc)
+    minutes_to_departure = (ride.departure_time - now_utc).total_seconds() / 60
+    minutes_since_departure = (now_utc - ride.departure_time).total_seconds() / 60
+
+    if minutes_to_departure > 15:
+        raise HTTPException(status_code=400, detail=f"Ride can only be started within 15 minutes of departure time. {int(minutes_to_departure)} minutes remaining.")
+    
+    if minutes_since_departure > 30:
+        raise HTTPException(status_code=400, detail="Ride has been auto-cancelled as it was not started within 30 minutes of departure time.")
+
     existing = db.query(RideSession).filter(
         RideSession.ride_id == ride_id,
         RideSession.status.in_(["driver_started", "boarding", "en_route"])
@@ -544,7 +1388,9 @@ async def start_ride_session(ride_id: int, payload: dict, db: Session = Depends(
         return {
             "message": "Ride session already active",
             "session_id": existing.id,
-            "status": existing.status
+            "status": existing.status,
+            "current_phase": existing.current_phase,
+            "qr_code_token": existing.qr_code_token
         }
 
     accepted_bookings = db.query(RideBooking).filter(
@@ -563,8 +1409,8 @@ async def start_ride_session(ride_id: int, payload: dict, db: Session = Depends(
         status="driver_started",
         current_phase="boarding",
         qr_code_token=qr_token,
-        qr_expires_at=datetime.utcnow() + timedelta(hours=8),
-        started_at=datetime.utcnow()
+        qr_expires_at=datetime.now(timezone.utc) + timedelta(hours=8),
+        started_at=datetime.now(timezone.utc)
     )
     db.add(session)
     db.flush()
@@ -579,15 +1425,15 @@ async def start_ride_session(ride_id: int, payload: dict, db: Session = Depends(
             rider_phone=booking.passenger_phone,
             rider_name=rider_user.full_name if rider_user else None,
             rider_photo=rider_user.profile_picture if rider_user else None,
-            pickup_location=getattr(booking, "pickup_location", ride.origin),
-            dropoff_location=getattr(booking, "dropoff_location", ride.destination),
+            pickup_location=ride.origin,
+            dropoff_location=ride.destination,
             status="accepted"
         )
         db.add(rider_row)
         rider_rows.append(rider_row)
 
     ride.status = "active"
-    ride.started_at = datetime.utcnow()
+    ride.started_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(session)
 
@@ -598,6 +1444,21 @@ async def start_ride_session(ride_id: int, payload: dict, db: Session = Depends(
             'session_id': session.id,
             'message': 'The driver has started the ride!'
         })
+        
+        # Create notification for rider
+        notification = UserNotification(
+            phone_number=rider.rider_phone,
+            title="Ride Started 🚗",
+            message=f"The driver has started the ride from {ride.origin} to {ride.destination}. You can now track the journey live.",
+            type=NotificationType.RIDE,
+            action_type="ride",
+            action_value=str(ride_id),
+            is_read=False,
+            is_deleted=False
+        )
+        db.add(notification)
+
+    db.commit()
 
     return {
         "message": "Ride started successfully",
@@ -645,6 +1506,8 @@ async def get_driver_session(ride_id: int, driver_phone: str, db: Session = Depe
             "boarded_at": rider.boarded_at.isoformat() if rider.boarded_at else None,
             "dropped_off_at": rider.dropped_off_at.isoformat() if rider.dropped_off_at else None,
             "completed_at": rider.completed_at.isoformat() if rider.completed_at else None,
+            "driver_rating": rider.driver_rating,
+            "rider_rating": rider.rider_rating,
         })
 
     return {
@@ -653,6 +1516,7 @@ async def get_driver_session(ride_id: int, driver_phone: str, db: Session = Depe
         "ride_origin": ride.origin if ride else None,
         "ride_destination": ride.destination if ride else None,
         "departure_time": ride.departure_time.isoformat() if ride and ride.departure_time else None,
+        "departure_time_display": to_ist(ride.departure_time).strftime("%d %b %Y, %I:%M %p") if ride and ride.departure_time else None,
         "status": session.status,
         "current_phase": session.current_phase,
         "qr_code_token": session.qr_code_token,
@@ -661,6 +1525,8 @@ async def get_driver_session(ride_id: int, driver_phone: str, db: Session = Depe
         "total_riders": len(session.riders),
         "sos_active": session.sos_active,
         "emergency_stop_active": session.emergency_stop_active,
+        "current_lat": session.current_lat,
+        "current_lng": session.current_lng,
         "riders": riders
     }
 
@@ -690,6 +1556,7 @@ async def get_rider_session(booking_id: int, rider_phone: str, db: Session = Dep
         "driver_phone": session.driver_phone,
         "driver_name": driver.full_name if driver else "Driver",
         "driver_photo": driver.profile_picture if driver else None,
+        "driver_rating": driver.avg_rating if driver else 4.5,
         "origin": ride.origin if ride else None,
         "destination": ride.destination if ride else None,
         "rider_status": rider_session.status,
@@ -697,37 +1564,15 @@ async def get_rider_session(booking_id: int, rider_phone: str, db: Session = Dep
         "dropoff_location": rider_session.dropoff_location,
         "pickup_lat": rider_session.pickup_lat,
         "pickup_lng": rider_session.pickup_lng,
+        "dropoff_lat": rider_session.dropoff_lat,
+        "dropoff_lng": rider_session.dropoff_lng,
         "current_lat": session.current_lat,
         "current_lng": session.current_lng,
         "sos_active": session.sos_active,
-        "emergency_stop_active": session.emergency_stop_active
+        "emergency_stop_active": session.emergency_stop_active,
+        "driver_rating_given": rider_session.rider_rating is not None
     }
 
-
-@router.post("/ride-sessions/{session_id}/reached-pickup")
-async def rider_reached_pickup(session_id: int, payload: dict, db: Session = Depends(get_db)):
-    booking_id = payload.get("booking_id")
-    rider_phone = normalize_phone(payload.get("rider_phone", ""))
-
-    rider = db.query(RideSessionRider).filter(
-        RideSessionRider.session_id == session_id,
-        RideSessionRider.booking_id == booking_id,
-        RideSessionRider.rider_phone == rider_phone
-    ).first()
-
-    if not rider:
-        raise HTTPException(status_code=404, detail="Rider not found in session")
-
-    rider.status = "reached_pickup"
-    rider.reached_pickup_at = datetime.utcnow()
-    db.commit()
-
-    return {"message": "Pickup arrival marked", "status": rider.status}
-
-
-# ============================================================
-# RIDER ENDPOINTS FOR LIVE TRACKING (ADD THESE)
-# ============================================================
 
 @router.post("/ride-sessions/{session_id}/rider-reached-pickup")
 async def rider_reached_pickup_endpoint(
@@ -752,7 +1597,7 @@ async def rider_reached_pickup_endpoint(
         raise HTTPException(status_code=400, detail="Ride already in progress")
 
     rider.status = "reached_pickup"
-    rider.reached_pickup_at = datetime.utcnow()
+    rider.reached_pickup_at = datetime.now(timezone.utc)
     db.commit()
 
     # Notify driver that rider has reached pickup
@@ -792,7 +1637,7 @@ async def rider_board_endpoint(
         raise HTTPException(status_code=400, detail="Invalid QR code")
 
     # Check if QR code is expired
-    if session.qr_expires_at and session.qr_expires_at < datetime.utcnow():
+    if session.qr_expires_at and session.qr_expires_at < datetime.now(timezone.utc):
         raise HTTPException(status_code=400, detail="QR code has expired")
 
     rider = db.query(RideSessionRider).filter(
@@ -808,7 +1653,7 @@ async def rider_board_endpoint(
         raise HTTPException(status_code=400, detail="Rider already boarded")
 
     rider.status = "boarded"
-    rider.boarded_at = datetime.utcnow()
+    rider.boarded_at = datetime.now(timezone.utc)
     
     # Update session status
     all_boarded = all(r.status in ["boarded", "dropped_off", "completed"] for r in session.riders)
@@ -867,7 +1712,7 @@ async def rider_dropped_off_endpoint(
         raise HTTPException(status_code=400, detail="Rider must be boarded before drop off")
 
     rider.status = "dropped_off"
-    rider.dropped_off_at = datetime.utcnow()
+    rider.dropped_off_at = datetime.now(timezone.utc)
     db.commit()
 
     session = db.query(RideSession).filter(RideSession.id == session_id).first()
@@ -917,7 +1762,7 @@ async def rider_complete_endpoint(
         raise HTTPException(status_code=400, detail="Ride must be completed after drop off")
 
     rider.status = "completed"
-    rider.completed_at = datetime.utcnow()
+    rider.completed_at = datetime.now(timezone.utc)
     db.commit()
 
     session = db.query(RideSession).filter(RideSession.id == session_id).first()
@@ -928,7 +1773,7 @@ async def rider_complete_endpoint(
         if all_completed:
             session.status = "completed"
             session.current_phase = "completed"
-            session.completed_at = datetime.utcnow()
+            session.completed_at = datetime.now(timezone.utc)
             
             # Update ride status
             ride = db.query(Ride).filter(Ride.id == session.ride_id).first()
@@ -957,56 +1802,6 @@ async def rider_complete_endpoint(
     }
 
 
-# ============================================================
-# EXISTING ENDPOINTS (keep as is)
-# ============================================================
-
-@router.post("/ride-sessions/{session_id}/scan-qr")
-async def scan_driver_qr(session_id: int, payload: dict, db: Session = Depends(get_db)):
-    booking_id = payload.get("booking_id")
-    rider_phone = normalize_phone(payload.get("rider_phone", ""))
-    qr_code_token = payload.get("qr_code_token")
-
-    session = db.query(RideSession).filter(RideSession.id == session_id).first()
-    if not session:
-        raise HTTPException(status_code=404, detail="Ride session not found")
-
-    if session.qr_code_token != qr_code_token:
-        raise HTTPException(status_code=400, detail="Invalid QR code")
-
-    rider = db.query(RideSessionRider).filter(
-        RideSessionRider.session_id == session_id,
-        RideSessionRider.booking_id == booking_id,
-        RideSessionRider.rider_phone == rider_phone
-    ).first()
-
-    if not rider:
-        raise HTTPException(status_code=404, detail="Rider not found")
-
-    if rider.status in ["boarded", "dropped_off", "completed"]:
-        raise HTTPException(status_code=400, detail="Rider already boarded")
-
-    rider.status = "boarded"
-    rider.boarded_at = datetime.utcnow()
-
-    all_boarded = all(r.status in ["boarded", "dropped_off", "completed"] for r in session.riders)
-    if all_boarded:
-        session.status = "en_route"
-        session.current_phase = "en_route"
-    else:
-        session.status = "boarding"
-        session.current_phase = "boarding"
-
-    db.commit()
-
-    return {
-        "message": "Boarding successful",
-        "rider_status": rider.status,
-        "session_status": session.status,
-        "current_phase": session.current_phase
-    }
-
-
 @router.post("/ride-sessions/{session_id}/riders/{booking_id}/mark-boarded")
 async def driver_mark_boarded(session_id: int, booking_id: int, payload: dict, db: Session = Depends(get_db)):
     driver_phone = normalize_phone(payload.get("driver_phone", ""))
@@ -1031,7 +1826,7 @@ async def driver_mark_boarded(session_id: int, booking_id: int, payload: dict, d
         raise HTTPException(status_code=400, detail="Rider already boarded")
 
     rider.status = "boarded"
-    rider.boarded_at = datetime.utcnow()
+    rider.boarded_at = datetime.now(timezone.utc)
 
     all_boarded = all(r.status in ["boarded", "dropped_off", "completed"] for r in session.riders)
     if all_boarded:
@@ -1085,12 +1880,11 @@ async def driver_dropoff_rider(session_id: int, booking_id: int, payload: dict, 
         raise HTTPException(status_code=400, detail="Rider must be boarded before drop off")
 
     rider.status = "dropped_off"
-    rider.dropped_off_at = datetime.utcnow()
+    rider.dropped_off_at = datetime.now(timezone.utc)
 
     all_dropped = all(r.status in ["dropped_off", "completed"] for r in session.riders)
     if all_dropped:
         session.current_phase = "completed"
-        session.status = "en_route"
 
     db.commit()
     
@@ -1108,39 +1902,6 @@ async def driver_dropoff_rider(session_id: int, booking_id: int, payload: dict, 
     }
 
 
-@router.post("/ride-sessions/{session_id}/mark-completed")
-async def rider_mark_completed(session_id: int, payload: dict, db: Session = Depends(get_db)):
-    booking_id = payload.get("booking_id")
-    rider_phone = normalize_phone(payload.get("rider_phone", ""))
-
-    rider = db.query(RideSessionRider).filter(
-        RideSessionRider.session_id == session_id,
-        RideSessionRider.booking_id == booking_id,
-        RideSessionRider.rider_phone == rider_phone
-    ).first()
-
-    if not rider:
-        raise HTTPException(status_code=404, detail="Rider not found")
-
-    if rider.status != "dropped_off":
-        raise HTTPException(status_code=400, detail="Ride must be completed after drop off")
-
-    rider.status = "completed"
-    rider.completed_at = datetime.utcnow()
-    db.commit()
-    
-    # Notify driver
-    session = db.query(RideSession).filter(RideSession.id == session_id).first()
-    if session:
-        await emit_to_user(session.driver_phone, 'ride-completed', {
-            'booking_id': booking_id,
-            'session_id': session_id,
-            'message': f"Rider has completed the ride"
-        })
-
-    return {"message": "Ride marked completed", "status": rider.status}
-
-
 @router.post("/ride-sessions/{session_id}/complete")
 async def complete_ride(session_id: int, payload: dict, db: Session = Depends(get_db)):
     driver_phone = normalize_phone(payload.get("driver_phone", ""))
@@ -1153,13 +1914,13 @@ async def complete_ride(session_id: int, payload: dict, db: Session = Depends(ge
     if not session:
         raise HTTPException(status_code=404, detail="Ride session not found")
 
-    all_dropped = all(r.status in ["dropped_off", "completed"] for r in session.riders)
-    if not all_dropped:
-        raise HTTPException(status_code=400, detail="All riders must be dropped before completing the ride")
+    all_completed = all(r.status == "completed" for r in session.riders)
+    if not all_completed:
+        raise HTTPException(status_code=400, detail="All riders must complete before finishing the ride")
 
     session.status = "completed"
     session.current_phase = "completed"
-    session.completed_at = datetime.utcnow()
+    session.completed_at = datetime.now(timezone.utc)
 
     ride = db.query(Ride).filter(Ride.id == session.ride_id).first()
     if ride:
@@ -1223,6 +1984,21 @@ async def rate_driver(session_id: int, payload: dict, db: Session = Depends(get_
     rider.rider_rating = rating
     rider.rider_feedback = feedback
     db.commit()
+    
+    # Update driver's average rating
+    session = db.query(RideSession).filter(RideSession.id == session_id).first()
+    if session:
+        driver = db.query(User).filter(User.phone_number == session.driver_phone).first()
+        if driver:
+            all_ratings = db.query(RideSessionRider.rider_rating).filter(
+                RideSessionRider.session_id == session_id,
+                RideSessionRider.rider_rating.isnot(None)
+            ).all()
+            ratings_list = [r[0] for r in all_ratings if r[0]]
+            if ratings_list:
+                driver.avg_rating = sum(ratings_list) / len(ratings_list)
+                driver.total_ratings = len(ratings_list)
+                db.commit()
 
     return {"message": "Driver rated successfully"}
 
@@ -1294,3 +2070,28 @@ async def trigger_emergency_stop(session_id: int, payload: dict, db: Session = D
         })
 
     return {"message": "Emergency stop activated", "status": session.status}
+
+
+@router.get("/ride-sessions/{session_id}/ratings")
+async def get_session_ratings(session_id: int, db: Session = Depends(get_db)):
+    """Get all ratings for a session"""
+    session = db.query(RideSession).filter(RideSession.id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    ratings = []
+    for rider in session.riders:
+        ratings.append({
+            "booking_id": rider.booking_id,
+            "rider_name": rider.rider_name,
+            "rider_phone": rider.rider_phone,
+            "rider_photo": rider.rider_photo,
+            "driver_rating_given": rider.driver_rating is not None,
+            "driver_rating": rider.driver_rating,
+            "driver_feedback": rider.driver_feedback,
+            "rider_rating_given": rider.rider_rating is not None,
+            "rider_rating": rider.rider_rating,
+            "rider_feedback": rider.rider_feedback
+        })
+    
+    return {"ratings": ratings}
