@@ -4975,7 +4975,8 @@ def find_nearest_route_vertex(route_coords: List[List[float]], lng: float, lat: 
 # ============================================
 # PYDANTIC MODELS
 # ============================================
-
+class ModifySeatsRequest(BaseModel):
+    new_seats: int
 class CreateRideRequest(BaseModel):
     phone_number: str
     origin: str
