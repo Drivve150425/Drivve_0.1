@@ -5433,7 +5433,6 @@ def cancel_ride(ride_id: int, db: Session = Depends(get_db)):
 # ============================================
 # MODIFICATION REQUEST ENDPOINTS
 # ============================================
-
 @router.post("/booking/{booking_id}/request-modification")
 async def request_modification(
     booking_id: int,
@@ -5466,9 +5465,6 @@ async def request_modification(
             ModificationRequest.status == "pending"
         ).first()
         
-        if existing:
-            return {"success": False, "message": "You already have a pending modification request"}
-        
         # Calculate available seats
         total_booked = db.query(func.sum(RideBooking.seats_booked)).filter(
             RideBooking.ride_id == ride.id,
@@ -5484,38 +5480,66 @@ async def request_modification(
         if request.requested_seats < 1:
             return {"success": False, "message": "Minimum 1 seat required"}
         
-        # Create modification request
-        mod_request = ModificationRequest(
-            booking_id=booking_id,
-            ride_id=ride.id,
-            passenger_phone=booking.passenger_phone,
-            current_seats=booking.seats_booked,
-            requested_seats=request.requested_seats,
-            status="pending",
-            created_at=datetime.now(timezone.utc)
-        )
+        # If request is the same as current seats, cancel or ignore
+        if request.requested_seats == booking.seats_booked:
+            # Delete pending request if exists
+            if existing:
+                db.delete(existing)
+                db.commit()
+            return {"success": True, "message": "Modification request cancelled - same as current seats"}
         
-        db.add(mod_request)
-        db.commit()
-        db.refresh(mod_request)
-        
-        return {
-            "success": True, 
-            "message": "Modification request sent to driver",
-            "request": {
-                "id": mod_request.id,
-                "current_seats": mod_request.current_seats,
-                "requested_seats": mod_request.requested_seats,
-                "status": mod_request.status,
-                "created_at": mod_request.created_at.isoformat()
+        # UPDATE existing request instead of creating new one
+        if existing:
+            # Update the existing pending request
+            existing.requested_seats = request.requested_seats
+            existing.updated_at = datetime.now(timezone.utc)
+            db.commit()
+            db.refresh(existing)
+            
+            return {
+                "success": True, 
+                "message": "Modification request updated",
+                "request": {
+                    "id": existing.id,
+                    "current_seats": existing.current_seats,
+                    "requested_seats": existing.requested_seats,
+                    "status": existing.status,
+                    "created_at": existing.created_at.isoformat() if existing.created_at else None,
+                    "updated_at": existing.updated_at.isoformat() if existing.updated_at else None
+                }
             }
-        }
+        else:
+            # Create new modification request
+            mod_request = ModificationRequest(
+                booking_id=booking_id,
+                ride_id=ride.id,
+                passenger_phone=booking.passenger_phone,
+                current_seats=booking.seats_booked,
+                requested_seats=request.requested_seats,
+                status="pending",
+                created_at=datetime.now(timezone.utc)
+            )
+            
+            db.add(mod_request)
+            db.commit()
+            db.refresh(mod_request)
+            
+            return {
+                "success": True, 
+                "message": "Modification request sent to driver",
+                "request": {
+                    "id": mod_request.id,
+                    "current_seats": mod_request.current_seats,
+                    "requested_seats": mod_request.requested_seats,
+                    "status": mod_request.status,
+                    "created_at": mod_request.created_at.isoformat() if mod_request.created_at else None
+                }
+            }
         
     except Exception as e:
         print(f"Error in request_modification: {str(e)}")
         db.rollback()
         return {"success": False, "message": str(e)}
-
 
 @router.get("/booking/{booking_id}/modification-request")
 def get_pending_modification_request(booking_id: int, db: Session = Depends(get_db)):
