@@ -6756,3 +6756,48 @@ def update_ride(ride_id: int, data: UpdateRideRequest, db: Session = Depends(get
         "remaining_seats": max(0, ride.available_seats - total_booked_seats),
         "total_booked": total_booked_seats
     }
+@router.put("/booking/{booking_id}/modify-seats")
+def modify_booking_seats(booking_id: int, new_seats: int, db: Session = Depends(get_db)):
+    """Modify seats for a pending booking (not modification request)"""
+    booking = db.query(RideBooking).filter(RideBooking.id == booking_id).first()
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    
+    # Only pending bookings can be directly modified
+    if booking.status != "pending":
+        raise HTTPException(status_code=400, detail="Only pending bookings can be directly modified")
+    
+    ride = db.query(Ride).filter(Ride.id == booking.ride_id).first()
+    if not ride:
+        raise HTTPException(status_code=404, detail="Ride not found")
+    
+    if new_seats <= 0:
+        raise HTTPException(status_code=400, detail="Seat count must be at least 1")
+    
+    # Check if ride is still available
+    if ride.status not in ["active", "full"]:
+        raise HTTPException(status_code=400, detail="Ride is no longer available")
+    
+    # Check available seats
+    total_booked = get_total_booked_seats(db, ride.id)
+    other_booked = total_booked - booking.seats_booked
+    available_seats_excluding_current = ride.available_seats - other_booked
+    
+    if new_seats > available_seats_excluding_current:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Only {available_seats_excluding_current} seat(s) available. Cannot increase to {new_seats}."
+        )
+    
+    old_seats = booking.seats_booked
+    booking.seats_booked = new_seats
+    booking.total_amount = ride.price_per_seat * new_seats
+    
+    db.commit()
+    
+    return {
+        "message": f"Seats updated from {old_seats} to {new_seats}",
+        "booking_id": booking.id,
+        "new_seats": new_seats,
+        "new_total": booking.total_amount
+    }
