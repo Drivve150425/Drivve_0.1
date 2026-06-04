@@ -2333,6 +2333,8 @@
 #         }
     
 #     return {"success": False, "message": "No pending modification request"}
+import secrets
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, text, and_, or_
@@ -3620,10 +3622,6 @@ def check_can_modify_ride(ride_id: int, db: Session = Depends(get_db)):
         "minutes_since_departure": round(minutes_since_departure) if minutes_since_departure > 0 else 0
     }
 
-
-# ============================================
-# START RIDE ENDPOINT
-# ============================================
 @router.post("/ride/{ride_id}/start")
 def start_ride(ride_id: int, db: Session = Depends(get_db)):
     """Start a ride - only allowed within 15 minutes before to 30 minutes after departure"""
@@ -3663,6 +3661,7 @@ def start_ride(ride_id: int, db: Session = Depends(get_db)):
                 booking.status = "cancelled"
                 booking.cancellation_reason = "Ride auto-cancelled - driver did not start on time"
                 
+                # Send notification
                 notification = UserNotification(
                     phone_number=booking.passenger_phone,
                     title="Ride Auto-Cancelled ❌",
@@ -3674,17 +3673,8 @@ def start_ride(ride_id: int, db: Session = Depends(get_db)):
                     is_deleted=False
                 )
                 db.add(notification)
-                
-                emit_to_user(booking.passenger_phone, "ride-auto-cancelled", {
-                    "ride_id": ride.id,
-                    "reason": "Driver did not start within 30 minutes"
-                })
             
             db.commit()
-            emit_to_ride(ride.id, "ride-auto-cancelled", {
-                "ride_id": ride.id,
-                "reason": "Driver did not start within 30 minutes"
-            })
             
             raise HTTPException(
                 status_code=400,
@@ -3694,74 +3684,74 @@ def start_ride(ride_id: int, db: Session = Depends(get_db)):
         # Start the ride
         ride.started_at = now
         ride.status = "active"
-        
-        # ✅ FIXED: Create live session with correct fields
-        live_session = RideSession(
-            ride_id=ride_id,
-            driver_phone=ride.phone_number,  # ✅ Add this
-            status="driver_started",
-            started_at=now
-            # ❌ Remove session_id - it doesn't exist in the model
-        )
-        db.add(live_session)
-        db.commit()
-        db.refresh(live_session)
-        
-        # Notify all accepted passengers
-        accepted_bookings = db.query(RideBooking).filter(
-            RideBooking.ride_id == ride_id,
-            RideBooking.status == "accepted"
-        ).all()
-        
-        for booking in accepted_bookings:
-            # Create rider session entry
-            rider_session = RideSessionRider(
-                session_id=live_session.id,
-                booking_id=booking.id,
-                rider_phone=booking.passenger_phone,  # ✅ Use rider_phone, not passenger_phone
-                status="pending"
-            )
-            db.add(rider_session)
-            
-            # Get passenger name
-            passenger = db.query(User).filter(User.phone_number == booking.passenger_phone).first()
-            if passenger:
-                rider_session.rider_name = passenger.full_name or f"{passenger.first_name or ''} {passenger.last_name or ''}".strip()
-                rider_session.rider_photo = passenger.profile_picture
-            
-            # Notify passenger
-            notification = UserNotification(
-                phone_number=booking.passenger_phone,
-                title="Ride Started! 🚗",
-                message=f"The driver has started the ride from {ride.origin} to {ride.destination}. You can now track the journey live.",
-                type=NotificationType.RIDE,
-                action_type="ride",
-                action_value=str(ride.id),
-                is_read=False,
-                is_deleted=False
-            )
-            db.add(notification)
-            
-            # Emit socket event
-            emit_to_user(booking.passenger_phone, "ride-started", {
-                "ride_id": ride.id,
-                "session_id": live_session.id,  # ✅ Use live_session.id, not session_id
-                "booking_id": booking.id
-            })
-        
         db.commit()
         
-        # Emit to ride room
-        emit_to_ride(ride.id, "ride-started", {
-            "ride_id": ride.id,
-            "session_id": live_session.id
-        })
-        
-        return {
-            "message": "Ride started successfully",
-            "session_id": live_session.id,
-            "ride_id": ride.id
-        }
+        # Create live session
+        try:
+            qr_token = secrets.token_hex(16)
+            
+            live_session = RideSession(
+                ride_id=ride_id,
+                driver_phone=ride.phone_number,
+                status="driver_started",
+                current_phase="boarding",
+                qr_code_token=qr_token,
+                qr_expires_at=datetime.utcnow() + timedelta(hours=8),
+                started_at=datetime.utcnow()
+            )
+            db.add(live_session)
+            db.flush()
+            
+            # Add all accepted riders to session
+            accepted_bookings = db.query(RideBooking).filter(
+                RideBooking.ride_id == ride_id,
+                RideBooking.status == "accepted"
+            ).all()
+            
+            for booking in accepted_bookings:
+                rider_user = db.query(User).filter(User.phone_number == booking.passenger_phone).first()
+                
+                rider_session = RideSessionRider(
+                    session_id=live_session.id,
+                    booking_id=booking.id,
+                    rider_phone=booking.passenger_phone,
+                    rider_name=rider_user.full_name if rider_user else None,
+                    rider_photo=rider_user.profile_picture if rider_user else None,
+                    pickup_location=ride.origin,
+                    dropoff_location=ride.destination,
+                    status="accepted"
+                )
+                db.add(rider_session)
+                
+                # Notify passenger
+                notification = UserNotification(
+                    phone_number=booking.passenger_phone,
+                    title="Ride Started! 🚗",
+                    message=f"The driver has started the ride from {ride.origin} to {ride.destination}. You can now track the journey live.",
+                    type=NotificationType.RIDE,
+                    action_type="ride",
+                    action_value=str(ride.id),
+                    is_read=False,
+                    is_deleted=False
+                )
+                db.add(notification)
+            
+            db.commit()
+            db.refresh(live_session)
+            
+            return {
+                "message": "Ride started successfully",
+                "session_id": live_session.id,
+                "ride_id": ride.id
+            }
+            
+        except Exception as e:
+            print(f"Error creating live session: {str(e)}")
+            db.rollback()
+            return {
+                "message": "Ride started but session creation failed",
+                "ride_id": ride.id
+            }
         
     except HTTPException:
         raise
@@ -3770,7 +3760,6 @@ def start_ride(ride_id: int, db: Session = Depends(get_db)):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
-
 @router.get("/ride/{ride_id}/live-session")
 def get_live_session(ride_id: int, db: Session = Depends(get_db)):
     """Get active live session for a ride"""
