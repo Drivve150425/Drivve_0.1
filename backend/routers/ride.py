@@ -6592,3 +6592,167 @@ def get_ride_ratings(ride_id: int, db: Session = Depends(get_db)):
         })
     
     return {"ratings": ratings}
+
+@router.put("/update-ride/{ride_id}")
+def update_ride(ride_id: int, data: UpdateRideRequest, db: Session = Depends(get_db)):
+    """Update an existing ride"""
+    normalized_phone = normalize_phone(data.phone_number)
+    
+    # Fetch existing ride
+    ride = db.query(Ride).filter(
+        Ride.id == ride_id,
+        Ride.phone_number == normalized_phone
+    ).first()
+    
+    if not ride:
+        raise HTTPException(status_code=404, detail="Ride not found or you don't have permission to edit it")
+    
+    # Check if ride can be edited (not started, not cancelled)
+    if ride.started_at:
+        raise HTTPException(status_code=400, detail="Cannot edit ride - Ride has already started")
+    
+    if ride.cancellation_reason:
+        raise HTTPException(status_code=400, detail="Cannot edit cancelled ride")
+    
+    # Check if ride has confirmed bookings
+    confirmed_bookings = db.query(RideBooking).filter(
+        RideBooking.ride_id == ride_id,
+        RideBooking.status == "accepted"
+    ).all()
+    
+    has_confirmed_bookings = len(confirmed_bookings) > 0
+    total_booked_seats = sum(b.seats_booked for b in confirmed_bookings)
+    
+    # Parse duration
+    duration_minutes = parse_duration_to_minutes(data.duration_text)
+    
+    # Convert departure time to UTC
+    departure_time_utc = data.departure_time
+    if departure_time_utc.tzinfo is None:
+        departure_time_utc = departure_time_utc.replace(tzinfo=IST).astimezone(timezone.utc)
+    else:
+        departure_time_utc = departure_time_utc.astimezone(timezone.utc)
+    
+    expected_end_time = departure_time_utc + timedelta(minutes=duration_minutes)
+    
+    # Validate time (minimum 30 minutes from now for new rides, but can be anytime for existing)
+    min_departure_time = datetime.now(timezone.utc) + timedelta(minutes=30)
+    if departure_time_utc < min_departure_time:
+        min_time_ist = to_ist(min_departure_time)
+        raise HTTPException(status_code=400, detail=f"Departure time must be at least 30 minutes from now. Please select a time after {min_time_ist.strftime('%I:%M %p')}.")
+    
+    # Validate seat changes (cannot reduce below booked seats)
+    if data.available_seats < total_booked_seats:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot reduce seats below {total_booked_seats} as you have {total_booked_seats} confirmed passenger(s)."
+        )
+    
+    # Validate distance
+    distance = calculate_distance_km(
+        data.origin_coords[1], data.origin_coords[0],
+        data.destination_coords[1], data.destination_coords[0]
+    )
+    
+    MIN_DISTANCE_KM = 3
+    MAX_DISTANCE_KM = 300
+    
+    if distance < MIN_DISTANCE_KM:
+        raise HTTPException(status_code=400, detail=f"Pickup and destination are too close ({distance:.1f} km).")
+    if distance > MAX_DISTANCE_KM:
+        raise HTTPException(status_code=400, detail=f"Distance too far ({distance:.1f} km).")
+    
+    # Women Only toggle validation
+    new_women_only = data.preferences.get('womenOnly', False) if data.preferences else data.women_only
+    
+    if ride.women_only != new_women_only:
+        if new_women_only == False and ride.women_only == True:
+            female_bookings = db.query(RideBooking).join(User).filter(
+                RideBooking.ride_id == ride_id,
+                RideBooking.status == "accepted",
+                User.gender == "female"
+            ).count()
+            
+            if female_bookings > 0:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Cannot disable Women Only mode - {female_bookings} female passenger(s) have already booked this ride."
+                )
+    
+    # Lock major fields if there are confirmed bookings
+    time_diff_minutes = abs((departure_time_utc - ride.departure_time).total_seconds()) / 60
+    
+    if has_confirmed_bookings:
+        critical_changes = []
+        
+        if ride.origin != data.origin:
+            critical_changes.append("Origin")
+        if ride.destination != data.destination:
+            critical_changes.append("Destination")
+        if time_diff_minutes > 10:
+            critical_changes.append("Time (more than 10 minutes)")
+        if ride.price_per_seat != data.price_per_seat:
+            critical_changes.append("Price")
+        
+        if critical_changes:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Cannot modify: {', '.join(critical_changes)}. This ride has {len(confirmed_bookings)} confirmed booking(s)."
+            )
+    
+    # Update ride fields
+    ride.origin = data.origin
+    ride.destination = data.destination
+    ride.departure_time = departure_time_utc
+    ride.expected_end_time = expected_end_time
+    ride.duration_minutes = duration_minutes
+    ride.available_seats = data.available_seats
+    ride.price_per_seat = data.price_per_seat
+    ride.distance_km = data.distance_km
+    ride.duration_text = data.duration_text
+    ride.total_estimated_price = data.total_estimated_price
+    ride.preferences = data.preferences
+    ride.origin_lon = data.origin_coords[0]
+    ride.origin_lat = data.origin_coords[1]
+    ride.destination_lon = data.destination_coords[0]
+    ride.destination_lat = data.destination_coords[1]
+    ride.route_coordinates = data.route_coordinates
+    ride.vehicle_id = data.vehicle_id
+    ride.women_only = new_women_only
+    
+    # Update status based on remaining seats
+    remaining_seats = ride.available_seats - total_booked_seats
+    if remaining_seats <= 0 and ride.status == "active":
+        ride.status = "full"
+    elif remaining_seats > 0 and ride.status == "full":
+        ride.status = "active"
+    
+    db.commit()
+    db.refresh(ride)
+    
+    # Create notification for ride update
+    try:
+        origin_short = data.origin.split(",")[0].strip() if data.origin else "start"
+        dest_short = data.destination.split(",")[0].strip() if data.destination else "destination"
+        
+        notification = UserNotification(
+            phone_number=normalized_phone,
+            title="Ride Updated! 🔄",
+            message=f"Your ride from {origin_short} to {dest_short} has been updated successfully.",
+            type=NotificationType.RIDE,
+            action_type="ride",
+            action_value=str(ride.id),
+            is_read=False,
+            is_deleted=False
+        )
+        db.add(notification)
+        db.commit()
+    except Exception as e:
+        print(f"Error creating update notification: {str(e)}")
+    
+    return {
+        "message": "Ride updated successfully",
+        "ride_id": ride.id,
+        "remaining_seats": max(0, ride.available_seats - total_booked_seats),
+        "total_booked": total_booked_seats
+    }
