@@ -5710,6 +5710,62 @@ def get_pending_modification_request(booking_id: int, db: Session = Depends(get_
         return {"has_pending": False, "error": str(e)}
 
 
+# Make sure these endpoints are properly defined and not commented out
+@router.get("/check-passenger-overlap")
+def check_passenger_overlap(
+    phone_number: str,
+    departure_time: datetime,
+    duration_minutes: int = 60,
+    exclude_booking_id: Optional[int] = None,
+    db: Session = Depends(get_db)
+):
+    """Check if passenger has overlapping active bookings"""
+    normalized_phone = normalize_phone(phone_number)
+    
+    overlapping = check_overlapping_bookings_for_passenger(db, normalized_phone, departure_time, duration_minutes, exclude_booking_id)
+    
+    if overlapping:
+        return {
+            "has_overlap": True,
+            "overlapping_booking": {
+                "booking_id": overlapping["booking_id"],
+                "ride_id": overlapping["ride_id"],
+                "origin": overlapping["origin"],
+                "destination": overlapping["destination"],
+                "departure_time": overlapping["departure_time"].isoformat(),
+                "expected_end_time": overlapping["expected_end_time"].isoformat() if overlapping["expected_end_time"] else None
+            }
+        }
+    
+    return {"has_overlap": False}
+
+
+@router.get("/check-overlapping-rides")
+def check_overlapping_rides_endpoint(
+    phone_number: str,
+    departure_time: datetime,
+    duration_minutes: int = 60,
+    exclude_ride_id: Optional[int] = None,
+    db: Session = Depends(get_db)
+):
+    """Check if driver has overlapping active rides"""
+    normalized_phone = normalize_phone(phone_number)
+    
+    overlapping = check_overlapping_rides_for_driver(db, normalized_phone, departure_time, duration_minutes, exclude_ride_id)
+    
+    if overlapping:
+        return {
+            "has_overlap": True,
+            "overlapping_ride": {
+                "id": overlapping["ride_id"],
+                "origin": overlapping["origin"],
+                "destination": overlapping["destination"],
+                "departure_time": overlapping["departure_time"].isoformat(),
+                "expected_end_time": overlapping["expected_end_time"].isoformat() if overlapping["expected_end_time"] else None
+            }
+        }
+    
+    return {"has_overlap": False}
 @router.get("/ride/{ride_id}/pending-modifications")
 def get_pending_modifications_for_ride(ride_id: int, db: Session = Depends(get_db)):
     """Get all pending modification requests for a ride (for driver)"""
@@ -7113,60 +7169,3 @@ def check_overlapping_rides_for_driver(db: Session, phone_number: str, departure
     
     return None
 
-
-# Make sure these endpoints are properly defined and not commented out
-@router.get("/check-passenger-overlap")
-def check_passenger_overlap(
-    phone_number: str,
-    departure_time: datetime,
-    duration_minutes: int = 60,
-    exclude_booking_id: Optional[int] = None,
-    db: Session = Depends(get_db)
-):
-    """Check if passenger has overlapping active bookings"""
-    normalized_phone = normalize_phone(phone_number)
-    
-    overlapping = check_overlapping_bookings_for_passenger(db, normalized_phone, departure_time, duration_minutes, exclude_booking_id)
-    
-    if overlapping:
-        return {
-            "has_overlap": True,
-            "overlapping_booking": {
-                "booking_id": overlapping["booking_id"],
-                "ride_id": overlapping["ride_id"],
-                "origin": overlapping["origin"],
-                "destination": overlapping["destination"],
-                "departure_time": overlapping["departure_time"].isoformat(),
-                "expected_end_time": overlapping["expected_end_time"].isoformat() if overlapping["expected_end_time"] else None
-            }
-        }
-    
-    return {"has_overlap": False}
-
-
-@router.get("/check-overlapping-rides")
-def check_overlapping_rides_endpoint(
-    phone_number: str,
-    departure_time: datetime,
-    duration_minutes: int = 60,
-    exclude_ride_id: Optional[int] = None,
-    db: Session = Depends(get_db)
-):
-    """Check if driver has overlapping active rides"""
-    normalized_phone = normalize_phone(phone_number)
-    
-    overlapping = check_overlapping_rides_for_driver(db, normalized_phone, departure_time, duration_minutes, exclude_ride_id)
-    
-    if overlapping:
-        return {
-            "has_overlap": True,
-            "overlapping_ride": {
-                "id": overlapping["ride_id"],
-                "origin": overlapping["origin"],
-                "destination": overlapping["destination"],
-                "departure_time": overlapping["departure_time"].isoformat(),
-                "expected_end_time": overlapping["expected_end_time"].isoformat() if overlapping["expected_end_time"] else None
-            }
-        }
-    
-    return {"has_overlap": False}

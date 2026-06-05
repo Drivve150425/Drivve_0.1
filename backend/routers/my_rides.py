@@ -1037,41 +1037,41 @@ def reject_booking(booking_id: int, db: Session = Depends(get_db)):
     return {"message": "Booking rejected"}
 
 
-@router.put("/ride/{ride_id}/cancel")
-def cancel_ride(ride_id: int, db: Session = Depends(get_db)):
-    ride = db.query(Ride).filter(Ride.id == ride_id).first()
-    if not ride:
-        raise HTTPException(status_code=404, detail="Ride not found")
+# @router.put("/ride/{ride_id}/cancel")
+# def cancel_ride(ride_id: int, db: Session = Depends(get_db)):
+#     ride = db.query(Ride).filter(Ride.id == ride_id).first()
+#     if not ride:
+#         raise HTTPException(status_code=404, detail="Ride not found")
 
-    ride.status = "cancelled"
+#     ride.status = "cancelled"
 
-    bookings = db.query(RideBooking).filter(
-        RideBooking.ride_id == ride_id,
-        RideBooking.status == "accepted"
-    ).all()
+#     bookings = db.query(RideBooking).filter(
+#         RideBooking.ride_id == ride_id,
+#         RideBooking.status == "accepted"
+#     ).all()
 
-    for booking in bookings:
-        booking.status = "cancelled"
+#     for booking in bookings:
+#         booking.status = "cancelled"
         
-        # Notify passenger
-        try:
-            notification = UserNotification(
-                phone_number=booking.passenger_phone,
-                title="Ride Cancelled ❌",
-                message=f"The ride from {ride.origin} to {ride.destination} has been cancelled by the driver.",
-                type=NotificationType.RIDE,
-                action_type="ride",
-                action_value=str(ride_id),
-                is_read=False,
-                is_deleted=False
-            )
-            db.add(notification)
-        except Exception as e:
-            print(f"Error creating notification: {str(e)}")
+#         # Notify passenger
+#         try:
+#             notification = UserNotification(
+#                 phone_number=booking.passenger_phone,
+#                 title="Ride Cancelled ❌",
+#                 message=f"The ride from {ride.origin} to {ride.destination} has been cancelled by the driver.",
+#                 type=NotificationType.RIDE,
+#                 action_type="ride",
+#                 action_value=str(ride_id),
+#                 is_read=False,
+#                 is_deleted=False
+#             )
+#             db.add(notification)
+#         except Exception as e:
+#             print(f"Error creating notification: {str(e)}")
 
-    db.commit()
+#     db.commit()
 
-    return {"message": "Ride cancelled successfully", "affected_passengers": len(bookings)}
+#     return {"message": "Ride cancelled successfully", "affected_passengers": len(bookings)}
 
 
 @router.put("/booking/{booking_id}/cancel")
