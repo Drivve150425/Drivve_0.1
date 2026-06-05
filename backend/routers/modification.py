@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from backend.routers.ride import emit_to_user
+from routers.ride import emit_to_user
 from database import get_db
 from models import ModificationRequest, RideBooking, Ride, User, UserNotification
 from pydantic import BaseModel
