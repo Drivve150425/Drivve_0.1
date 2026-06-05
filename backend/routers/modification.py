@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+from backend.routers.ride import emit_to_user
 from database import get_db
 from models import ModificationRequest, RideBooking, Ride, User, UserNotification
 from pydantic import BaseModel
@@ -15,7 +16,6 @@ IST = timezone(timedelta(hours=5, minutes=30))
 class ModificationRequestSchema(BaseModel):
     requested_seats: int
 
-
 @router.post("/request/{booking_id}")
 def request_modification(
     booking_id: int,
@@ -23,11 +23,12 @@ def request_modification(
     db: Session = Depends(get_db)
 ):
     """Request to modify seat count for a booking"""
-    booking = db.query(RideBooking).filter(RideBooking.id == booking_id).first()
+    # Use row lock for booking and ride
+    booking = db.query(RideBooking).filter(RideBooking.id == booking_id).with_for_update().first()
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
     
-    ride = db.query(Ride).filter(Ride.id == booking.ride_id).first()
+    ride = db.query(Ride).filter(Ride.id == booking.ride_id).with_for_update().first()
     if not ride:
         raise HTTPException(status_code=404, detail="Ride not found")
     
@@ -40,14 +41,35 @@ def request_modification(
     if booking.status != "accepted":
         raise HTTPException(status_code=400, detail="Cannot modify seats - Booking is not confirmed yet")
     
+    # Check for existing pending modification request
     existing = db.query(ModificationRequest).filter(
         ModificationRequest.booking_id == booking_id,
         ModificationRequest.status == "pending"
-    ).first()
+    ).with_for_update().first()
     
     if existing:
-        raise HTTPException(status_code=400, detail="You already have a pending modification request")
+        # Update existing request instead of creating new one
+        existing.requested_seats = request.requested_seats
+        existing.updated_at = datetime.now(timezone.utc)
+        db.commit()
+        
+        # Notify driver about updated request
+        emit_to_user(ride.phone_number, "modification-updated", {
+            "booking_id": booking_id,
+            "current_seats": existing.current_seats,
+            "requested_seats": request.requested_seats,
+            "message": f"Rider updated modification request: {existing.current_seats} → {request.requested_seats} seats"
+        })
+        
+        return {
+            "success": True,
+            "message": "Modification request updated",
+            "request_id": existing.id,
+            "requested_seats": request.requested_seats,
+            "is_update": True
+        }
     
+    # Check available seats
     total_booked = db.query(func.sum(RideBooking.seats_booked)).filter(
         RideBooking.ride_id == ride.id,
         RideBooking.status == "accepted"
@@ -62,6 +84,13 @@ def request_modification(
     if request.requested_seats < 1:
         raise HTTPException(status_code=400, detail="Minimum 1 seat required")
     
+    # Check if there's a pending booking request that might conflict
+    pending_booking = db.query(RideBooking).filter(
+        RideBooking.ride_id == ride.id,
+        RideBooking.status == "pending",
+        RideBooking.id != booking_id
+    ).first()
+    
     mod_request = ModificationRequest(
         booking_id=booking_id,
         ride_id=ride.id,
@@ -75,6 +104,21 @@ def request_modification(
     db.add(mod_request)
     db.commit()
     db.refresh(mod_request)
+    
+    # Notify driver about new modification request
+    passenger = db.query(User).filter(User.phone_number == booking.passenger_phone).first()
+    passenger_name = passenger.full_name if passenger else "Rider"
+    
+    emit_to_user(ride.phone_number, "new-modification-request", {
+        "request_id": mod_request.id,
+        "booking_id": booking_id,
+        "passenger_name": passenger_name,
+        "passenger_phone": booking.passenger_phone,
+        "current_seats": booking.seats_booked,
+        "requested_seats": request.requested_seats,
+        "ride_id": ride.id,
+        "has_conflicting_booking": pending_booking is not None
+    })
     
     return {
         "success": True,

@@ -5265,6 +5265,11 @@ def create_ride_booking(data: CreateRideBookingRequest, db: Session = Depends(ge
         raise HTTPException(status_code=400, detail=f"Not enough seats available. Only {remaining_seats} seat(s) left.")
     if ride.phone_number == passenger_phone:
         raise HTTPException(status_code=400, detail="You cannot book your own ride")
+     # Check for existing pending modification that might conflict
+    existing_mod = db.query(ModificationRequest).filter(
+        ModificationRequest.ride_id == ride.id,
+        ModificationRequest.status == "pending"
+    ).first()
     
     existing_accepted = db.query(RideBooking).filter(
         RideBooking.ride_id == data.ride_id,
@@ -7225,3 +7230,268 @@ def check_overlapping_rides_for_driver(db: Session, phone_number: str, departure
     
     return None
 
+# Add to ride.py after the existing endpoints
+
+@router.post("/ride/{ride_id}/resolve-concurrent-requests")
+def resolve_concurrent_requests(
+    ride_id: int, 
+    payload: dict,
+    db: Session = Depends(get_db)
+):
+    """
+    Resolve concurrent modification and booking requests.
+    Driver chooses which request to accept.
+    
+    Payload:
+    {
+        "choice": "modification" | "booking",
+        "modification_request_id": Optional[int],
+        "booking_id": Optional[int],
+        "driver_phone": str
+    }
+    """
+    from sqlalchemy import select, update
+    
+    choice = payload.get("choice")
+    modification_request_id = payload.get("modification_request_id")
+    booking_id = payload.get("booking_id")
+    driver_phone = normalize_phone(payload.get("driver_phone", ""))
+    
+    # Get ride with row lock for atomic operation
+    ride = db.query(Ride).filter(Ride.id == ride_id).with_for_update().first()
+    if not ride:
+        raise HTTPException(status_code=404, detail="Ride not found")
+    
+    if ride.started_at:
+        raise HTTPException(status_code=400, detail="Ride already started")
+    
+    # Get current seat counts
+    total_booked = get_total_booked_seats(db, ride_id)
+    current_available = ride.available_seats - total_booked
+    
+    result = {
+        "success": True,
+        "ride_id": ride_id,
+        "original_available": current_available,
+        "action_taken": choice
+    }
+    
+    if choice == "modification" and modification_request_id:
+        # Accept the modification request
+        mod_request = db.query(ModificationRequest).filter(
+            ModificationRequest.id == modification_request_id,
+            ModificationRequest.status == "pending"
+        ).with_for_update().first()
+        
+        if not mod_request:
+            raise HTTPException(status_code=404, detail="Modification request not found")
+        
+        booking = db.query(RideBooking).filter(
+            RideBooking.id == mod_request.booking_id
+        ).with_for_update().first()
+        
+        # Calculate available seats excluding this booking
+        other_booked = total_booked - booking.seats_booked
+        available_excluding_current = ride.available_seats - other_booked
+        
+        if mod_request.requested_seats > available_excluding_current:
+            # Not enough seats - reject modification
+            mod_request.status = "rejected"
+            mod_request.rejection_reason = "Not enough seats available"
+            db.commit()
+            
+            result["success"] = False
+            result["message"] = "Not enough seats available for modification"
+            result["available_seats"] = available_excluding_current
+        else:
+            # Accept modification
+            old_seats = booking.seats_booked
+            booking.seats_booked = mod_request.requested_seats
+            booking.total_amount = ride.price_per_seat * mod_request.requested_seats
+            
+            mod_request.status = "approved"
+            mod_request.approved_at = datetime.now(timezone.utc)
+            
+            db.commit()
+            
+            result["message"] = f"Modification approved: {old_seats} → {mod_request.requested_seats} seats"
+            result["booking_id"] = booking.id
+            result["new_seats"] = mod_request.requested_seats
+            
+            # Notify rider
+            emit_to_user(mod_request.passenger_phone, "modification-approved", {
+                "booking_id": booking.id,
+                "new_seats": mod_request.requested_seats,
+                "message": f"Your seat change to {mod_request.requested_seats} seat(s) has been approved!"
+            })
+            
+            # Check if there's a conflicting booking request to auto-reject
+            conflicting_booking = db.query(RideBooking).filter(
+                RideBooking.ride_id == ride_id,
+                RideBooking.status == "pending",
+                RideBooking.id != booking.id
+            ).with_for_update().first()
+            
+            if conflicting_booking:
+                conflicting_booking.status = "rejected"
+                conflicting_booking.cancellation_reason = "Driver accepted another request"
+                db.commit()
+                
+                emit_to_user(conflicting_booking.passenger_phone, "booking-rejected", {
+                    "booking_id": conflicting_booking.id,
+                    "ride_id": ride_id,
+                    "message": "Sorry, the driver accepted another request. Only 1 seat remains."
+                })
+                
+                result["auto_rejected_booking"] = conflicting_booking.id
+    
+    elif choice == "booking" and booking_id:
+        # Accept the new booking request
+        booking = db.query(RideBooking).filter(
+            RideBooking.id == booking_id,
+            RideBooking.status == "pending"
+        ).with_for_update().first()
+        
+        if not booking:
+            raise HTTPException(status_code=404, detail="Booking request not found")
+        
+        total_booked_current = get_total_booked_seats(db, ride_id)
+        remaining_seats = ride.available_seats - total_booked_current
+        
+        if booking.seats_booked > remaining_seats:
+            booking.status = "rejected"
+            booking.cancellation_reason = "Not enough seats available"
+            db.commit()
+            
+            result["success"] = False
+            result["message"] = f"Only {remaining_seats} seat(s) available"
+        else:
+            # Accept booking
+            booking.status = "accepted"
+            
+            # Update ride status if full
+            total_booked_after = get_total_booked_seats(db, ride_id)
+            if ride.available_seats <= total_booked_after:
+                ride.status = "full"
+            
+            db.commit()
+            
+            result["message"] = f"Booking approved for {booking.seats_booked} seat(s)"
+            result["booking_id"] = booking.id
+            
+            # Notify passenger
+            emit_to_user(booking.passenger_phone, "booking-approved", {
+                "booking_id": booking.id,
+                "seats": booking.seats_booked,
+                "message": f"Your booking for {booking.seats_booked} seat(s) has been accepted!"
+            })
+            
+            # Check for pending modification request from other rider and auto-reject
+            pending_mod = db.query(ModificationRequest).filter(
+                ModificationRequest.ride_id == ride_id,
+                ModificationRequest.status == "pending"
+            ).with_for_update().first()
+            
+            if pending_mod:
+                pending_mod.status = "rejected"
+                pending_mod.rejection_reason = "Driver accepted another booking request"
+                db.commit()
+                
+                emit_to_user(pending_mod.passenger_phone, "modification-rejected", {
+                    "booking_id": pending_mod.booking_id,
+                    "message": "Sorry, the driver accepted another request. No seats available for modification."
+                })
+                
+                result["auto_rejected_modification"] = pending_mod.id
+    
+    else:
+        raise HTTPException(status_code=400, detail="Invalid choice or missing request ID")
+    
+    # Get final seat counts
+    final_booked = get_total_booked_seats(db, ride_id)
+    result["final_available_seats"] = ride.available_seats - final_booked
+    result["final_booked_seats"] = final_booked
+    
+    # Emit update to all parties
+    emit_to_ride(ride_id, "seat-update", {
+        "available_seats": ride.available_seats - final_booked,
+        "booked_seats": final_booked,
+        "total_seats": ride.available_seats
+    })
+    
+    return result
+
+
+@router.get("/ride/{ride_id}/concurrent-requests")
+def get_concurrent_requests(ride_id: int, db: Session = Depends(get_db)):
+    """Get both pending modification and new booking requests for driver to choose"""
+    from sqlalchemy import and_
+    
+    ride = db.query(Ride).filter(Ride.id == ride_id).first()
+    if not ride:
+        raise HTTPException(status_code=404, detail="Ride not found")
+    
+    total_booked = get_total_booked_seats(db, ride_id)
+    available_seats = ride.available_seats - total_booked
+    
+    # Get pending modification request
+    pending_mod = db.query(ModificationRequest).filter(
+        ModificationRequest.ride_id == ride_id,
+        ModificationRequest.status == "pending"
+    ).first()
+    
+    mod_data = None
+    if pending_mod:
+        booking = db.query(RideBooking).filter(RideBooking.id == pending_mod.booking_id).first()
+        passenger = db.query(User).filter(User.phone_number == pending_mod.passenger_phone).first()
+        
+        mod_data = {
+            "id": pending_mod.id,
+            "booking_id": pending_mod.booking_id,
+            "passenger_name": passenger.full_name if passenger else "Rider",
+            "passenger_phone": pending_mod.passenger_phone,
+            "current_seats": pending_mod.current_seats,
+            "requested_seats": pending_mod.requested_seats,
+            "seats_change": pending_mod.requested_seats - pending_mod.current_seats,
+            "created_at": pending_mod.created_at.isoformat(),
+            "type": "modification"
+        }
+    
+    # Get pending new booking request (not from the modifying passenger)
+    pending_booking = db.query(RideBooking).filter(
+        RideBooking.ride_id == ride_id,
+        RideBooking.status == "pending"
+    )
+    
+    if pending_mod:
+        pending_booking = pending_booking.filter(RideBooking.id != pending_mod.booking_id)
+    
+    pending_booking = pending_booking.first()
+    
+    booking_data = None
+    if pending_booking:
+        passenger = db.query(User).filter(User.phone_number == pending_booking.passenger_phone).first()
+        
+        booking_data = {
+            "id": pending_booking.id,
+            "passenger_name": passenger.full_name if passenger else "Rider",
+            "passenger_phone": pending_booking.passenger_phone,
+            "seats_requested": pending_booking.seats_booked,
+            "created_at": pending_booking.created_at.isoformat(),
+            "type": "booking"
+        }
+    
+    return {
+        "has_concurrent_requests": mod_data is not None and booking_data is not None,
+        "available_seats": available_seats,
+        "total_seats": ride.available_seats,
+        "booked_seats": total_booked,
+        "modification_request": mod_data,
+        "booking_request": booking_data,
+        "ride": {
+            "id": ride.id,
+            "origin": ride.origin,
+            "destination": ride.destination,
+            "departure_time": ride.departure_time.isoformat()
+        }
+    }
