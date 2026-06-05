@@ -6493,115 +6493,181 @@ def rider_reached_pickup(session_id: int, payload: dict, db: Session = Depends(g
     
     return {"message": "Pickup arrival marked", "status": rider.status}
 
-
 @router.post("/ride-sessions/{session_id}/rider-board")
 def rider_board(session_id: int, payload: dict, db: Session = Depends(get_db)):
     """Rider scans QR code to board the vehicle"""
-    booking_id = payload.get("booking_id")
-    rider_phone = normalize_phone(payload.get("rider_phone", ""))
-    qr_code_token = payload.get("qr_code_token")
-    
-    session = db.query(RideSession).filter(RideSession.id == session_id).first()
-    if not session:
-        raise HTTPException(status_code=404, detail="Ride session not found")
-    
-    if session.qr_code_token != qr_code_token:
-        raise HTTPException(status_code=400, detail="Invalid QR code")
-    
-    if session.qr_expires_at and session.qr_expires_at < datetime.now(timezone.utc):
-        raise HTTPException(status_code=400, detail="QR code has expired")
-    
-    rider = db.query(RideSessionRider).filter(
-        RideSessionRider.session_id == session_id,
-        RideSessionRider.booking_id == booking_id,
-        RideSessionRider.rider_phone == rider_phone
-    ).first()
-    
-    if not rider:
-        raise HTTPException(status_code=404, detail="Rider not found")
-    
-    if rider.status in ["boarded", "dropped_off", "completed"]:
-        raise HTTPException(status_code=400, detail="Rider already boarded")
-    
-    rider.status = "boarded"
-    rider.boarded_at = datetime.now(timezone.utc)
-    
-    # Update session status
-    all_boarded = all(r.status in ["boarded", "dropped_off", "completed"] for r in session.riders)
-    if all_boarded:
-        session.status = "en_route"
-        session.current_phase = "en_route"
-    else:
-        session.status = "boarding"
-        session.current_phase = "boarding"
-    
-    db.commit()
-    
-    # Notify driver
-    emit_to_user(session.driver_phone, "rider-boarded", {
-        "booking_id": booking_id,
-        "rider_phone": rider_phone,
-        "rider_name": rider.rider_name,
-        "message": f"{rider.rider_name or 'Rider'} has boarded the vehicle"
-    })
-    
-    # Notify rider
-    emit_to_user(rider_phone, "rider-boarded", {
-        "booking_id": booking_id,
-        "session_id": session_id,
-        "message": "You have been boarded successfully!"
-    })
-    
-    return {
-        "message": "Boarding successful",
-        "rider_status": rider.status,
-        "session_status": session.status,
-        "current_phase": session.current_phase
-    }
-
-
+    try:
+        booking_id = payload.get("booking_id")
+        rider_phone = normalize_phone(payload.get("rider_phone", ""))
+        qr_code_token = payload.get("qr_code_token")
+        
+        print(f"📝 Boarding request: session={session_id}, booking={booking_id}, phone={rider_phone}")
+        
+        # 1. Get the session
+        session = db.query(RideSession).filter(RideSession.id == session_id).first()
+        if not session:
+            print(f"❌ Session {session_id} not found")
+            raise HTTPException(status_code=404, detail="Ride session not found")
+        
+        # 2. Validate QR code
+        if session.qr_code_token != qr_code_token:
+            print(f"❌ Invalid QR code: {qr_code_token}")
+            raise HTTPException(status_code=400, detail="Invalid QR code")
+        
+        # 3. Find the rider in the session
+        rider = db.query(RideSessionRider).filter(
+            RideSessionRider.session_id == session_id,
+            RideSessionRider.booking_id == booking_id
+        ).first()
+        
+        if not rider:
+            # Try finding by phone if booking_id didn't work
+            rider = db.query(RideSessionRider).filter(
+                RideSessionRider.session_id == session_id,
+                RideSessionRider.rider_phone == rider_phone
+            ).first()
+        
+        if not rider:
+            print(f"❌ Rider not found for session {session_id}, booking {booking_id}")
+            raise HTTPException(status_code=404, detail="Rider not found")
+        
+        print(f"✅ Found rider: {rider.rider_name}, current status: {rider.status}")
+        
+        # 4. Check if already boarded
+        if rider.status in ["boarded", "dropped_off", "completed"]:
+            raise HTTPException(status_code=400, detail=f"Rider already {rider.status}")
+        
+        # 5. Update rider status
+        rider.status = "boarded"
+        rider.boarded_at = datetime.now(timezone.utc)
+        
+        # 6. Update session counts and phase
+        all_riders = session.riders
+        boarded_count = sum(1 for r in all_riders if r.status in ["boarded", "dropped_off", "completed"])
+        total_riders = len(all_riders)
+        
+        print(f"📊 Boarded: {boarded_count}/{total_riders}")
+        
+        # Update session phase
+        if boarded_count == total_riders:
+            session.current_phase = "en_route"
+            session.status = "en_route"
+            print(f"🚗 All riders boarded! Moving to en_route phase")
+        else:
+            session.current_phase = "boarding"
+            session.status = "boarding"
+        
+        # 7. Commit to database
+        db.commit()
+        print(f"✅ Database commit successful")
+        
+        # 8. Send notifications (non-blocking)
+        try:
+            # Notify driver
+            emit_to_user(session.driver_phone, "rider-boarded", {
+                "booking_id": booking_id,
+                "rider_phone": rider.rider_phone,
+                "rider_name": rider.rider_name or "Rider",
+                "message": f"{rider.rider_name or 'Rider'} has boarded the vehicle",
+                "boarded_count": boarded_count,
+                "total_riders": total_riders
+            })
+            
+            # Notify rider
+            emit_to_user(rider.rider_phone, "boarding-confirmed", {
+                "session_id": session_id,
+                "booking_id": booking_id,
+                "message": "You have successfully boarded the vehicle"
+            })
+        except Exception as e:
+            print(f"⚠️ Socket notification error (non-critical): {e}")
+        
+        return {
+            "message": "Boarding successful",
+            "rider_status": rider.status,
+            "session_status": session.status,
+            "current_phase": session.current_phase,
+            "boarded_count": boarded_count,
+            "total_riders": total_riders
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"💥 Unexpected error in rider_board: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error boarding rider: {str(e)}")
 @router.post("/ride-sessions/{session_id}/rider-dropped-off")
 def rider_dropped_off(session_id: int, payload: dict, db: Session = Depends(get_db)):
-    """Rider marks that they've been dropped off"""
-    booking_id = payload.get("booking_id")
-    rider_phone = normalize_phone(payload.get("rider_phone", ""))
-    
-    rider = db.query(RideSessionRider).filter(
-        RideSessionRider.session_id == session_id,
-        RideSessionRider.booking_id == booking_id,
-        RideSessionRider.rider_phone == rider_phone
-    ).first()
-    
-    if not rider:
-        raise HTTPException(status_code=404, detail="Rider not found")
-    
-    if rider.status != "boarded":
-        raise HTTPException(status_code=400, detail="Rider must be boarded before drop off")
-    
-    rider.status = "dropped_off"
-    rider.dropped_off_at = datetime.now(timezone.utc)
-    rider.dropoff_confirmed = True
-    db.commit()
-    
-    session = db.query(RideSession).filter(RideSession.id == session_id).first()
-    
-    if session:
-        emit_to_user(session.driver_phone, "rider-dropped-off", {
-            "booking_id": booking_id,
-            "rider_phone": rider_phone,
-            "rider_name": rider.rider_name,
-            "message": f"{rider.rider_name or 'Rider'} has been dropped off"
-        })
+    """Driver marks rider as dropped off"""
+    try:
+        booking_id = payload.get("booking_id")
+        rider_phone = normalize_phone(payload.get("rider_phone", ""))
         
-        emit_to_user(rider_phone, "rider-dropped-off", {
-            "booking_id": booking_id,
-            "session_id": session_id,
-            "message": "You have been dropped off. Please complete the ride."
-        })
-    
-    return {"message": "Dropped off successfully", "rider_status": rider.status}
-
-
+        print(f"📍 Dropoff request: session={session_id}, booking={booking_id}, phone={rider_phone}")
+        
+        # Find the rider
+        rider = db.query(RideSessionRider).filter(
+            RideSessionRider.session_id == session_id,
+            RideSessionRider.booking_id == booking_id
+        ).first()
+        
+        if not rider:
+            rider = db.query(RideSessionRider).filter(
+                RideSessionRider.session_id == session_id,
+                RideSessionRider.rider_phone == rider_phone
+            ).first()
+        
+        if not rider:
+            raise HTTPException(status_code=404, detail="Rider not found")
+        
+        if rider.status != "boarded":
+            raise HTTPException(status_code=400, detail=f"Rider must be boarded first. Current status: {rider.status}")
+        
+        # Update rider
+        rider.status = "dropped_off"
+        rider.dropped_off_at = datetime.now(timezone.utc)
+        rider.dropoff_confirmed = True
+        
+        # Update session
+        session = db.query(RideSession).filter(RideSession.id == session_id).first()
+        if session:
+            dropped_count = sum(1 for r in session.riders if r.status in ["dropped_off", "completed"])
+            total_riders = len(session.riders)
+            
+            if dropped_count == total_riders:
+                session.current_phase = "completed"
+                # Don't mark as completed here - wait for driver to complete
+        
+        db.commit()
+        print(f"✅ Rider {rider.rider_name} dropped off successfully")
+        
+        # Send notifications
+        try:
+            emit_to_user(session.driver_phone, "rider-dropped-off", {
+                "booking_id": booking_id,
+                "rider_phone": rider.rider_phone,
+                "rider_name": rider.rider_name,
+                "message": f"{rider.rider_name or 'Rider'} has been dropped off"
+            })
+        except Exception as e:
+            print(f"Socket error: {e}")
+        
+        return {
+            "message": "Rider dropped off successfully",
+            "rider_status": rider.status
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error in rider_dropped_off: {e}")
+        import traceback
+        traceback.print_exc()
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
 @router.post("/ride-sessions/{session_id}/rider-complete")
 def rider_complete(session_id: int, payload: dict, db: Session = Depends(get_db)):
     """Rider completes the ride and can rate the driver"""
