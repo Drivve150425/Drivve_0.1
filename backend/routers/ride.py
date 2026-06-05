@@ -6998,8 +6998,11 @@ def update_ride(ride_id: int, data: UpdateRideRequest, db: Session = Depends(get
         "remaining_seats": max(0, ride.available_seats - total_booked_seats),
         "total_booked": total_booked_seats
     }
+# Add this Pydantic model at the top with your other models (if not already there)
+
+
 @router.put("/booking/{booking_id}/modify-seats")
-def modify_booking_seats(booking_id: int, new_seats: int, db: Session = Depends(get_db)):
+def modify_booking_seats(booking_id: int, request: ModifySeatsRequest, db: Session = Depends(get_db)):
     """Modify seats for a pending booking (not modification request)"""
     booking = db.query(RideBooking).filter(RideBooking.id == booking_id).first()
     if not booking:
@@ -7012,6 +7015,8 @@ def modify_booking_seats(booking_id: int, new_seats: int, db: Session = Depends(
     ride = db.query(Ride).filter(Ride.id == booking.ride_id).first()
     if not ride:
         raise HTTPException(status_code=404, detail="Ride not found")
+    
+    new_seats = request.new_seats
     
     if new_seats <= 0:
         raise HTTPException(status_code=400, detail="Seat count must be at least 1")
@@ -7036,6 +7041,37 @@ def modify_booking_seats(booking_id: int, new_seats: int, db: Session = Depends(
     booking.total_amount = ride.price_per_seat * new_seats
     
     db.commit()
+    
+    # Create notification for the driver about seat modification
+    try:
+        from models import NotificationType
+        notification = UserNotification(
+            phone_number=ride.phone_number,
+            title="Booking Modified 🔄",
+            message=f"Passenger has modified their booking from {old_seats} to {new_seats} seat(s).",
+            type=NotificationType.RIDE,
+            action_type="booking",
+            action_value=str(booking.id),
+            is_read=False,
+            is_deleted=False
+        )
+        db.add(notification)
+        db.commit()
+        print(f"✅ Modification notification sent to driver: {ride.phone_number}")
+    except Exception as e:
+        print(f"⚠️ Error sending modification notification: {str(e)}")
+    
+    # Emit socket event to driver for real-time update
+    try:
+        emit_to_user(ride.phone_number, "booking-modified", {
+            "booking_id": booking.id,
+            "passenger_phone": booking.passenger_phone,
+            "old_seats": old_seats,
+            "new_seats": new_seats,
+            "ride_id": ride.id
+        })
+    except Exception as e:
+        print(f"⚠️ Error emitting socket event: {str(e)}")
     
     return {
         "message": f"Seats updated from {old_seats} to {new_seats}",
