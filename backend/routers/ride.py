@@ -7495,3 +7495,316 @@ def get_concurrent_requests(ride_id: int, db: Session = Depends(get_db)):
             "departure_time": ride.departure_time.isoformat()
         }
     }
+# Add these endpoints to your existing ride.py
+
+@router.post("/ride-sessions/{session_id}/complete-force")
+def complete_ride_force(session_id: int, payload: dict, db: Session = Depends(get_db)):
+    """Driver forcefully completes the ride - marks all pending riders as completed"""
+    driver_phone = normalize_phone(payload.get("driver_phone", ""))
+    
+    session = db.query(RideSession).filter(
+        RideSession.id == session_id,
+        RideSession.driver_phone == driver_phone
+    ).first()
+    
+    if not session:
+        raise HTTPException(status_code=404, detail="Ride session not found")
+    
+    # Mark all incomplete riders as completed automatically
+    completed_count = 0
+    for rider in session.riders:
+        if rider.status not in ["completed", "dropped_off"]:
+            rider.status = "completed"
+            rider.completed_at = datetime.now(timezone.utc)
+            completed_count += 1
+    
+    session.status = "completed"
+    session.current_phase = "completed"
+    session.completed_at = datetime.now(timezone.utc)
+    
+    ride = db.query(Ride).filter(Ride.id == session.ride_id).first()
+    if ride:
+        ride.status = "completed"
+    
+    db.commit()
+    
+    # Notify all riders that ride was completed by driver
+    for rider in session.riders:
+        if rider.rider_rating is None:
+            emit_to_user(rider.rider_phone, "ride-completed-by-driver", {
+                "session_id": session_id,
+                "ride_id": session.ride_id,
+                "booking_id": rider.booking_id,
+                "message": "The driver has completed the ride. You can now rate the driver."
+            })
+    
+    return {
+        "message": "Ride completed successfully",
+        "status": session.status,
+        "completed_riders": completed_count,
+        "total_riders": len(session.riders)
+    }
+
+
+@router.post("/ride-sessions/{session_id}/rate-driver-once")
+def rate_driver_once(session_id: int, payload: dict, db: Session = Depends(get_db)):
+    """Rate driver with prevention of duplicate ratings"""
+    booking_id = payload.get("booking_id")
+    rating = payload.get("rating")
+    feedback = payload.get("feedback", "")
+    
+    if rating < 1 or rating > 5:
+        raise HTTPException(status_code=400, detail="Rating must be between 1 and 5")
+    
+    rider = db.query(RideSessionRider).filter(
+        RideSessionRider.session_id == session_id,
+        RideSessionRider.booking_id == booking_id
+    ).first()
+    
+    if not rider:
+        raise HTTPException(status_code=404, detail="Session rider not found")
+    
+    # Check if already rated
+    if rider.rider_rating is not None:
+        return {
+            "already_rated": True,
+            "message": "You have already rated this driver",
+            "existing_rating": rider.rider_rating
+        }
+    
+    # Save rating
+    rider.rider_rating = rating
+    rider.rider_feedback = feedback
+    db.commit()
+    
+    # Update driver's average rating
+    session = db.query(RideSession).filter(RideSession.id == session_id).first()
+    if session:
+        driver = db.query(User).filter(User.phone_number == session.driver_phone).first()
+        if driver:
+            all_ratings = db.query(RideSessionRider.rider_rating).filter(
+                RideSessionRider.session_id == session_id,
+                RideSessionRider.rider_rating.isnot(None)
+            ).all()
+            ratings_list = [r[0] for r in all_ratings if r[0]]
+            if ratings_list:
+                driver.avg_rating = sum(ratings_list) / len(ratings_list)
+                driver.total_ratings = len(ratings_list)
+                db.commit()
+    
+    return {
+        "success": True,
+        "message": "Driver rated successfully",
+        "rating": rating
+    }
+
+
+@router.get("/ride-session/rider/{booking_id}/status")
+def get_rider_session_status(booking_id: int, rider_phone: str, db: Session = Depends(get_db)):
+    """Get rider's session status and rating info"""
+    rider_phone = normalize_phone(rider_phone)
+    
+    rider_session = db.query(RideSessionRider).filter(
+        RideSessionRider.booking_id == booking_id,
+        RideSessionRider.rider_phone == rider_phone
+    ).first()
+    
+    if not rider_session:
+        raise HTTPException(status_code=404, detail="Rider session not found")
+    
+    session = db.query(RideSession).filter(RideSession.id == rider_session.session_id).first()
+    ride = db.query(Ride).filter(Ride.id == session.ride_id).first()
+    
+    return {
+        "session_id": session.id,
+        "rider_status": rider_session.status,
+        "session_status": session.status,
+        "has_rated_driver": rider_session.rider_rating is not None,
+        "driver_rating": rider_session.rider_rating,
+        "ride_completed": session.status == "completed",
+        "ride_id": session.ride_id,
+        "origin": ride.origin if ride else None,
+        "destination": ride.destination if ride else None,
+        "route_coordinates": ride.route_coordinates if ride else None
+    }
+
+
+@router.get("/ride-session/{session_id}/qr-valid")
+def validate_qr_code(session_id: int, qr_code_token: str, db: Session = Depends(get_db)):
+    """Validate QR code for boarding"""
+    session = db.query(RideSession).filter(RideSession.id == session_id).first()
+    
+    if not session:
+        return {"valid": False, "message": "Session not found"}
+    
+    if session.qr_code_token != qr_code_token:
+        return {"valid": False, "message": "Invalid QR code"}
+    
+    if session.qr_expires_at and session.qr_expires_at < datetime.now(timezone.utc):
+        return {"valid": False, "message": "QR code has expired"}
+    
+    if session.status in ["completed", "cancelled"]:
+        return {"valid": False, "message": f"Ride is {session.status}"}
+    
+    return {
+        "valid": True,
+        "session_id": session.id,
+        "ride_id": session.ride_id,
+        "driver_phone": session.driver_phone
+    }# Add these endpoints to your existing ride.py
+
+@router.post("/ride-sessions/{session_id}/complete-force")
+def complete_ride_force(session_id: int, payload: dict, db: Session = Depends(get_db)):
+    """Driver forcefully completes the ride - marks all pending riders as completed"""
+    driver_phone = normalize_phone(payload.get("driver_phone", ""))
+    
+    session = db.query(RideSession).filter(
+        RideSession.id == session_id,
+        RideSession.driver_phone == driver_phone
+    ).first()
+    
+    if not session:
+        raise HTTPException(status_code=404, detail="Ride session not found")
+    
+    # Mark all incomplete riders as completed automatically
+    completed_count = 0
+    for rider in session.riders:
+        if rider.status not in ["completed", "dropped_off"]:
+            rider.status = "completed"
+            rider.completed_at = datetime.now(timezone.utc)
+            completed_count += 1
+    
+    session.status = "completed"
+    session.current_phase = "completed"
+    session.completed_at = datetime.now(timezone.utc)
+    
+    ride = db.query(Ride).filter(Ride.id == session.ride_id).first()
+    if ride:
+        ride.status = "completed"
+    
+    db.commit()
+    
+    # Notify all riders that ride was completed by driver
+    for rider in session.riders:
+        if rider.rider_rating is None:
+            emit_to_user(rider.rider_phone, "ride-completed-by-driver", {
+                "session_id": session_id,
+                "ride_id": session.ride_id,
+                "booking_id": rider.booking_id,
+                "message": "The driver has completed the ride. You can now rate the driver."
+            })
+    
+    return {
+        "message": "Ride completed successfully",
+        "status": session.status,
+        "completed_riders": completed_count,
+        "total_riders": len(session.riders)
+    }
+
+
+@router.post("/ride-sessions/{session_id}/rate-driver-once")
+def rate_driver_once(session_id: int, payload: dict, db: Session = Depends(get_db)):
+    """Rate driver with prevention of duplicate ratings"""
+    booking_id = payload.get("booking_id")
+    rating = payload.get("rating")
+    feedback = payload.get("feedback", "")
+    
+    if rating < 1 or rating > 5:
+        raise HTTPException(status_code=400, detail="Rating must be between 1 and 5")
+    
+    rider = db.query(RideSessionRider).filter(
+        RideSessionRider.session_id == session_id,
+        RideSessionRider.booking_id == booking_id
+    ).first()
+    
+    if not rider:
+        raise HTTPException(status_code=404, detail="Session rider not found")
+    
+    # Check if already rated
+    if rider.rider_rating is not None:
+        return {
+            "already_rated": True,
+            "message": "You have already rated this driver",
+            "existing_rating": rider.rider_rating
+        }
+    
+    # Save rating
+    rider.rider_rating = rating
+    rider.rider_feedback = feedback
+    db.commit()
+    
+    # Update driver's average rating
+    session = db.query(RideSession).filter(RideSession.id == session_id).first()
+    if session:
+        driver = db.query(User).filter(User.phone_number == session.driver_phone).first()
+        if driver:
+            all_ratings = db.query(RideSessionRider.rider_rating).filter(
+                RideSessionRider.session_id == session_id,
+                RideSessionRider.rider_rating.isnot(None)
+            ).all()
+            ratings_list = [r[0] for r in all_ratings if r[0]]
+            if ratings_list:
+                driver.avg_rating = sum(ratings_list) / len(ratings_list)
+                driver.total_ratings = len(ratings_list)
+                db.commit()
+    
+    return {
+        "success": True,
+        "message": "Driver rated successfully",
+        "rating": rating
+    }
+
+
+@router.get("/ride-session/rider/{booking_id}/status")
+def get_rider_session_status(booking_id: int, rider_phone: str, db: Session = Depends(get_db)):
+    """Get rider's session status and rating info"""
+    rider_phone = normalize_phone(rider_phone)
+    
+    rider_session = db.query(RideSessionRider).filter(
+        RideSessionRider.booking_id == booking_id,
+        RideSessionRider.rider_phone == rider_phone
+    ).first()
+    
+    if not rider_session:
+        raise HTTPException(status_code=404, detail="Rider session not found")
+    
+    session = db.query(RideSession).filter(RideSession.id == rider_session.session_id).first()
+    ride = db.query(Ride).filter(Ride.id == session.ride_id).first()
+    
+    return {
+        "session_id": session.id,
+        "rider_status": rider_session.status,
+        "session_status": session.status,
+        "has_rated_driver": rider_session.rider_rating is not None,
+        "driver_rating": rider_session.rider_rating,
+        "ride_completed": session.status == "completed",
+        "ride_id": session.ride_id,
+        "origin": ride.origin if ride else None,
+        "destination": ride.destination if ride else None,
+        "route_coordinates": ride.route_coordinates if ride else None
+    }
+
+
+@router.get("/ride-session/{session_id}/qr-valid")
+def validate_qr_code(session_id: int, qr_code_token: str, db: Session = Depends(get_db)):
+    """Validate QR code for boarding"""
+    session = db.query(RideSession).filter(RideSession.id == session_id).first()
+    
+    if not session:
+        return {"valid": False, "message": "Session not found"}
+    
+    if session.qr_code_token != qr_code_token:
+        return {"valid": False, "message": "Invalid QR code"}
+    
+    if session.qr_expires_at and session.qr_expires_at < datetime.now(timezone.utc):
+        return {"valid": False, "message": "QR code has expired"}
+    
+    if session.status in ["completed", "cancelled"]:
+        return {"valid": False, "message": f"Ride is {session.status}"}
+    
+    return {
+        "valid": True,
+        "session_id": session.id,
+        "ride_id": session.ride_id,
+        "driver_phone": session.driver_phone
+    }
