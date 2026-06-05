@@ -5330,7 +5330,7 @@ def create_ride_booking(data: CreateRideBookingRequest, db: Session = Depends(ge
         phone_number=driver_phone,
         title="New Ride Request 🙋",
         message=f"You received a request for {data.seats_requested} seat(s) for your ride from {origin_short} to {dest_short}.",
-        type="ride",
+        type=NotificationType.RIDE,  
         action_type="booking",
         action_value=str(booking.id),
         is_read=False,
@@ -5340,6 +5340,7 @@ def create_ride_booking(data: CreateRideBookingRequest, db: Session = Depends(ge
     db.commit()
 
     return {"message": "Ride request sent successfully", "booking_id": booking.id, "status": booking.status}
+from models import NotificationType
 
 
 @router.put("/booking/{booking_id}/accept")
@@ -5378,7 +5379,7 @@ def accept_booking(booking_id: int, db: Session = Depends(get_db)):
         phone_number=booking.passenger_phone,
         title="Booking Accepted! ✅",
         message=f"Your request for {booking.seats_booked} seat(s) on the ride from {origin_short} to {dest_short} has been accepted by the driver.",
-        type="ride",
+        type=NotificationType.RIDE,
         action_type="booking",
         action_value=str(booking.id),
         is_read=False,
@@ -5425,152 +5426,171 @@ def cancel_booking(booking_id: int, db: Session = Depends(get_db)):
 @router.put("/ride/{ride_id}/cancel")
 def cancel_ride(ride_id: int, db: Session = Depends(get_db)):
     """Cancel a ride and update all related records"""
-    ride = db.query(Ride).filter(Ride.id == ride_id).first()
-    if not ride:
-        raise HTTPException(status_code=404, detail="Ride not found")
-    
-    # Check if ride can be cancelled
-    if ride.started_at:
-        raise HTTPException(status_code=400, detail="Cannot cancel ride that has already started")
-    
-    if ride.status == "completed":
-        raise HTTPException(status_code=400, detail="Cannot cancel completed ride")
-    
-    if ride.cancellation_reason:
-        raise HTTPException(status_code=400, detail="Ride is already cancelled")
-    
-    # Update ride status
-    old_status = ride.status
-    ride.status = "cancelled"
-    ride.cancellation_reason = "Cancelled by driver"
-    ride.cancelled_at = datetime.now(timezone.utc)
-    
-    cancelled_modifications_count = 0
-    affected_passengers = []
-    
-    # 1. Cancel all pending modification requests
-    pending_modifications = db.query(ModificationRequest).filter(
-        ModificationRequest.ride_id == ride_id,
-        ModificationRequest.status == "pending"
-    ).all()
-    
-    for mod_request in pending_modifications:
-        mod_request.status = "cancelled"
-        mod_request.cancelled_at = datetime.now(timezone.utc)
-        mod_request.rejection_reason = "Ride was cancelled by driver"
-        cancelled_modifications_count += 1
+    try:
+        ride = db.query(Ride).filter(Ride.id == ride_id).first()
+        if not ride:
+            raise HTTPException(status_code=404, detail="Ride not found")
         
-        # Notify passenger about cancelled modification request
-        passenger_notification = UserNotification(
-            phone_number=mod_request.passenger_phone,
-            title="Modification Request Cancelled ❌",
-            message=f"Your seat modification request for ride from {ride.origin} to {ride.destination} has been cancelled because the ride was cancelled.",
-            type="ride",
-            action_type="modification",
-            action_value=str(mod_request.id),
-            is_read=False,
-            is_deleted=False
-        )
-        db.add(passenger_notification)
+        # Check if ride can be cancelled
+        if ride.started_at:
+            raise HTTPException(status_code=400, detail="Cannot cancel ride that has already started")
         
-        # Emit socket event to passenger
-        emit_to_user(mod_request.passenger_phone, "modification-cancelled", {
+        if ride.status == "completed":
+            raise HTTPException(status_code=400, detail="Cannot cancel completed ride")
+        
+        if ride.status == "cancelled":
+            raise HTTPException(status_code=400, detail="Ride is already cancelled")
+        
+        # Store original status
+        old_status = ride.status
+        ride.status = "cancelled"
+        
+        # Only set cancellation_reason if column exists
+        if hasattr(ride, 'cancellation_reason'):
+            ride.cancellation_reason = "Cancelled by driver"
+        
+        # Only set cancelled_at if column exists (skip if not)
+        cancelled_modifications_count = 0
+        affected_passengers = []
+        
+        # 1. Cancel all pending modification requests (if model exists)
+        try:
+            from models import ModificationRequest
+            pending_modifications = db.query(ModificationRequest).filter(
+                ModificationRequest.ride_id == ride_id,
+                ModificationRequest.status == "pending"
+            ).all()
+            
+            for mod_request in pending_modifications:
+                mod_request.status = "cancelled"
+                if hasattr(mod_request, 'rejection_reason'):
+                    mod_request.rejection_reason = "Ride was cancelled by driver"
+                cancelled_modifications_count += 1
+                
+                # Notify passenger about cancelled modification request
+                passenger_notification = UserNotification(
+                    phone_number=mod_request.passenger_phone,
+                    title="Modification Request Cancelled ❌",
+                    message=f"Your seat modification request for ride from {ride.origin} to {ride.destination} has been cancelled because the ride was cancelled.",
+                    type=NotificationType.RIDE,
+                    action_type="modification",
+                    action_value=str(mod_request.id),
+                    is_read=False,
+                    is_deleted=False
+                )
+                db.add(passenger_notification)
+                
+                # Emit socket event to passenger
+                emit_to_user(mod_request.passenger_phone, "modification-cancelled", {
+                    "ride_id": ride_id,
+                    "request_id": mod_request.id,
+                    "message": "Your modification request was cancelled because the ride was cancelled"
+                })
+        except ImportError:
+            # ModificationRequest model doesn't exist
+            pass
+        except Exception as e:
+            print(f"Error processing modification requests: {str(e)}")
+        
+        # 2. Cancel all accepted bookings
+        accepted_bookings = db.query(RideBooking).filter(
+            RideBooking.ride_id == ride_id,
+            RideBooking.status == "accepted"
+        ).all()
+        
+        for booking in accepted_bookings:
+            booking.status = "cancelled"
+            if hasattr(booking, 'cancellation_reason'):
+                booking.cancellation_reason = "Ride cancelled by driver"
+            affected_passengers.append({
+                "phone": booking.passenger_phone,
+                "seats": booking.seats_booked,
+                "booking_id": booking.id
+            })
+            
+            # Notify passenger
+            origin_short = ride.origin.split(",")[0].strip() if ride.origin else "pickup"
+            dest_short = ride.destination.split(",")[0].strip() if ride.destination else "destination"
+            
+            notification = UserNotification(
+                phone_number=booking.passenger_phone,
+                title="Ride Cancelled ❌",
+                message=f"Your booking for {booking.seats_booked} seat(s) on the ride from {origin_short} to {dest_short} has been cancelled by the driver.",
+                type=NotificationType.RIDE,
+                action_type="cancellation",
+                action_value=str(ride.id),
+                is_read=False,
+                is_deleted=False
+            )
+            db.add(notification)
+            
+            # Emit socket event to passenger
+            emit_to_user(booking.passenger_phone, "booking-cancelled", {
+                "ride_id": ride_id,
+                "booking_id": booking.id,
+                "message": f"Your booking for {booking.seats_booked} seat(s) has been cancelled",
+                "origin": origin_short,
+                "destination": dest_short
+            })
+        
+        # 3. Cancel all pending bookings
+        pending_bookings = db.query(RideBooking).filter(
+            RideBooking.ride_id == ride_id,
+            RideBooking.status == "pending"
+        ).all()
+        
+        for booking in pending_bookings:
+            booking.status = "rejected"
+            if hasattr(booking, 'cancellation_reason'):
+                booking.cancellation_reason = "Ride cancelled by driver"
+            
+            # Notify passenger about rejected booking
+            notification = UserNotification(
+                phone_number=booking.passenger_phone,
+                title="Booking Request Cancelled ❌",
+                message=f"Your booking request for {booking.seats_booked} seat(s) on the ride from {ride.origin} to {ride.destination} has been cancelled because the ride was cancelled.",
+                type=NotificationType.RIDE,
+                action_type="cancellation",
+                action_value=str(ride.id),
+                is_read=False,
+                is_deleted=False
+            )
+            db.add(notification)
+            
+            # Emit socket event
+            emit_to_user(booking.passenger_phone, "booking-request-cancelled", {
+                "ride_id": ride_id,
+                "booking_id": booking.id,
+                "message": "Your booking request was cancelled because the ride was cancelled"
+            })
+        
+        db.commit()
+        
+        # Emit ride cancelled event
+        emit_to_ride(ride_id, "ride-cancelled", {
             "ride_id": ride_id,
-            "request_id": mod_request.id,
-            "message": "Your modification request was cancelled because the ride was cancelled"
-        })
-    
-    # 2. Cancel all accepted bookings
-    accepted_bookings = db.query(RideBooking).filter(
-        RideBooking.ride_id == ride_id,
-        RideBooking.status == "accepted"
-    ).all()
-    
-    for booking in accepted_bookings:
-        old_seats = booking.seats_booked
-        booking.status = "cancelled"
-        booking.cancellation_reason = "Ride cancelled by driver"
-        booking.cancelled_at = datetime.now(timezone.utc)
-        affected_passengers.append({
-            "phone": booking.passenger_phone,
-            "seats": booking.seats_booked,
-            "booking_id": booking.id
+            "message": f"Ride from {ride.origin} to {ride.destination} has been cancelled",
+            "cancelled_bookings": len(accepted_bookings),
+            "cancelled_modifications": cancelled_modifications_count
         })
         
-        # Notify passenger
-        origin_short = ride.origin.split(",")[0].strip() if ride.origin else "pickup"
-        dest_short = ride.destination.split(",")[0].strip() if ride.destination else "destination"
-        
-        notification = UserNotification(
-            phone_number=booking.passenger_phone,
-            title="Ride Cancelled ❌",
-            message=f"Your booking for {booking.seats_booked} seat(s) on the ride from {origin_short} to {dest_short} has been cancelled by the driver.",
-            type="ride",
-            action_type="cancellation",
-            action_value=str(ride.id),
-            is_read=False,
-            is_deleted=False
-        )
-        db.add(notification)
-        
-        # Emit socket event to passenger
-        emit_to_user(booking.passenger_phone, "booking-cancelled", {
+        return {
+            "message": "Ride cancelled successfully",
             "ride_id": ride_id,
-            "booking_id": booking.id,
-            "message": f"Your booking for {booking.seats_booked} seat(s) has been cancelled",
-            "origin": origin_short,
-            "destination": dest_short
-        })
-    
-    # 3. Cancel all pending bookings
-    pending_bookings = db.query(RideBooking).filter(
-        RideBooking.ride_id == ride_id,
-        RideBooking.status == "pending"
-    ).all()
-    
-    for booking in pending_bookings:
-        booking.status = "rejected"
-        booking.cancellation_reason = "Ride cancelled by driver"
-        booking.cancelled_at = datetime.now(timezone.utc)
+            "affected_passengers": len(accepted_bookings),
+            "cancelled_modifications": cancelled_modifications_count,
+            "cancelled_pending_bookings": len(pending_bookings),
+            "total_affected": len(accepted_bookings) + len(pending_bookings) + cancelled_modifications_count
+        }
         
-        # Notify passenger about rejected booking
-        notification = UserNotification(
-            phone_number=booking.passenger_phone,
-            title="Booking Request Cancelled ❌",
-            message=f"Your booking request for {booking.seats_booked} seat(s) on the ride from {ride.origin} to {ride.destination} has been cancelled because the ride was cancelled.",
-            type="ride",
-            action_type="cancellation",
-            action_value=str(ride.id),
-            is_read=False,
-            is_deleted=False
-        )
-        db.add(notification)
-        
-        # Emit socket event
-        emit_to_user(booking.passenger_phone, "booking-request-cancelled", {
-            "ride_id": ride_id,
-            "booking_id": booking.id,
-            "message": "Your booking request was cancelled because the ride was cancelled"
-        })
-    
-    db.commit()
-    
-    # Emit ride cancelled event to all users in the ride room
-    emit_to_ride(ride_id, "ride-cancelled", {
-        "ride_id": ride_id,
-        "message": f"Ride from {ride.origin} to {ride.destination} has been cancelled",
-        "cancelled_bookings": len(accepted_bookings),
-        "cancelled_modifications": cancelled_modifications_count
-    })
-    
-    return {
-        "message": "Ride cancelled successfully",
-        "ride_id": ride_id,
-        "affected_passengers": len(accepted_bookings),
-        "cancelled_modifications": cancelled_modifications_count,
-        "cancelled_pending_bookings": len(pending_bookings),
-        "total_affected": len(accepted_bookings) + len(pending_bookings) + cancelled_modifications_count
-    }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error in cancel_ride: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error cancelling ride: {str(e)}")
 # ============================================
 # MODIFICATION REQUEST ENDPOINTS
 # ============================================
@@ -6295,7 +6315,7 @@ def start_ride(ride_id: int, db: Session = Depends(get_db)):
                 phone_number=booking.passenger_phone,
                 title="Ride Started! 🚗",
                 message=f"The driver has started the ride from {ride.origin} to {ride.destination}.",
-                type="ride",
+                type=NotificationType.RIDE,  # ✅ Correct - using enum
                 action_type="ride",
                 action_value=str(ride.id),
                 is_read=False,
@@ -7067,7 +7087,7 @@ def check_and_auto_cancel_expired_rides(db: Session):
                 phone_number=booking.passenger_phone,
                 title="Ride Auto-cancelled ⏰",
                 message=f"The ride from {ride.origin} to {ride.destination} has been auto-cancelled as it was not started on time.",
-                type="ride",
+                type=NotificationType.RIDE,
                 action_type="cancellation",
                 action_value=str(ride.id),
                 is_read=False,
