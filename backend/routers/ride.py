@@ -6743,7 +6743,6 @@ def rider_complete(session_id: int, payload: dict, db: Session = Depends(get_db)
     
     return {"message": "Ride marked completed", "status": rider.status}
 
-
 @router.post("/ride-sessions/{session_id}/complete")
 def complete_ride(session_id: int, payload: dict, db: Session = Depends(get_db)):
     """Driver completes the ride and can rate riders"""
@@ -6757,6 +6756,7 @@ def complete_ride(session_id: int, payload: dict, db: Session = Depends(get_db))
     if not session:
         raise HTTPException(status_code=404, detail="Ride session not found")
     
+    # THIS IS THE PROBLEM - It requires all riders to be completed
     all_completed = all(r.status == "completed" for r in session.riders)
     if not all_completed:
         raise HTTPException(status_code=400, detail="All riders must complete before finishing the ride")
@@ -6772,8 +6772,6 @@ def complete_ride(session_id: int, payload: dict, db: Session = Depends(get_db))
     db.commit()
     
     return {"message": "Ride completed successfully", "status": session.status}
-
-
 @router.post("/ride-sessions/{session_id}/rate-driver")
 def rate_driver(session_id: int, payload: dict, db: Session = Depends(get_db)):
     """Rider rates the driver"""
@@ -8706,4 +8704,40 @@ def sync_session_state(
         "current_lat": session.current_lat,
         "current_lng": session.current_lng,
         "riders": riders_data
+    }@router.post("/ride-sessions/{session_id}/complete-force")
+def complete_ride_force(session_id: int, payload: dict, db: Session = Depends(get_db)):
+    """Driver forcefully completes the ride - marks all pending riders as completed"""
+    driver_phone = normalize_phone(payload.get("driver_phone", ""))
+    
+    session = db.query(RideSession).filter(
+        RideSession.id == session_id,
+        RideSession.driver_phone == driver_phone
+    ).first()
+    
+    if not session:
+        raise HTTPException(status_code=404, detail="Ride session not found")
+    
+    # Mark all incomplete riders as completed automatically
+    completed_count = 0
+    for rider in session.riders:
+        if rider.status not in ["completed", "dropped_off"]:
+            rider.status = "completed"
+            rider.completed_at = datetime.now(timezone.utc)
+            completed_count += 1
+    
+    session.status = "completed"
+    session.current_phase = "completed"
+    session.completed_at = datetime.now(timezone.utc)
+    
+    ride = db.query(Ride).filter(Ride.id == session.ride_id).first()
+    if ride:
+        ride.status = "completed"
+    
+    db.commit()
+    
+    return {
+        "message": "Ride completed successfully",
+        "status": session.status,
+        "completed_riders": completed_count,
+        "total_riders": len(session.riders)
     }
