@@ -8741,3 +8741,69 @@ def complete_ride_force(session_id: int, payload: dict, db: Session = Depends(ge
         "completed_riders": completed_count,
         "total_riders": len(session.riders)
     }
+@router.post("/booking/{booking_id}/rate")
+def rate_rider_from_booking(
+    booking_id: int, 
+    payload: dict, 
+    db: Session = Depends(get_db)
+):
+    """Rate a rider from a completed ride (when session is no longer active)"""
+    try:
+        rating = payload.get("rating")
+        feedback = payload.get("feedback", "")
+        
+        if rating < 1 or rating > 5:
+            raise HTTPException(status_code=400, detail="Rating must be between 1 and 5")
+        
+        # Find the booking
+        booking = db.query(RideBooking).filter(RideBooking.id == booking_id).first()
+        if not booking:
+            raise HTTPException(status_code=404, detail="Booking not found")
+        
+        # Find the rider in RideSessionRider (if exists)
+        rider_session = db.query(RideSessionRider).filter(
+            RideSessionRider.booking_id == booking_id
+        ).first()
+        
+        if rider_session:
+            # Update existing session rider
+            if rider_session.driver_rating is not None:
+                raise HTTPException(status_code=400, detail="Rating already submitted")
+            
+            rider_session.driver_rating = rating
+            rider_session.driver_feedback = feedback
+        else:
+            # Create a rating record (you may need a separate ratings table)
+            # For now, just store in booking or create a new record
+            booking.driver_rating = rating
+            booking.driver_feedback = feedback
+        
+        db.commit()
+        
+        return {"message": "Rider rated successfully", "rating": rating}
+        
+    except Exception as e:
+        print(f"Error rating rider: {str(e)}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+@router.get("/booking/{booking_id}/session")
+def get_session_from_booking(booking_id: int, db: Session = Depends(get_db)):
+    """Get the session ID for a booking (for rating after completion)"""
+    try:
+        rider_session = db.query(RideSessionRider).filter(
+            RideSessionRider.booking_id == booking_id
+        ).first()
+        
+        if not rider_session:
+            return {"session_id": None, "message": "No session found for this booking"}
+        
+        return {
+            "session_id": rider_session.session_id,
+            "booking_id": booking_id,
+            "rider_status": rider_session.status,
+            "already_rated": rider_session.driver_rating is not None
+        }
+        
+    except Exception as e:
+        print(f"Error getting session from booking: {str(e)}")
+        return {"session_id": None, "error": str(e)}
