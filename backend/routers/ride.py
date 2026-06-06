@@ -8153,3 +8153,189 @@ def update_all_user_ratings(db: Session = Depends(get_db)):
         "message": f"Updated ratings for {updated_count} users",
         "updated_count": updated_count
     }
+@router.get("/api/v1/bookings/{booking_id}/ride")
+def get_ride_from_booking(booking_id: int, db: Session = Depends(get_db)):
+    """
+    Fetch complete ride details from a booking ID.
+    Used when the app only has the booking ID and needs the full ride data.
+    """
+    try:
+        # Get the booking with ride relationship
+        booking = db.query(RideBooking).options(
+            joinedload(RideBooking.ride)
+        ).filter(RideBooking.id == booking_id).first()
+        
+        if not booking:
+            raise HTTPException(status_code=404, detail="Booking not found")
+        
+        ride = booking.ride
+        if not ride:
+            raise HTTPException(status_code=404, detail="Ride not found for this booking")
+        
+        # Get driver information
+        driver = db.query(User).filter(User.phone_number == ride.phone_number).first()
+        
+        # Get vehicle information
+        vehicle = None
+        if ride.vehicle_id:
+            vehicle = db.query(Vehicle).filter(Vehicle.id == ride.vehicle_id).first()
+        
+        # Get total booked seats for this ride
+        total_booked = get_total_booked_seats(db, ride.id)
+        remaining_seats = max(0, ride.available_seats - total_booked)
+        
+        # Get driver's average rating from completed rides
+        driver_rating = 4.5  # default
+        if driver and driver.avg_rating:
+            driver_rating = float(driver.avg_rating)
+        
+        # Get route coordinates (ensure it's properly formatted)
+        route_coords = ride.route_coordinates
+        if route_coords and isinstance(route_coords, str):
+            import json
+            try:
+                route_coords = json.loads(route_coords)
+            except:
+                route_coords = []
+        
+        # Get suggested pickup/drop points from route coordinates
+        suggested_pickup = None
+        suggested_drop = None
+        
+        if booking.intersection_pickup_lat and booking.intersection_pickup_lon:
+            suggested_pickup = {
+                "lat": float(booking.intersection_pickup_lat),
+                "lng": float(booking.intersection_pickup_lon)
+            }
+        elif ride.route_coordinates and len(ride.route_coordinates) > 0:
+            # Use first point as suggested pickup
+            first = ride.route_coordinates[0]
+            if isinstance(first, list) and len(first) >= 2:
+                suggested_pickup = {"lng": float(first[0]), "lat": float(first[1])}
+        
+        if booking.intersection_drop_lat and booking.intersection_drop_lon:
+            suggested_drop = {
+                "lat": float(booking.intersection_drop_lat),
+                "lng": float(booking.intersection_drop_lon)
+            }
+        elif ride.route_coordinates and len(ride.route_coordinates) > 0:
+            # Use last point as suggested drop
+            last = ride.route_coordinates[-1]
+            if isinstance(last, list) and len(last) >= 2:
+                suggested_drop = {"lng": float(last[0]), "lat": float(last[1])}
+        
+        # Determine ride status
+        ride_status = ride.status
+        if ride.started_at and ride_status != "completed":
+            ride_status = "ongoing"
+        elif ride.cancellation_reason:
+            ride_status = "cancelled"
+        elif remaining_seats == 0 and ride_status == "active":
+            ride_status = "full"
+        
+        response_data = {
+            "success": True,
+            "ride": {
+                "id": ride.id,
+                "origin": ride.origin,
+                "destination": ride.destination,
+                "departure_time": ride.departure_time.isoformat() if ride.departure_time else None,
+                "available_seats": ride.available_seats,
+                "price_per_seat": float(ride.price_per_seat) if ride.price_per_seat else 0,
+                "distance_km": float(ride.distance_km) if ride.distance_km else None,
+                "duration_text": ride.duration_text,
+                "route_coordinates": route_coords,
+                "origin_latitude": float(ride.origin_lat) if ride.origin_lat else None,
+                "origin_longitude": float(ride.origin_lon) if ride.origin_lon else None,
+                "destination_latitude": float(ride.destination_lat) if ride.destination_lat else None,
+                "destination_longitude": float(ride.destination_lon) if ride.destination_lon else None,
+                "women_only": ride.women_only or False,
+                "status": ride_status,
+                "started_at": ride.started_at.isoformat() if ride.started_at else None,
+                "cancellation_reason": ride.cancellation_reason,
+                "preferences": ride.preferences,
+                "driver_name": driver.full_name or f"Driver {ride.phone_number[-4:]}" if driver else "Driver",
+                "driver_phone": ride.phone_number,
+                "driver_user_id": driver.user_id if driver else None,
+                "driver_profile_picture": driver.profile_picture if driver else None,
+                "driver_rating": driver_rating,
+                "suggested_pickup_point": suggested_pickup,
+                "suggested_drop_point": suggested_drop,
+                "vehicle": {
+                    "id": vehicle.id if vehicle else None,
+                    "make": vehicle.make if vehicle else None,
+                    "model": vehicle.model if vehicle else None,
+                    "color": vehicle.color if vehicle else None,
+                    "registration_number": vehicle.registration_number if vehicle else None,
+                    "photo_url": vehicle.photo_url if vehicle else None,
+                } if vehicle else None,
+                "total_booked_seats": total_booked,
+                "remaining_seats": remaining_seats
+            },
+            "booking": {
+                "id": booking.id,
+                "seats_requested": booking.seats_booked,
+                "status": booking.status,
+                "total_amount": float(booking.total_amount) if booking.total_amount else None,
+                "created_at": booking.created_at.isoformat() if booking.created_at else None,
+                "pickup_walk_distance_m": booking.pickup_walk_distance_m,
+                "drop_walk_distance_m": booking.drop_walk_distance_m,
+                "intersection_pickup": {
+                    "lat": float(booking.intersection_pickup_lat) if booking.intersection_pickup_lat else None,
+                    "lng": float(booking.intersection_pickup_lon) if booking.intersection_pickup_lon else None
+                } if booking.intersection_pickup_lat and booking.intersection_pickup_lon else None,
+                "intersection_drop": {
+                    "lat": float(booking.intersection_drop_lat) if booking.intersection_drop_lat else None,
+                    "lng": float(booking.intersection_drop_lon) if booking.intersection_drop_lon else None
+                } if booking.intersection_drop_lat and booking.intersection_drop_lon else None
+            }
+        }
+        
+        return response_data
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error in get_ride_from_booking: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error fetching ride details: {str(e)}")
+@router.get("/booking/{booking_id}/completed-details")
+def get_completed_ride_details(booking_id: int, db: Session = Depends(get_db)):
+    """Get detailed information for a completed ride (for rating screen)"""
+    try:
+        booking = db.query(RideBooking).filter(RideBooking.id == booking_id).first()
+        if not booking:
+            raise HTTPException(status_code=404, detail="Booking not found")
+        
+        ride = db.query(Ride).filter(Ride.id == booking.ride_id).first()
+        if not ride:
+            raise HTTPException(status_code=404, detail="Ride not found")
+        
+        # Get rider session if exists
+        rider_session = db.query(RideSessionRider).filter(
+            RideSessionRider.booking_id == booking_id
+        ).first()
+        
+        # Check if rating already given
+        rating_given = rider_session.rider_rating is not None if rider_session else False
+        
+        return {
+            "success": True,
+            "completed_at": ride.completed_at.isoformat() if ride.completed_at else None,
+            "total_amount": float(booking.total_amount) if booking.total_amount else None,
+            "price_per_seat": float(ride.price_per_seat) if ride.price_per_seat else None,
+            "seats": booking.seats_booked,
+            "distance_km": float(ride.distance_km) if ride.distance_km else None,
+            "duration_text": ride.duration_text,
+            "driver_rating_given": rating_given,
+            "driver_rating": rider_session.rider_rating if rider_session else None,
+            "driver_feedback": rider_session.rider_feedback if rider_session else None,
+            "boarding_time": rider_session.boarded_at.isoformat() if rider_session and rider_session.boarded_at else None,
+            "dropoff_time": rider_session.dropped_off_at.isoformat() if rider_session and rider_session.dropped_off_at else None,
+            "ride_duration_minutes": None  # Calculate if needed
+        }
+        
+    except Exception as e:
+        print(f"Error in get_completed_ride_details: {str(e)}")
+        return {"success": False, "error": str(e)}
