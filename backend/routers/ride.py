@@ -6492,97 +6492,118 @@ def rider_reached_pickup(session_id: int, payload: dict, db: Session = Depends(g
         })
     
     return {"message": "Pickup arrival marked", "status": rider.status}
-
 @router.post("/ride-sessions/{session_id}/rider-board")
 def rider_board(session_id: int, payload: dict, db: Session = Depends(get_db)):
     """Rider scans QR code to board the vehicle"""
+    from datetime import datetime, timezone
+    from sqlalchemy.orm import joinedload
+    
     try:
         booking_id = payload.get("booking_id")
         rider_phone = normalize_phone(payload.get("rider_phone", ""))
         qr_code_token = payload.get("qr_code_token")
         
-        print(f"📝 Boarding request: session={session_id}, booking={booking_id}, phone={rider_phone}")
+        print(f"📝 Boarding request: session={session_id}, booking={booking_id}")
         
-        # 1. Get the session
-        session = db.query(RideSession).filter(RideSession.id == session_id).first()
+        # 1. Get session with riders loaded
+        session = db.query(RideSession).options(
+            joinedload(RideSession.riders)
+        ).filter(RideSession.id == session_id).first()
+        
         if not session:
-            print(f"❌ Session {session_id} not found")
             raise HTTPException(status_code=404, detail="Ride session not found")
         
+        print(f"✅ Session found: status={session.status}")
+        
         # 2. Validate QR code
+        if not session.qr_code_token:
+            raise HTTPException(status_code=400, detail="No QR code available for this ride")
+        
         if session.qr_code_token != qr_code_token:
-            print(f"❌ Invalid QR code: {qr_code_token}")
+            print(f"❌ QR mismatch: expected={session.qr_code_token}, got={qr_code_token}")
             raise HTTPException(status_code=400, detail="Invalid QR code")
         
-        # 3. Find the rider in the session
-        rider = db.query(RideSessionRider).filter(
-            RideSessionRider.session_id == session_id,
-            RideSessionRider.booking_id == booking_id
-        ).first()
+        print(f"✅ QR code validated")
+        
+        # 3. Find the rider
+        rider = None
+        for r in session.riders:
+            if r.booking_id == booking_id or r.rider_phone == rider_phone:
+                rider = r
+                break
         
         if not rider:
-            # Try finding by phone if booking_id didn't work
+            # Try direct database query
             rider = db.query(RideSessionRider).filter(
                 RideSessionRider.session_id == session_id,
-                RideSessionRider.rider_phone == rider_phone
+                RideSessionRider.booking_id == booking_id
             ).first()
         
         if not rider:
-            print(f"❌ Rider not found for session {session_id}, booking {booking_id}")
-            raise HTTPException(status_code=404, detail="Rider not found")
+            raise HTTPException(status_code=404, detail="Rider not found in this session")
         
         print(f"✅ Found rider: {rider.rider_name}, current status: {rider.status}")
         
         # 4. Check if already boarded
         if rider.status in ["boarded", "dropped_off", "completed"]:
-            raise HTTPException(status_code=400, detail=f"Rider already {rider.status}")
+            return {
+                "message": f"Rider already {rider.status}",
+                "rider_status": rider.status,
+                "already_boarded": True
+            }
         
         # 5. Update rider status
+        now = datetime.now(timezone.utc)
         rider.status = "boarded"
-        rider.boarded_at = datetime.now(timezone.utc)
+        rider.boarded_at = now
+        rider.pickup_confirmed = True
         
-        # 6. Update session counts and phase
-        all_riders = session.riders
-        boarded_count = sum(1 for r in all_riders if r.status in ["boarded", "dropped_off", "completed"])
-        total_riders = len(all_riders)
+        # 6. Update session counts
+        boarded_count = db.query(RideSessionRider).filter(
+            RideSessionRider.session_id == session_id,
+            RideSessionRider.status.in_(["boarded", "dropped_off", "completed"])
+        ).count()
+        
+        total_riders = db.query(RideSessionRider).filter(
+            RideSessionRider.session_id == session_id
+        ).count()
         
         print(f"📊 Boarded: {boarded_count}/{total_riders}")
         
-        # Update session phase
+        # 7. Update session phase
         if boarded_count == total_riders:
             session.current_phase = "en_route"
             session.status = "en_route"
-            print(f"🚗 All riders boarded! Moving to en_route phase")
         else:
             session.current_phase = "boarding"
             session.status = "boarding"
         
-        # 7. Commit to database
+        # 8. Commit
         db.commit()
         print(f"✅ Database commit successful")
         
-        # 8. Send notifications (non-blocking)
+        # 9. Send notifications (don't fail if socket fails)
         try:
-            # Notify driver
+            from app.routes.ride import emit_to_user
+            
             emit_to_user(session.driver_phone, "rider-boarded", {
                 "booking_id": booking_id,
                 "rider_phone": rider.rider_phone,
                 "rider_name": rider.rider_name or "Rider",
-                "message": f"{rider.rider_name or 'Rider'} has boarded the vehicle",
                 "boarded_count": boarded_count,
                 "total_riders": total_riders
             })
             
-            # Notify rider
             emit_to_user(rider.rider_phone, "boarding-confirmed", {
                 "session_id": session_id,
                 "booking_id": booking_id,
                 "message": "You have successfully boarded the vehicle"
             })
         except Exception as e:
-            print(f"⚠️ Socket notification error (non-critical): {e}")
+            print(f"⚠️ Socket error (non-critical): {e}")
         
         return {
+            "success": True,
             "message": "Boarding successful",
             "rider_status": rider.status,
             "session_status": session.status,
@@ -6594,7 +6615,7 @@ def rider_board(session_id: int, payload: dict, db: Session = Depends(get_db)):
     except HTTPException:
         raise
     except Exception as e:
-        print(f"💥 Unexpected error in rider_board: {str(e)}")
+        print(f"💥 Error in rider_board: {str(e)}")
         import traceback
         traceback.print_exc()
         db.rollback()
