@@ -4844,17 +4844,18 @@
 #     }
 import secrets
 from fastapi import APIRouter, Depends, HTTPException, Query
+from grpc import Status
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, text, and_, or_
 from database import get_db
-from models import Ride, RideBooking, ModificationRequest, User, UserNotification, NotificationType, Vehicle, RideSession, RideSessionRider
+from models import Ride, RideBooking, ModificationRequest, RideFeedback, User, UserNotification, NotificationType, Vehicle, RideSession, RideSessionRider
 from datetime import datetime, timezone, timedelta
 from pydantic import BaseModel, field_validator
 from typing import Optional, Dict, List
 import math
 import re
 import uuid
-
+from fastapi import Header, HTTPException, status
 router = APIRouter()
 
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -8807,3 +8808,133 @@ def get_session_from_booking(booking_id: int, db: Session = Depends(get_db)):
     except Exception as e:
         print(f"Error getting session from booking: {str(e)}")
         return {"session_id": None, "error": str(e)}
+class RideFeedbackCreate(BaseModel):
+    ride_booking_id: int
+    rating: int
+    comment: Optional[str] = None
+
+# Simple version - using X-Phone-Number header (matching your chat API)
+async def get_current_user(
+    x_phone_number: Optional[str] = Header(None, alias="X-Phone-Number"),
+    db: Session = Depends(get_db)
+):
+    """Get current user from X-Phone-Number header"""
+    if not x_phone_number:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="X-Phone-Number header required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    normalized_phone = normalize_phone(x_phone_number)
+    user = db.query(User).filter(User.phone_number == normalized_phone).first()
+    
+    if not user:
+        raise HTTPException(
+            status_code=Status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    return user
+
+@router.post("/api/v1/ride-feedback")
+async def create_ride_feedback(
+    feedback: RideFeedbackCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)  # This will now work
+):
+    """Submit rating for a ride"""
+    
+    # Check if booking exists and belongs to the user
+    booking = db.query(RideBooking).filter(RideBooking.id == feedback.ride_booking_id).first()
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    
+    # Check if user is the passenger
+    if booking.passenger_phone != current_user.phone_number:
+        raise HTTPException(status_code=403, detail="Not authorized to rate this ride")
+    
+    # Check if already rated
+    existing_feedback = db.query(RideFeedback).filter(
+        RideFeedback.ride_booking_id == feedback.ride_booking_id,
+        RideFeedback.feedback_by_user_id == current_user.id
+    ).first()
+    
+    if existing_feedback:
+        raise HTTPException(status_code=400, detail="You have already rated this ride")
+    
+    # Get the driver (ride owner)
+    ride = db.query(Ride).filter(Ride.id == booking.ride_id).first()
+    if not ride:
+        raise HTTPException(status_code=404, detail="Ride not found")
+    
+    driver = db.query(User).filter(User.phone_number == ride.phone_number).first()
+    if not driver:
+        raise HTTPException(status_code=404, detail="Driver not found")
+    
+    # Create feedback
+    new_feedback = RideFeedback(
+        ride_booking_id=feedback.ride_booking_id,
+        feedback_by_user_id=current_user.id,
+        feedback_for_user_id=driver.id,
+        rating=feedback.rating,
+        comment=feedback.comment,
+        created_at=datetime.now(timezone.utc)  # Use timezone-aware datetime
+    )
+    
+    db.add(new_feedback)
+    
+    # Update driver's average rating
+    all_feedback = db.query(RideFeedback).filter(
+        RideFeedback.feedback_for_user_id == driver.id
+    ).all()
+    
+    if all_feedback:
+        avg_rating = sum(f.rating for f in all_feedback) / len(all_feedback)
+        driver.avg_rating = round(avg_rating, 1)
+        driver.total_ratings = len(all_feedback)
+    
+    db.commit()
+    
+    return {"success": True, "message": "Rating submitted successfully"}
+
+
+@router.get("/api/v1/ride-feedback/driver/{booking_id}")
+async def get_driver_feedback_for_ride(
+    booking_id: int,
+    db: Session = Depends(get_db)
+):
+    """Get the rating that the driver received for this specific ride"""
+    
+    # Get the booking
+    booking = db.query(RideBooking).filter(RideBooking.id == booking_id).first()
+    if not booking:
+        return {"success": False, "message": "Booking not found"}
+    
+    # Get the ride to find the driver
+    ride = db.query(Ride).filter(Ride.id == booking.ride_id).first()
+    if not ride:
+        return {"success": False, "message": "Ride not found"}
+    
+    # Find driver user
+    driver = db.query(User).filter(User.phone_number == ride.phone_number).first()
+    if not driver:
+        return {"success": False, "message": "Driver not found"}
+    
+    # Find feedback for the driver on this specific ride
+    feedback = db.query(RideFeedback).filter(
+        RideFeedback.feedback_for_user_id == driver.id,
+        RideFeedback.ride_booking_id == booking_id
+    ).first()
+    
+    if feedback:
+        return {
+            "success": True,
+            "feedback": {
+                "rating": feedback.rating,
+                "comment": feedback.comment,
+                "created_at": feedback.created_at.isoformat() if feedback.created_at else None
+            }
+        }
+    
+    return {"success": False, "message": "No feedback found"}
