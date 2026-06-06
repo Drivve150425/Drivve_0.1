@@ -5166,8 +5166,8 @@ def search_rides(data: SearchRidesRequest, db: Session = Depends(get_db)):
         total_booked = get_total_booked_seats(db, ride.id)
         remaining_seats = max(0, ride.available_seats - total_booked)
         
-        if remaining_seats == 0:
-            continue
+        # if remaining_seats == 0:
+        #     continue
         
         pickup_distance_m = 0
         drop_distance_m = 0
@@ -5242,6 +5242,7 @@ def search_rides(data: SearchRidesRequest, db: Session = Depends(get_db)):
             "durationText": ride.duration_text,
             "routeCoordinates": ride.route_coordinates or [],
             "status": ride.status,
+            "isFull": remaining_seats == 0,
         })
     
     rides.sort(key=lambda x: (-x["matchPercentage"]))
