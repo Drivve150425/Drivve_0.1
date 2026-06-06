@@ -8809,10 +8809,12 @@ def get_session_from_booking(booking_id: int, db: Session = Depends(get_db)):
         print(f"Error getting session from booking: {str(e)}")
         return {"session_id": None, "error": str(e)}
 class RideFeedbackCreate(BaseModel):
-    ride_booking_id: int
-    rating: int
-    comment: Optional[str] = None
-async def get_current_user(
+    ride_booking_id: int = Field(..., description="Booking ID for the ride")
+    rating: int = Field(..., ge=1, le=5, description="Rating from 1 to 5")
+    comment: Optional[str] = Field(None, description="Optional feedback comment")
+
+# Add this function to get current user from header
+async def get_current_user_from_header(
     x_phone_number: Optional[str] = Header(None, alias="X-Phone-Number"),
     db: Session = Depends(get_db)
 ):
@@ -8821,7 +8823,6 @@ async def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="X-Phone-Number header required",
-            headers={"WWW-Authenticate": "Bearer"},
         )
     
     normalized_phone = normalize_phone(x_phone_number)
@@ -8829,24 +8830,30 @@ async def get_current_user(
     
     if not user:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,  # ← FIXED: use 'status.' not 'Status.'
+            status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
         )
     
     return user
 
+# POST endpoint for rating
 @router.post("/api/v1/ride-feedback")
 async def create_ride_feedback(
     feedback: RideFeedbackCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)  # This will now work
+    current_user: User = Depends(get_current_user_from_header)
 ):
     """Submit rating for a ride"""
     
-    # Check if booking exists and belongs to the user
+    print(f"📝 Received feedback: {feedback}")
+    print(f"👤 Current user: {current_user.phone_number}")
+    
+    # Check if booking exists
     booking = db.query(RideBooking).filter(RideBooking.id == feedback.ride_booking_id).first()
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
+    
+    print(f"📖 Booking found: ID={booking.id}, passenger={booking.passenger_phone}")
     
     # Check if user is the passenger
     if booking.passenger_phone != current_user.phone_number:
@@ -8870,6 +8877,8 @@ async def create_ride_feedback(
     if not driver:
         raise HTTPException(status_code=404, detail="Driver not found")
     
+    print(f"🚗 Driver: {driver.phone_number} (ID: {driver.id})")
+    
     # Create feedback
     new_feedback = RideFeedback(
         ride_booking_id=feedback.ride_booking_id,
@@ -8877,7 +8886,7 @@ async def create_ride_feedback(
         feedback_for_user_id=driver.id,
         rating=feedback.rating,
         comment=feedback.comment,
-        created_at=datetime.now(timezone.utc)  # Use timezone-aware datetime
+        created_at=datetime.now(timezone.utc)
     )
     
     db.add(new_feedback)
@@ -8896,13 +8905,15 @@ async def create_ride_feedback(
     
     return {"success": True, "message": "Rating submitted successfully"}
 
-
+# GET endpoint for fetching driver rating
 @router.get("/api/v1/ride-feedback/driver/{booking_id}")
 async def get_driver_feedback_for_ride(
     booking_id: int,
     db: Session = Depends(get_db)
 ):
     """Get the rating that the driver received for this specific ride"""
+    
+    print(f"🔍 Fetching driver feedback for booking: {booking_id}")
     
     # Get the booking
     booking = db.query(RideBooking).filter(RideBooking.id == booking_id).first()
@@ -8926,6 +8937,7 @@ async def get_driver_feedback_for_ride(
     ).first()
     
     if feedback:
+        print(f"⭐ Found feedback: rating={feedback.rating}, comment={feedback.comment}")
         return {
             "success": True,
             "feedback": {
@@ -8935,4 +8947,5 @@ async def get_driver_feedback_for_ride(
             }
         }
     
+    print("❌ No feedback found for this ride")
     return {"success": False, "message": "No feedback found"}
