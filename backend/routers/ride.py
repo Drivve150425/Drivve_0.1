@@ -7874,3 +7874,282 @@ def validate_qr_code(session_id: int, qr_code_token: str, db: Session = Depends(
         "ride_id": session.ride_id,
         "driver_phone": session.driver_phone
     }
+@router.get("/driver-earnings")
+def get_driver_earnings(phone_number: str, db: Session = Depends(get_db)):
+    """Get total earnings from completed rides for a driver"""
+    normalized_phone = normalize_phone(phone_number)
+    
+    # Query completed rides where this user was the driver
+    completed_rides = db.query(Ride).filter(
+        Ride.phone_number == normalized_phone,
+        Ride.status == "completed"
+    ).all()
+    
+    total_earnings = 0
+    rides_details = []
+    
+    for ride in completed_rides:
+        # Get all accepted bookings for this ride
+        bookings = db.query(RideBooking).filter(
+            RideBooking.ride_id == ride.id,
+            RideBooking.status.in_(["accepted", "completed"])
+        ).all()
+        
+        ride_total = 0
+        for booking in bookings:
+            ride_total += booking.total_amount or 0
+        
+        total_earnings += ride_total
+        
+        rides_details.append({
+            "ride_id": ride.id,
+            "origin": ride.origin,
+            "destination": ride.destination,
+            "departure_time": ride.departure_time.isoformat(),
+            "total_amount": ride_total,
+            "bookings_count": len(bookings)
+        })
+    
+    return {
+        "success": True,
+        "phone_number": normalized_phone,
+        "total_earnings": total_earnings,
+        "completed_rides_count": len(completed_rides),
+        "rides": rides_details
+    }
+# Add this endpoint to your user.py or ride.py file
+
+# Add these endpoints to your ride.py file
+
+@router.get("/users/{phone_number}/rating")
+def get_user_rating(phone_number: str, db: Session = Depends(get_db)):
+    """Get user's average rating from completed rides"""
+    normalized_phone = normalize_phone(phone_number)
+    
+    # Find user
+    user = db.query(User).filter(User.phone_number == normalized_phone).first()
+    
+    if not user:
+        return {
+            "success": False,
+            "message": "User not found"
+        }
+    
+    # Get ratings from RideSessionRider where user was a driver (rated by passengers)
+    driver_ratings = db.query(RideSessionRider.rider_rating).filter(
+        RideSessionRider.rider_rating.isnot(None)
+    ).join(RideSession).filter(
+        RideSession.driver_phone == normalized_phone
+    ).all()
+    
+    # Get ratings from RideSessionRider where user was a rider (rated by driver)
+    rider_ratings = db.query(RideSessionRider.driver_rating).filter(
+        RideSessionRider.driver_rating.isnot(None)
+    ).join(RideSession).filter(
+        RideSessionRider.rider_phone == normalized_phone
+    ).all()
+    
+    # Also get ratings from User model's avg_rating if available (from previous rides)
+    if user.avg_rating and user.avg_rating > 0:
+        # Use the stored average rating from User model
+        return {
+            "success": True,
+            "phone_number": normalized_phone,
+            "average_rating": round(float(user.avg_rating), 1),
+            "total_ratings": user.total_ratings or 0,
+            "source": "user_model"
+        }
+    
+    # Combine all ratings from RideSessionRider
+    all_ratings = []
+    for r in driver_ratings:
+        if r[0]:
+            all_ratings.append(float(r[0]))
+    for r in rider_ratings:
+        if r[0]:
+            all_ratings.append(float(r[0]))
+    
+    # Calculate average
+    if all_ratings:
+        average_rating = sum(all_ratings) / len(all_ratings)
+        total_ratings = len(all_ratings)
+    else:
+        average_rating = 0.0
+        total_ratings = 0
+    
+    # Update user model with calculated rating
+    if total_ratings > 0:
+        user.avg_rating = average_rating
+        user.total_ratings = total_ratings
+        db.commit()
+    
+    return {
+        "success": True,
+        "phone_number": normalized_phone,
+        "average_rating": round(average_rating, 1),
+        "total_ratings": total_ratings
+    }
+
+
+@router.get("/users/{phone_number}/completed-rides/passenger")
+def get_completed_rides_as_passenger(phone_number: str, db: Session = Depends(get_db)):
+    """Get count of completed rides where user was a passenger"""
+    normalized_phone = normalize_phone(phone_number)
+    
+    # Count completed bookings (rides that are completed)
+    # A ride is considered completed for passenger if:
+    # 1. Booking status is 'accepted' or 'completed'
+    # 2. The ride status is 'completed'
+    completed_bookings = db.query(RideBooking).join(Ride).filter(
+        RideBooking.passenger_phone == normalized_phone,
+        RideBooking.status.in_(["accepted", "completed"]),
+        Ride.status == "completed"
+    ).count()
+    
+    # Also count bookings from ride sessions where rider completed
+    session_completed = db.query(RideSessionRider).join(RideSession).filter(
+        RideSessionRider.rider_phone == normalized_phone,
+        RideSessionRider.status.in_(["completed", "dropped_off"]),
+        RideSession.status == "completed"
+    ).count()
+    
+    # Use the maximum count to avoid double counting
+    total_completed = max(completed_bookings, session_completed)
+    
+    return {
+        "success": True,
+        "phone_number": normalized_phone,
+        "count": total_completed,
+        "type": "passenger"
+    }
+
+
+@router.get("/users/{phone_number}/completed-rides/driver")
+def get_completed_rides_as_driver(phone_number: str, db: Session = Depends(get_db)):
+    """Get count of completed rides where user was the driver"""
+    normalized_phone = normalize_phone(phone_number)
+    
+    # Count completed rides as driver
+    completed_rides = db.query(Ride).filter(
+        Ride.phone_number == normalized_phone,
+        Ride.status == "completed"
+    ).count()
+    
+    # Also count from ride sessions where driver completed
+    session_completed = db.query(RideSession).filter(
+        RideSession.driver_phone == normalized_phone,
+        RideSession.status == "completed"
+    ).count()
+    
+    # Use the maximum count to avoid double counting
+    total_completed = max(completed_rides, session_completed)
+    
+    return {
+        "success": True,
+        "phone_number": normalized_phone,
+        "count": total_completed,
+        "type": "driver"
+    }
+
+
+@router.get("/users/{phone_number}/ride-stats")
+def get_user_ride_stats(phone_number: str, db: Session = Depends(get_db)):
+    """Get comprehensive ride statistics for a user"""
+    normalized_phone = normalize_phone(phone_number)
+    
+    # Get user info
+    user = db.query(User).filter(User.phone_number == normalized_phone).first()
+    
+    # Completed rides as passenger
+    passenger_rides = db.query(RideBooking).join(Ride).filter(
+        RideBooking.passenger_phone == normalized_phone,
+        RideBooking.status.in_(["accepted", "completed"]),
+        Ride.status == "completed"
+    ).count()
+    
+    # Completed rides as driver
+    driver_rides = db.query(Ride).filter(
+        Ride.phone_number == normalized_phone,
+        Ride.status == "completed"
+    ).count()
+    
+    # Total earnings as driver (from completed rides)
+    completed_rides_list = db.query(Ride).filter(
+        Ride.phone_number == normalized_phone,
+        Ride.status == "completed"
+    ).all()
+    
+    total_earnings = 0
+    for ride in completed_rides_list:
+        bookings = db.query(RideBooking).filter(
+            RideBooking.ride_id == ride.id,
+            RideBooking.status.in_(["accepted", "completed"])
+        ).all()
+        for booking in bookings:
+            total_earnings += booking.total_amount or 0
+    
+    # Get rating
+    avg_rating = 0.0
+    total_ratings = 0
+    if user:
+        if user.avg_rating:
+            avg_rating = float(user.avg_rating)
+        if user.total_ratings:
+            total_ratings = user.total_ratings
+    
+    return {
+        "success": True,
+        "phone_number": normalized_phone,
+        "stats": {
+            "completed_rides_as_passenger": passenger_rides,
+            "completed_rides_as_driver": driver_rides,
+            "total_rides": passenger_rides + driver_rides,
+            "total_earnings": total_earnings,
+            "average_rating": round(avg_rating, 1),
+            "total_ratings": total_ratings
+        }
+    }
+
+
+@router.post("/rides/update-user-ratings")
+def update_all_user_ratings(db: Session = Depends(get_db)):
+    """Admin endpoint to update all user ratings from ride history"""
+    users = db.query(User).all()
+    updated_count = 0
+    
+    for user in users:
+        # Get ratings where user was driver
+        driver_ratings = db.query(RideSessionRider.rider_rating).filter(
+            RideSessionRider.rider_rating.isnot(None)
+        ).join(RideSession).filter(
+            RideSession.driver_phone == user.phone_number
+        ).all()
+        
+        # Get ratings where user was rider
+        rider_ratings = db.query(RideSessionRider.driver_rating).filter(
+            RideSessionRider.driver_rating.isnot(None)
+        ).join(RideSession).filter(
+            RideSessionRider.rider_phone == user.phone_number
+        ).all()
+        
+        all_ratings = []
+        for r in driver_ratings:
+            if r[0]:
+                all_ratings.append(float(r[0]))
+        for r in rider_ratings:
+            if r[0]:
+                all_ratings.append(float(r[0]))
+        
+        if all_ratings:
+            avg_rating = sum(all_ratings) / len(all_ratings)
+            user.avg_rating = avg_rating
+            user.total_ratings = len(all_ratings)
+            updated_count += 1
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": f"Updated ratings for {updated_count} users",
+        "updated_count": updated_count
+    }
