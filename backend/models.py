@@ -917,7 +917,7 @@
 #     total_ratings = Column(Integer, default=0)
   
 from datetime import datetime, timezone
-from sqlalchemy import BigInteger, Column, Integer, String, DateTime, Boolean, Text, Enum, Date, JSON, Float, UniqueConstraint, ForeignKey
+from sqlalchemy import BigInteger, Column, Integer, Numeric, String, DateTime, Boolean, Text, Enum, Date, JSON, Float, UniqueConstraint, ForeignKey
 from sqlalchemy.sql import func
 from database import Base
 import enum
@@ -1250,7 +1250,10 @@ class RideSessionRider(Base):
     session = relationship("RideSession", back_populates="riders")
     booking = relationship("RideBooking", back_populates="session_riders")
     rider = relationship("User", foreign_keys=[rider_phone], primaryjoin="User.phone_number == RideSessionRider.rider_phone")
-
+    individual_qr_token = Column(String(64), nullable=True, unique=True)
+    qr_expires_at = Column(DateTime(timezone=True), nullable=True)
+    seats_booked = Column(Integer, default=1)
+    price_paid = Column(Numeric(10, 2), nullable=True)
 
 class UserNotification(Base):
     __tablename__ = "user_notifications"

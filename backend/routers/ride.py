@@ -6584,7 +6584,7 @@ def rider_board(session_id: int, payload: dict, db: Session = Depends(get_db)):
         
         # 9. Send notifications (don't fail if socket fails)
         try:
-            from app.routes.ride import emit_to_user
+            # from routes. import emit_to_user
             
             emit_to_user(session.driver_phone, "rider-boarded", {
                 "booking_id": booking_id,
@@ -8360,3 +8360,353 @@ def get_completed_ride_details(booking_id: int, db: Session = Depends(get_db)):
     except Exception as e:
         print(f"Error in get_completed_ride_details: {str(e)}")
         return {"success": False, "error": str(e)}
+# Add these endpoints to your existing ride.py
+
+@router.get("/ride-sessions/driver/{ride_id}/riders")
+def get_driver_session_riders(
+    ride_id: int, 
+    driver_phone: str, 
+    db: Session = Depends(get_db)
+):
+    """Get driver's active ride session with individual QR codes for each rider"""
+    driver_phone = normalize_phone(driver_phone)
+    
+    session = db.query(RideSession).filter(
+        RideSession.ride_id == ride_id,
+        RideSession.driver_phone == driver_phone,
+        RideSession.status.in_(["driver_started", "boarding", "en_route"])
+    ).order_by(RideSession.id.desc()).first()
+    
+    if not session:
+        raise HTTPException(status_code=404, detail="No active ride session found")
+    
+    # Generate individual QR tokens for each rider if not already generated
+    for rider in session.riders:
+        if rider.status == "accepted" and not rider.individual_qr_token:
+            rider.individual_qr_token = secrets.token_hex(16)
+            rider.qr_expires_at = datetime.now(timezone.utc) + timedelta(hours=2)
+    
+    db.commit()
+    db.refresh(session)
+    
+    riders_data = []
+    for rider in session.riders:
+        riders_data.append({
+            "id": rider.id,
+            "booking_id": rider.booking_id,
+            "rider_name": rider.rider_name or f"Rider {rider.rider_phone[-4:]}",
+            "rider_phone": rider.rider_phone,
+            "rider_photo": rider.rider_photo,
+            "status": rider.status,
+            "individual_qr_token": rider.individual_qr_token,
+            "qr_expires_at": rider.qr_expires_at.isoformat() if rider.qr_expires_at else None,
+            "pickup_location": rider.pickup_location,
+            "dropoff_location": rider.dropoff_location,
+            "seats_booked": rider.seats_booked or 1,
+            "price_paid": float(rider.price_paid) if rider.price_paid else None
+        })
+    
+    return {
+        "session_id": session.id,
+        "ride_id": ride_id,
+        "session_status": session.status,
+        "current_phase": session.current_phase,
+        "total_riders": len(session.riders),
+        "boarded_count": sum(1 for r in session.riders if r.status in ["boarded", "dropped_off", "completed"]),
+        "dropped_count": sum(1 for r in session.riders if r.status in ["dropped_off", "completed"]),
+        "riders": riders_data,
+        "qr_code_token": session.qr_code_token  # Master QR token (optional)
+    }
+
+
+@router.post("/ride-sessions/rider/board-by-token")
+def rider_board_by_token(payload: dict, db: Session = Depends(get_db)):
+    """
+    Rider boards by scanning individual QR code
+    Each rider has their own unique QR token
+    """
+    from sqlalchemy.orm import joinedload
+    from datetime import datetime, timezone
+    
+    try:
+        individual_token = payload.get("qr_code_token")
+        rider_phone = normalize_phone(payload.get("rider_phone", ""))
+        booking_id = payload.get("booking_id")
+        
+        print(f"📱 Boarding by token: token={individual_token[:20]}..., phone={rider_phone}")
+        
+        if not individual_token:
+            raise HTTPException(status_code=400, detail="QR code token is required")
+        
+        # Find rider by individual QR token
+        rider = db.query(RideSessionRider).options(
+            joinedload(RideSessionRider.session)
+        ).filter(
+            RideSessionRider.individual_qr_token == individual_token,
+            RideSessionRider.status == "accepted"
+        ).first()
+        
+        if not rider:
+            # Try to find by booking ID if provided
+            if booking_id:
+                rider = db.query(RideSessionRider).options(
+                    joinedload(RideSessionRider.session)
+                ).filter(
+                    RideSessionRider.booking_id == booking_id,
+                    RideSessionRider.status == "accepted"
+                ).first()
+                
+                if rider and rider.individual_qr_token == individual_token:
+                    pass  # Found matching rider
+                else:
+                    raise HTTPException(status_code=404, detail="Invalid QR code or rider not found")
+            else:
+                raise HTTPException(status_code=404, detail="Invalid QR code or rider not found")
+        
+        # Check if QR code is expired
+        if rider.qr_expires_at and rider.qr_expires_at < datetime.now(timezone.utc):
+            # Generate new token
+            rider.individual_qr_token = secrets.token_hex(16)
+            rider.qr_expires_at = datetime.now(timezone.utc) + timedelta(hours=2)
+            db.commit()
+            raise HTTPException(
+                status_code=400, 
+                detail="QR code expired. Please ask the driver to refresh the QR code."
+            )
+        
+        # Check if already boarded
+        if rider.status in ["boarded", "dropped_off", "completed"]:
+            return {
+                "success": True,
+                "message": f"Rider already {rider.status}",
+                "already_boarded": True,
+                "rider_status": rider.status,
+                "session_id": rider.session_id
+            }
+        
+        # Board the rider
+        now = datetime.now(timezone.utc)
+        rider.status = "boarded"
+        rider.boarded_at = now
+        rider.pickup_confirmed = True
+        
+        # Update session counts
+        session = rider.session
+        boarded_count = sum(1 for r in session.riders if r.status in ["boarded", "dropped_off", "completed"])
+        total_riders = len(session.riders)
+        
+        # Update session phase
+        if boarded_count == total_riders:
+            session.current_phase = "en_route"
+            session.status = "en_route"
+        else:
+            session.current_phase = "boarding"
+            session.status = "boarding"
+        
+        db.commit()
+        
+        print(f"✅ Rider {rider.rider_name} boarded successfully. Phase: {session.current_phase}")
+        
+        # Send notifications
+        try:
+            # from app.routes.ride import emit_to_user
+            
+            emit_to_user(session.driver_phone, "rider-boarded", {
+                "booking_id": rider.booking_id,
+                "rider_phone": rider.rider_phone,
+                "rider_name": rider.rider_name or "Rider",
+                "boarded_count": boarded_count,
+                "total_riders": total_riders,
+                "session_id": session.id
+            })
+            
+            emit_to_user(rider.rider_phone, "boarding-confirmed", {
+                "session_id": session.id,
+                "booking_id": rider.booking_id,
+                "message": "You have successfully boarded the vehicle"
+            })
+        except Exception as e:
+            print(f"⚠️ Socket error (non-critical): {e}")
+        
+        return {
+            "success": True,
+            "message": "Boarding successful",
+            "rider_status": rider.status,
+            "session_status": session.status,
+            "current_phase": session.current_phase,
+            "boarded_count": boarded_count,
+            "total_riders": total_riders,
+            "session_id": session.id
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"💥 Error in rider_board_by_token: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error boarding rider: {str(e)}")
+
+
+@router.post("/ride-sessions/{session_id}/refresh-rider-qr/{rider_id}")
+def refresh_rider_qr_code(
+    session_id: int, 
+    rider_id: int, 
+    payload: dict,
+    db: Session = Depends(get_db)
+):
+    """Refresh individual QR code for a specific rider"""
+    driver_phone = normalize_phone(payload.get("driver_phone", ""))
+    
+    # Verify session belongs to driver
+    session = db.query(RideSession).filter(
+        RideSession.id == session_id,
+        RideSession.driver_phone == driver_phone
+    ).first()
+    
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found or unauthorized")
+    
+    # Find the rider
+    rider = db.query(RideSessionRider).filter(
+        RideSessionRider.id == rider_id,
+        RideSessionRider.session_id == session_id,
+        RideSessionRider.status == "accepted"
+    ).first()
+    
+    if not rider:
+        raise HTTPException(status_code=404, detail="Rider not found or already boarded")
+    
+    # Generate new QR token
+    rider.individual_qr_token = secrets.token_hex(16)
+    rider.qr_expires_at = datetime.now(timezone.utc) + timedelta(hours=2)
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": "QR code refreshed successfully",
+        "rider_id": rider.id,
+        "booking_id": rider.booking_id,
+        "rider_name": rider.rider_name,
+        "individual_qr_token": rider.individual_qr_token,
+        "qr_expires_at": rider.qr_expires_at.isoformat()
+    }
+
+
+@router.get("/ride-sessions/rider/session-status/{booking_id}")
+def get_rider_session_status_v2(
+    booking_id: int, 
+    rider_phone: str,
+    db: Session = Depends(get_db)
+):
+    """Get rider's session status with better error handling"""
+    rider_phone = normalize_phone(rider_phone)
+    
+    # Find rider session
+    rider_session = db.query(RideSessionRider).options(
+        joinedload(RideSessionRider.session)
+    ).filter(
+        RideSessionRider.booking_id == booking_id,
+        RideSessionRider.rider_phone == rider_phone
+    ).first()
+    
+    if not rider_session:
+        return {
+            "success": False,
+            "message": "No active session found",
+            "has_session": False,
+            "ride_completed": False,
+            "has_rated_driver": False
+        }
+    
+    session = rider_session.session
+    ride = db.query(Ride).filter(Ride.id == session.ride_id).first()
+    
+    # Get driver info
+    driver = db.query(User).filter(User.phone_number == session.driver_phone).first()
+    
+    return {
+        "success": True,
+        "has_session": True,
+        "session_id": session.id,
+        "booking_id": booking_id,
+        "ride_id": session.ride_id,
+        "rider_status": rider_session.status,
+        "session_status": session.status,
+        "current_phase": session.current_phase,
+        "has_rated_driver": rider_session.rider_rating is not None,
+        "driver_rating": rider_session.rider_rating,
+        "ride_completed": session.status == "completed" or rider_session.status == "completed",
+        "driver_name": driver.full_name if driver else "Driver",
+        "driver_phone": session.driver_phone,
+        "driver_photo": driver.profile_picture if driver else None,
+        "driver_rating_avg": float(driver.avg_rating) if driver and driver.avg_rating else 4.5,
+        "origin": ride.origin if ride else None,
+        "destination": ride.destination if ride else None,
+        "pickup_lat": rider_session.pickup_lat,
+        "pickup_lng": rider_session.pickup_lng,
+        "dropoff_lat": rider_session.dropoff_lat,
+        "dropoff_lng": rider_session.dropoff_lng,
+        "current_driver_lat": session.current_lat,
+        "current_driver_lng": session.current_lng,
+        "route_coordinates": ride.route_coordinates if ride else []
+    }
+
+
+@router.post("/ride-sessions/{session_id}/sync")
+def sync_session_state(
+    session_id: int,
+    payload: dict,
+    db: Session = Depends(get_db)
+):
+    """Sync session state - used for recovery after disconnection"""
+    driver_phone = normalize_phone(payload.get("driver_phone", ""))
+    
+    session = db.query(RideSession).filter(
+        RideSession.id == session_id,
+        RideSession.driver_phone == driver_phone
+    ).first()
+    
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    # Recalculate counts
+    boarded_count = sum(1 for r in session.riders if r.status in ["boarded", "dropped_off", "completed"])
+    dropped_count = sum(1 for r in session.riders if r.status in ["dropped_off", "completed"])
+    total_riders = len(session.riders)
+    
+    # Update phase if needed
+    if session.current_phase == "boarding" and boarded_count == total_riders:
+        session.current_phase = "en_route"
+        session.status = "en_route"
+        db.commit()
+    elif session.current_phase == "en_route" and dropped_count == total_riders:
+        # Don't auto-complete, wait for driver
+        pass
+    
+    riders_data = []
+    for rider in session.riders:
+        riders_data.append({
+            "id": rider.id,
+            "booking_id": rider.booking_id,
+            "rider_name": rider.rider_name,
+            "rider_phone": rider.rider_phone,
+            "status": rider.status,
+            "individual_qr_token": rider.individual_qr_token,
+            "boarded_at": rider.boarded_at.isoformat() if rider.boarded_at else None,
+            "dropped_off_at": rider.dropped_off_at.isoformat() if rider.dropped_off_at else None
+        })
+    
+    return {
+        "success": True,
+        "session_id": session.id,
+        "session_status": session.status,
+        "current_phase": session.current_phase,
+        "boarded_count": boarded_count,
+        "dropped_count": dropped_count,
+        "total_riders": total_riders,
+        "current_lat": session.current_lat,
+        "current_lng": session.current_lng,
+        "riders": riders_data
+    }
