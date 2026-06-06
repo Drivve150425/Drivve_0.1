@@ -877,6 +877,60 @@ class ChatService {
       return { success: false };
     }
   }
+
+  // Send a message to a user without an existing conversation
+  async sendMessageToUser(senderPhone, receiverPhone, text, type = 'text', fileUrl = null, rideId = null) {
+    try {
+      const cleanSender = this._normalizePhone(senderPhone);
+      const cleanReceiver = this._normalizePhone(receiverPhone);
+
+      console.log('Sending message to user:', { cleanSender, cleanReceiver, text });
+
+      const response = await fetch(`${API_BASE_URL}/api/chat/send`, {
+        method: 'POST',
+        headers: {
+          'X-Phone-Number': cleanSender,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          receiver_phone: cleanReceiver,
+          text,
+          type,
+          file_url: fileUrl,
+          ride_id: rideId,
+        }),
+      });
+
+      return await response.json();
+    } catch (error) {
+      console.error('Send message to user error:', error);
+      return { success: false };
+    }
+  }
+
+  _normalizePhone(phone) {
+    if (!phone) return phone;
+
+    let cleaned = phone.toString().replace(/[^0-9+]/g, '');
+
+    if (/^\d{10}$/.test(cleaned)) {
+      return `+91${cleaned}`;
+    }
+
+    if (/^91\d{10}$/.test(cleaned)) {
+      return `+${cleaned}`;
+    }
+
+    if (cleaned.startsWith('0')) {
+      return `+91${cleaned.substring(1)}`;
+    }
+
+    if (cleaned.startsWith('+')) {
+      return cleaned;
+    }
+
+    return cleaned;
+  }
 }
 
 export default new ChatService();
