@@ -278,7 +278,6 @@ def get_messages(
 # ─────────────────────────────────────────────────────────────────────────────
 # POST /api/chat/conversations/{conversation_id}/messages
 # ─────────────────────────────────────────────────────────────────────────────
-
 @router.post("/api/chat/conversations/{conversation_id}/messages")
 def send_message(
     conversation_id: int,
@@ -291,13 +290,15 @@ def send_message(
 
     me = normalize_phone(x_phone_number)
 
+    # Check if conversation exists
     conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
     if me not in (conv.participant_1_phone, conv.participant_2_phone):
         raise HTTPException(status_code=403, detail="Not a participant")
-
+    
+    # Create message
     msg = ChatMessage(
         conversation_id=conversation_id,
         sender_phone=me,
@@ -334,8 +335,76 @@ def send_message(
             "sender_name": "You",
         }
     }
+class SendMessageByPhoneRequest(BaseModel):
+    receiver_phone: str
+    text: str
+    type: str = "text"
+    file_url: Optional[str] = None
+    ride_id: Optional[int] = None
 
-
+@router.post("/api/chat/send")
+def send_message_by_phone(
+    data: SendMessageByPhoneRequest,
+    x_phone_number: Optional[str] = Header(None, alias="X-Phone-Number"),
+    db: Session = Depends(get_db),
+):
+    """
+    Send a message to any user - auto-creates conversation if it doesn't exist
+    """
+    if not x_phone_number:
+        raise HTTPException(status_code=401, detail="X-Phone-Number header required")
+    
+    sender_phone = normalize_phone(x_phone_number)
+    receiver_phone = normalize_phone(data.receiver_phone)
+    
+    if sender_phone == receiver_phone:
+        raise HTTPException(status_code=400, detail="Cannot send message to yourself")
+    
+    # Check if receiver exists
+    receiver = db.query(User).filter(User.phone_number == receiver_phone).first()
+    if not receiver:
+        raise HTTPException(status_code=404, detail="Receiver not found")
+    
+    # Get or create conversation
+    conv = get_or_create_conversation(db, sender_phone, receiver_phone, data.ride_id)
+    
+    # Create message
+    msg = ChatMessage(
+        conversation_id=conv.id,
+        sender_phone=sender_phone,
+        text=data.text,
+        type=data.type,
+        file_url=data.file_url,
+        status="sent",
+    )
+    db.add(msg)
+    db.flush()
+    
+    # Update conversation
+    conv.last_message = data.text
+    conv.last_message_time = msg.created_at
+    conv.last_message_type = data.type
+    conv.hidden_for_user_1 = False
+    conv.hidden_for_user_2 = False
+    db.commit()
+    db.refresh(msg)
+    
+    return {
+        "success": True,
+        "conversation_id": conv.id,
+        "message": {
+            "id": msg.id,
+            "conversation_id": msg.conversation_id,
+            "sender_id": msg.sender_phone,
+            "sender_phone": msg.sender_phone,
+            "text": msg.text,
+            "type": msg.type,
+            "file_url": msg.file_url,
+            "status": msg.status,
+            "created_at": msg.created_at.isoformat() if msg.created_at else None,
+            "from_me": True,
+        }
+    }
 # ─────────────────────────────────────────────────────────────────────────────
 # POST /api/chat/conversations/{conversation_id}/messages/read
 # ─────────────────────────────────────────────────────────────────────────────
