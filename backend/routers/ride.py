@@ -8812,8 +8812,6 @@ class RideFeedbackCreate(BaseModel):
     ride_booking_id: int
     rating: int
     comment: Optional[str] = None
-
-# Simple version - using X-Phone-Number header (matching your chat API)
 async def get_current_user(
     x_phone_number: Optional[str] = Header(None, alias="X-Phone-Number"),
     db: Session = Depends(get_db)
@@ -8831,7 +8829,7 @@ async def get_current_user(
     
     if not user:
         raise HTTPException(
-            status_code=Status.HTTP_404_NOT_FOUND,
+            status_code=status.HTTP_404_NOT_FOUND,  # ← FIXED: use 'status.' not 'Status.'
             detail="User not found"
         )
     
