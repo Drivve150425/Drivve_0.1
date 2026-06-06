@@ -8419,7 +8419,6 @@ def get_driver_session_riders(
         "qr_code_token": session.qr_code_token  # Master QR token (optional)
     }
 
-
 @router.post("/ride-sessions/rider/board-by-token")
 def rider_board_by_token(payload: dict, db: Session = Depends(get_db)):
     """
@@ -8428,23 +8427,24 @@ def rider_board_by_token(payload: dict, db: Session = Depends(get_db)):
     """
     from sqlalchemy.orm import joinedload
     from datetime import datetime, timezone
+    import secrets
     
     try:
         individual_token = payload.get("qr_code_token")
         rider_phone = normalize_phone(payload.get("rider_phone", ""))
         booking_id = payload.get("booking_id")
         
-        print(f"📱 Boarding by token: token={individual_token[:20]}..., phone={rider_phone}")
+        print(f"📱 Boarding by token: token={individual_token[:20] if individual_token else 'None'}..., phone={rider_phone}, booking={booking_id}")
         
         if not individual_token:
             raise HTTPException(status_code=400, detail="QR code token is required")
         
-        # Find rider by individual QR token
+        # ✅ FIX: Include both 'accepted' AND 'reached_pickup' status
         rider = db.query(RideSessionRider).options(
             joinedload(RideSessionRider.session)
         ).filter(
             RideSessionRider.individual_qr_token == individual_token,
-            RideSessionRider.status == "accepted"
+            RideSessionRider.status.in_(["accepted", "reached_pickup"])  # ← ADD reached_pickup
         ).first()
         
         if not rider:
@@ -8454,7 +8454,7 @@ def rider_board_by_token(payload: dict, db: Session = Depends(get_db)):
                     joinedload(RideSessionRider.session)
                 ).filter(
                     RideSessionRider.booking_id == booking_id,
-                    RideSessionRider.status == "accepted"
+                    RideSessionRider.status.in_(["accepted", "reached_pickup"])  # ← ADD reached_pickup
                 ).first()
                 
                 if rider and rider.individual_qr_token == individual_token:
@@ -8510,8 +8510,6 @@ def rider_board_by_token(payload: dict, db: Session = Depends(get_db)):
         
         # Send notifications
         try:
-            # from app.routes.ride import emit_to_user
-            
             emit_to_user(session.driver_phone, "rider-boarded", {
                 "booking_id": rider.booking_id,
                 "rider_phone": rider.rider_phone,
@@ -8548,8 +8546,6 @@ def rider_board_by_token(payload: dict, db: Session = Depends(get_db)):
         traceback.print_exc()
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error boarding rider: {str(e)}")
-
-
 @router.post("/ride-sessions/{session_id}/refresh-rider-qr/{rider_id}")
 def refresh_rider_qr_code(
     session_id: int, 
