@@ -8808,6 +8808,8 @@ def get_session_from_booking(booking_id: int, db: Session = Depends(get_db)):
     except Exception as e:
         print(f"Error getting session from booking: {str(e)}")
         return {"session_id": None, "error": str(e)}
+from pydantic import BaseModel, Field
+
 class RideFeedbackCreate(BaseModel):
     ride_booking_id: int = Field(..., description="Booking ID for the ride")
     rating: int = Field(..., ge=1, le=5, description="Rating from 1 to 5")
