@@ -2964,7 +2964,7 @@ setUserBooking({
   const cancellationsAllowed = canCancelBooking();
   const rideStatusMessage = getRideStatusMessage();
   const isAutoCancelled = rideStatus === 'auto-cancelled' || rideStatus === 'expired';
-  const showLiveTracking = liveSession && !rideCompleted;
+  const showLiveTracking = userBooking?.id && !rideCompleted && userBooking?.status === 'accepted';
   // const showLiveTracking = liveSession && (rideStatus === 'ongoing' || rideStatus === 'late') && !rideCompleted;
   const isCompleted = rideStatus === 'completed';
   
@@ -3050,8 +3050,14 @@ setUserBooking({
           <Ionicons name="chevron-back" size={26} color={Colors.secondary} />
         </TouchableOpacity>
         
-          {showLiveTracking && (
-  <TouchableOpacity style={styles.liveTrackingButton} onPress={() => navigation.navigate('OngoingRideRiderScreen', { bookingId: userBooking?.id, sessionId: liveSession?.session_id })}>
+{showLiveTracking && (
+  <TouchableOpacity 
+    style={styles.liveTrackingButton} 
+    onPress={() => navigation.navigate('OngoingRideRiderScreen', { 
+      bookingId: userBooking?.id, 
+      sessionId: liveSession?.session_id || null 
+    })}
+  >
     <View style={styles.liveDot} />
     <Text style={styles.liveTrackingButtonText}>Track Live Ride</Text>
   </TouchableOpacity>
