@@ -23,7 +23,7 @@
       "googleServicesFile": "./GoogleService-Info.plist",
       "config": {
         "usesNonExemptEncryption": false,
-        "googleMapsApiKey": "YOUR_GOOGLE_MAPS_API_KEY"
+        "googleMapsApiKey": "AIzaSyDUmZXstmZbpfNFfN-J08fc5Qac5AOfQMw"
       },
       "infoPlist": {
         "UIViewControllerBasedStatusBarAppearance": true
