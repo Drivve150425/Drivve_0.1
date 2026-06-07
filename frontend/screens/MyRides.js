@@ -1399,37 +1399,56 @@ const handleViewRideDetails = (ride, booking = null) => {
     let statusColor = "";
     let statusIcon = "";
     
-    if (isRideCompleted) {
+        // First check: Is the ride actually completed by driver?
+    if (booking.ride_status === "completed") {
       statusText = "Completed";
       statusColor = "#6B7280";
       statusIcon = "checkmark-done";
-    } else if (rideCancelled) {
+    } 
+    // Second: Is the ride cancelled?
+    else if (rideCancelled) {
       statusText = "Cancelled";
       statusColor = "#DC2626";
       statusIcon = "close-circle";
-    } else if (booking.status === "accepted") {
+    } 
+    // Third: Check booking status
+    else if (booking.status === "accepted") {
+      // Ride is ongoing (started but not completed)
       if (isRideOngoing) {
         statusText = "Ride Ongoing";
         statusColor = "#10B981";
         statusIcon = "car-sport";
-      } else if (isPast) {
-        statusText = "Ride Completed";
-        statusColor = "#6B7280";
-        statusIcon = "checkmark-done";
-      } else {
+      } 
+      // Ride time passed but driver never started (no-show)
+      else if (isPast && !rideHasStarted && !booking.ride_started_at) {
+        statusText = "Driver No-Show";
+        statusColor = "#DC2626";
+        statusIcon = "alert-circle";
+      }
+      // Ride time passed and it was started but not marked complete
+      else if (isPast && rideHasStarted && booking.ride_status !== "completed") {
+        statusText = "Awaiting Completion";
+        statusColor = "#F59E0B";
+        statusIcon = "time-outline";
+      }
+      // Upcoming accepted ride
+      else {
         statusText = "Accepted";
         statusColor = "#10B981";
         statusIcon = "checkmark-circle";
       }
-    } else if (booking.status === "pending") {
+    } 
+    else if (booking.status === "pending") {
       statusText = "Pending";
       statusColor = "#F59E0B";
       statusIcon = "time";
-    } else if (booking.status === "rejected") {
+    } 
+    else if (booking.status === "rejected") {
       statusText = "Rejected";
       statusColor = "#DC2626";
       statusIcon = "close-circle";
-    } else {
+    } 
+    else {
       statusText = booking.status || "Unknown";
       statusColor = Colors.gray;
       statusIcon = "ellipse";
@@ -1709,12 +1728,7 @@ const handleViewRideDetails = (ride, booking = null) => {
               </TouchableOpacity>
             )}
 
-            {isPast && isAccepted && !booking?.live_session?.session_id && !rideHasStarted && !rideCancelled && !isRideCompleted && (
-              <View style={styles.completedRideMessage}>
-                <Ionicons name="checkmark-circle" size={16} color="#10B981" />
-                <Text style={styles.completedRideText}>Ride completed successfully</Text>
-              </View>
-            )}
+           
           </View>
         )}
       </View>

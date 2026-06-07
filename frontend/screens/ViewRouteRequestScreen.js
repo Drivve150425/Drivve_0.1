@@ -2656,30 +2656,31 @@ setUserBooking({
     }
   }, [currentRide?.id]);
   
-  // Check session status
   const checkSessionStatus = useCallback(async () => {
-    const bookingId = userBooking?.id;
-    if (!bookingId) return;
-    
-    try {
-      const res = await fetch(`${API_BASE_URL}/ride-session/rider/${bookingId}/status?rider_phone=${user?.phone_number}&_t=${Date.now()}`);
-      const data = await res.json();
-      
-      if (data.ride_completed) {
-        setRideCompleted(true);
-        setHasRatedDriver(data.has_rated_driver);
-        
-        // Show rating modal if ride completed and not rated yet
-        if (data.has_rated_driver === false && !hasShownRatingModal.current) {
-          hasShownRatingModal.current = true;
-          setTimeout(() => setRatingModalVisible(true), 1000);
-        }
-      }
-    } catch (error) {
-      console.log('Error checking session status:', error);
-    }
-  }, [userBooking?.id, user?.phone_number]);
+  const bookingId = userBooking?.id;
+  if (!bookingId) return;
   
+  try {
+    // Use the correct endpoint from your backend
+    const res = await fetch(`${API_BASE_URL}/ride-sessions/rider/session-status/${bookingId}?rider_phone=${user?.phone_number}&_t=${Date.now()}`);
+    const data = await res.json();
+    
+    console.log('🔍 Session Status Response:', data);
+    
+    // Check if the response has the expected fields
+    if (data.success && data.ride_completed) {
+      setRideCompleted(true);
+      setHasRatedDriver(data.has_rated_driver);
+      
+      if (data.has_rated_driver === false && !hasShownRatingModal.current) {
+        hasShownRatingModal.current = true;
+        setTimeout(() => setRatingModalVisible(true), 1000);
+      }
+    }
+  } catch (error) {
+    console.log('Error checking session status:', error);
+  }
+}, [userBooking?.id, user?.phone_number]);
   // Get ride status
   const getRideStatus = useCallback(() => {
     if (rideCompleted) return 'completed';
