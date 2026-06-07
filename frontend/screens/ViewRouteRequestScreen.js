@@ -2964,7 +2964,8 @@ setUserBooking({
   const cancellationsAllowed = canCancelBooking();
   const rideStatusMessage = getRideStatusMessage();
   const isAutoCancelled = rideStatus === 'auto-cancelled' || rideStatus === 'expired';
-  const showLiveTracking = liveSession && (rideStatus === 'ongoing' || rideStatus === 'late') && !rideCompleted;
+  const showLiveTracking = liveSession && !rideCompleted;
+  // const showLiveTracking = liveSession && (rideStatus === 'ongoing' || rideStatus === 'late') && !rideCompleted;
   const isCompleted = rideStatus === 'completed';
   
   const otherBookedSeats = totalBookedSeats - (userBooking?.seats_requested || 0);
@@ -3049,12 +3050,12 @@ setUserBooking({
           <Ionicons name="chevron-back" size={26} color={Colors.secondary} />
         </TouchableOpacity>
         
-        {showLiveTracking && (
-          <TouchableOpacity style={styles.liveTrackingButton} onPress={() => navigation.navigate('OngoingRideRiderScreen', { bookingId: userBooking?.id, sessionId: liveSession?.session_id })}>
-            <View style={styles.liveDot} />
-            <Text style={styles.liveTrackingButtonText}>Track Live Ride</Text>
-          </TouchableOpacity>
-        )}
+          {showLiveTracking && (
+  <TouchableOpacity style={styles.liveTrackingButton} onPress={() => navigation.navigate('OngoingRideRiderScreen', { bookingId: userBooking?.id, sessionId: liveSession?.session_id })}>
+    <View style={styles.liveDot} />
+    <Text style={styles.liveTrackingButtonText}>Track Live Ride</Text>
+  </TouchableOpacity>
+)}
       </Animated.View>
       
       <Animated.View style={[styles.drawer, { height: drawerHeight }]}>
