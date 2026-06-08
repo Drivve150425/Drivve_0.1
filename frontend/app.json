@@ -4,7 +4,7 @@
     "slug": "drivve",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/8logo.png",
+    "icon": "./assets/splash.png",
     "userInterfaceStyle": "light",
 
     "splash": {
@@ -26,7 +26,9 @@
         "googleMapsApiKey": "AIzaSyDUmZXstmZbpfNFfN-J08fc5Qac5AOfQMw"
       },
       "infoPlist": {
-        "UIViewControllerBasedStatusBarAppearance": true
+        "UIViewControllerBasedStatusBarAppearance": true,
+        "NSLocationWhenInUseUsageDescription": "DRIVVE needs your location to show your position on the map and find nearby rides.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "DRIVVE needs your location to show your position on the map and find nearby rides."
       }
     },
 
@@ -41,7 +43,7 @@
       "googleServicesFile": "./google-services.json",
       "config": {
         "googleMaps": {
-          "apiKey": "YOUR_GOOGLE_MAPS_API_KEY"
+          "apiKey": "AIzaSyDUmZXstmZbpfNFfN-J08fc5Qac5AOfQMw"
         }
       },
       "permissions": [
@@ -58,19 +60,15 @@
 
     "plugins": [
       "expo-font",
-
       "@react-native-firebase/app",
       "@react-native-firebase/auth",
-
       [
         "expo-image-picker",
         {
           "photosPermission": "The app accesses your photos to let you share them with your friends."
         }
       ],
-
       "@react-native-community/datetimepicker",
-
       [
         "expo-location",
         {
@@ -78,11 +76,17 @@
           "locationWhenInUsePermission": "Allow DRIVVE to use your location."
         }
       ],
-
       [
         "expo-camera",
         {
           "cameraPermission": "Allow DRIVVE to access your camera to scan boarding QR codes."
+        }
+      ],
+      [
+        "react-native-maps",
+        {
+          "androidGoogleMapsApiKey": "AIzaSyDUmZXstmZbpfNFfN-J08fc5Qac5AOfQMw",
+          "iosGoogleMapsApiKey": "AIzaSyDUmZXstmZbpfNFfN-J08fc5Qac5AOfQMw"
         }
       ]
     ],
