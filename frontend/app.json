@@ -6,6 +6,8 @@
     "orientation": "portrait",
     "icon": "./assets/splash.png",
     "userInterfaceStyle": "light",
+     "imageWidth": 200,    
+    "resizeMode": "contain",
 
     "splash": {
       "image": "./assets/splash.png",
@@ -41,7 +43,7 @@
       "googleServicesFile": "./google-services.json",
       "config": {
         "googleMaps": {
-          "apiKey": "AIzaSyDUmZXstmZbpfNFfN-J08fc5Qac5AOfQMws"
+          "apiKey": "AIzaSyDUmZXstmZbpfNFfN-J08fc5Qac5AOfQMw"
         }
       },
       "permissions": [
