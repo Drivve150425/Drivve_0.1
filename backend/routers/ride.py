@@ -6243,7 +6243,6 @@ def get_ride_passengers(ride_id: int, db: Session = Depends(get_db)):
 #         "posted_rides": posted_formatted,
 #         "requested_rides": requested_formatted
 #     }
-
 @router.get("/my-rides/{phone}")
 def get_my_rides(phone: str, db: Session = Depends(get_db)):
     norm_phone = normalize_phone(phone)
@@ -6262,6 +6261,10 @@ def get_my_rides(phone: str, db: Session = Depends(get_db)):
             SELECT 
                 rb.id, rb.ride_id, rb.passenger_phone, rb.seats_booked, rb.status,
                 rb.created_at, rb.total_amount, rb.cancellation_reason,
+                rb.pickup_lat, rb.pickup_lon, rb.drop_lat, rb.drop_lon,
+                rb.intersection_pickup_lat, rb.intersection_pickup_lon,
+                rb.intersection_drop_lat, rb.intersection_drop_lon,
+                rb.pickup_walk_distance_m, rb.drop_walk_distance_m,
                 u.full_name as passenger_name, u.first_name, u.last_name, 
                 u.profile_picture as passenger_profile_picture,
                 u.gender as passenger_gender
@@ -6280,6 +6283,28 @@ def get_my_rides(phone: str, db: Session = Depends(get_db)):
                 p for p in [bk["first_name"], bk["last_name"]] if p
             ).strip() or f"Passenger {bk['passenger_phone'][-4:]}"
             
+            # Build pickup/dropoff location strings for display
+            pickup_location = None
+            dropoff_location = None
+            
+            if bk["intersection_pickup_lat"] and bk["intersection_pickup_lon"]:
+                walk_dist = bk["pickup_walk_distance_m"]
+                if walk_dist:
+                    pickup_location = f"Meet point ({walk_dist}m walk from your location)"
+                else:
+                    pickup_location = "Meet point on route"
+            elif bk["pickup_lat"] and bk["pickup_lon"]:
+                pickup_location = "Your pickup location"
+            
+            if bk["intersection_drop_lat"] and bk["intersection_drop_lon"]:
+                walk_dist = bk["drop_walk_distance_m"]
+                if walk_dist:
+                    dropoff_location = f"Drop point ({walk_dist}m walk to destination)"
+                else:
+                    dropoff_location = "Drop point on route"
+            elif bk["drop_lat"] and bk["drop_lon"]:
+                dropoff_location = "Your dropoff location"
+            
             bookings_map[ride_id].append({
                 "id": bk["id"],
                 "ride_id": ride_id,
@@ -6292,19 +6317,19 @@ def get_my_rides(phone: str, db: Session = Depends(get_db)):
                 "cancellation_reason": bk["cancellation_reason"],
                 "total_amount": float(bk["total_amount"]) if bk["total_amount"] else None,
                 "created_at": bk["created_at"].isoformat() if bk["created_at"] else None,
-                # Add pickup/dropoff for posted rides (rider's specific locations)
-                "pickup_lat": bk.get("pickup_lat"),
-                "pickup_lon": bk.get("pickup_lon"),
-                "drop_lat": bk.get("drop_lat"),
-                "drop_lon": bk.get("drop_lon"),
-                "intersection_pickup_lat": bk.get("intersection_pickup_lat"),
-                "intersection_pickup_lon": bk.get("intersection_pickup_lon"),
-                "intersection_drop_lat": bk.get("intersection_drop_lat"),
-                "intersection_drop_lon": bk.get("intersection_drop_lon"),
-                "pickup_walk_distance_m": bk.get("pickup_walk_distance_m"),
-                "drop_walk_distance_m": bk.get("drop_walk_distance_m"),
-                "suggested_pickup": bk.get("suggested_pickup"),
-                "suggested_drop": bk.get("suggested_drop"),
+                # Rider's specific pickup/dropoff locations
+                "pickup_location": pickup_location,
+                "dropoff_location": dropoff_location,
+                "pickup_lat": float(bk["pickup_lat"]) if bk["pickup_lat"] else None,
+                "pickup_lon": float(bk["pickup_lon"]) if bk["pickup_lon"] else None,
+                "drop_lat": float(bk["drop_lat"]) if bk["drop_lat"] else None,
+                "drop_lon": float(bk["drop_lon"]) if bk["drop_lon"] else None,
+                "intersection_pickup_lat": float(bk["intersection_pickup_lat"]) if bk["intersection_pickup_lat"] else None,
+                "intersection_pickup_lon": float(bk["intersection_pickup_lon"]) if bk["intersection_pickup_lon"] else None,
+                "intersection_drop_lat": float(bk["intersection_drop_lat"]) if bk["intersection_drop_lat"] else None,
+                "intersection_drop_lon": float(bk["intersection_drop_lon"]) if bk["intersection_drop_lon"] else None,
+                "pickup_walk_distance_m": bk["pickup_walk_distance_m"],
+                "drop_walk_distance_m": bk["drop_walk_distance_m"],
             })
     
     posted_formatted = []
@@ -6387,18 +6412,16 @@ def get_my_rides(phone: str, db: Session = Depends(get_db)):
         })
     
     # ============================================
-    # REQUESTED RIDES (Passenger bookings) - ADD PICKUP/DROPOFF LOCATIONS
+    # REQUESTED RIDES (Passenger bookings)
     # ============================================
     requested_raw = db.execute(text("""
         SELECT 
             rb.id, rb.ride_id, rb.passenger_phone, rb.seats_booked, rb.status,
             rb.created_at, rb.total_amount, rb.cancellation_reason,
-            -- ADD RIDER'S SPECIFIC PICKUP/DROPOFF LOCATIONS
             rb.pickup_lat, rb.pickup_lon, rb.drop_lat, rb.drop_lon,
             rb.intersection_pickup_lat, rb.intersection_pickup_lon,
             rb.intersection_drop_lat, rb.intersection_drop_lon,
             rb.pickup_walk_distance_m, rb.drop_walk_distance_m,
-            rb.suggested_pickup, rb.suggested_drop,
             r.origin, r.destination, r.departure_time, r.price_per_seat, r.available_seats,
             r.distance_km, r.duration_text, r.status as ride_status, r.women_only,
             r.route_coordinates, r.started_at as ride_started_at,
@@ -6407,7 +6430,8 @@ def get_my_rides(phone: str, db: Session = Depends(get_db)):
             u.profile_picture as driver_profile_picture,
             u.avg_rating as driver_rating,
             v.id as vehicle_id, v.make, v.model, v.color, v.registration_number,
-            ls.id as session_id, ls.status as session_status
+            ls.id as session_id, ls.status as session_status,
+            ls.current_phase as session_phase
         FROM ride_bookings rb
         JOIN rides r ON r.id = rb.ride_id
         LEFT JOIN users u ON u.phone_number = r.phone_number
@@ -6437,65 +6461,61 @@ def get_my_rides(phone: str, db: Session = Depends(get_db)):
         if row["session_id"]:
             live_session_data = {
                 "session_id": row["session_id"],
-                "status": row["session_status"]
+                "status": row["session_status"],
+                "current_phase": row["session_phase"]
             }
         
-        # Build suggested pickup/drop objects for the rider
-        suggested_pickup_obj = None
-        suggested_drop_obj = None
-        
-        # Use intersection points if available (these are the rider's specific pickup/drop points on the route)
-        if row["intersection_pickup_lat"] and row["intersection_pickup_lon"]:
-            suggested_pickup_obj = {
-                "lat": float(row["intersection_pickup_lat"]),
-                "lng": float(row["intersection_pickup_lon"])
-            }
-        elif row["pickup_lat"] and row["pickup_lon"]:
-            suggested_pickup_obj = {
-                "lat": float(row["pickup_lat"]),
-                "lng": float(row["pickup_lon"])
-            }
-        
-        if row["intersection_drop_lat"] and row["intersection_drop_lon"]:
-            suggested_drop_obj = {
-                "lat": float(row["intersection_drop_lat"]),
-                "lng": float(row["intersection_drop_lon"])
-            }
-        elif row["drop_lat"] and row["drop_lon"]:
-            suggested_drop_obj = {
-                "lat": float(row["drop_lat"]),
-                "lng": float(row["drop_lon"])
-            }
-        
-        # Build pickup/dropoff location strings
+        # Build pickup/dropoff location strings for the rider
         pickup_location_str = None
         dropoff_location_str = None
         
-        if row["suggested_pickup"]:
-            pickup_location_str = row["suggested_pickup"]
-        elif row["intersection_pickup_lat"] and row["intersection_pickup_lon"]:
+        if row["intersection_pickup_lat"] and row["intersection_pickup_lon"]:
             walk_dist = row["pickup_walk_distance_m"]
             if walk_dist:
                 pickup_location_str = f"Meet point ({walk_dist}m walk from your location)"
             else:
                 pickup_location_str = "Meet point on route"
         elif row["pickup_lat"] and row["pickup_lon"]:
-            pickup_location_str = f"Your pickup location"
+            pickup_location_str = "Your pickup location"
         else:
             pickup_location_str = row["origin"].split(",")[0] if row["origin"] else "Pickup point"
         
-        if row["suggested_drop"]:
-            dropoff_location_str = row["suggested_drop"]
-        elif row["intersection_drop_lat"] and row["intersection_drop_lon"]:
+        if row["intersection_drop_lat"] and row["intersection_drop_lon"]:
             walk_dist = row["drop_walk_distance_m"]
             if walk_dist:
                 dropoff_location_str = f"Drop point ({walk_dist}m walk to destination)"
             else:
                 dropoff_location_str = "Drop point on route"
         elif row["drop_lat"] and row["drop_lon"]:
-            dropoff_location_str = f"Your dropoff location"
+            dropoff_location_str = "Your dropoff location"
         else:
             dropoff_location_str = row["destination"].split(",")[0] if row["destination"] else "Drop point"
+        
+        # Build coordinate objects for map display
+        suggested_pickup_point = None
+        suggested_drop_point = None
+        
+        if row["intersection_pickup_lat"] and row["intersection_pickup_lon"]:
+            suggested_pickup_point = {
+                "lat": float(row["intersection_pickup_lat"]),
+                "lng": float(row["intersection_pickup_lon"])
+            }
+        elif row["pickup_lat"] and row["pickup_lon"]:
+            suggested_pickup_point = {
+                "lat": float(row["pickup_lat"]),
+                "lng": float(row["pickup_lon"])
+            }
+        
+        if row["intersection_drop_lat"] and row["intersection_drop_lon"]:
+            suggested_drop_point = {
+                "lat": float(row["intersection_drop_lat"]),
+                "lng": float(row["intersection_drop_lon"])
+            }
+        elif row["drop_lat"] and row["drop_lon"]:
+            suggested_drop_point = {
+                "lat": float(row["drop_lat"]),
+                "lng": float(row["drop_lon"])
+            }
         
         requested_formatted.append({
             "id": row["id"],
@@ -6529,26 +6549,22 @@ def get_my_rides(phone: str, db: Session = Depends(get_db)):
             # ============================================
             # RIDER'S SPECIFIC PICKUP/DROPOFF LOCATIONS
             # ============================================
-            "suggested_pickup": row["suggested_pickup"],
-            "suggested_drop": row["suggested_drop"],
             "pickup_location": pickup_location_str,
             "dropoff_location": dropoff_location_str,
             "pickup_lat": float(row["pickup_lat"]) if row["pickup_lat"] else None,
             "pickup_lon": float(row["pickup_lon"]) if row["pickup_lon"] else None,
             "drop_lat": float(row["drop_lat"]) if row["drop_lat"] else None,
             "drop_lon": float(row["drop_lon"]) if row["drop_lon"] else None,
-            "intersection_pickup": {
-                "lat": float(row["intersection_pickup_lat"]) if row["intersection_pickup_lat"] else None,
-                "lng": float(row["intersection_pickup_lon"]) if row["intersection_pickup_lon"] else None
-            } if row["intersection_pickup_lat"] and row["intersection_pickup_lon"] else None,
-            "intersection_drop": {
-                "lat": float(row["intersection_drop_lat"]) if row["intersection_drop_lat"] else None,
-                "lng": float(row["intersection_drop_lon"]) if row["intersection_drop_lon"] else None
-            } if row["intersection_drop_lat"] and row["intersection_drop_lon"] else None,
+            "intersection_pickup_lat": float(row["intersection_pickup_lat"]) if row["intersection_pickup_lat"] else None,
+            "intersection_pickup_lon": float(row["intersection_pickup_lon"]) if row["intersection_pickup_lon"] else None,
+            "intersection_drop_lat": float(row["intersection_drop_lat"]) if row["intersection_drop_lat"] else None,
+            "intersection_drop_lon": float(row["intersection_drop_lon"]) if row["intersection_drop_lon"] else None,
             "pickup_walk_distance_m": row["pickup_walk_distance_m"],
             "drop_walk_distance_m": row["drop_walk_distance_m"],
-            "suggested_pickup_point": suggested_pickup_obj,
-            "suggested_drop_point": suggested_drop_obj
+            "suggested_pickup_point": suggested_pickup_point,
+            "suggested_drop_point": suggested_drop_point,
+            "intersection_pickup": suggested_pickup_point,
+            "intersection_drop": suggested_drop_point
         })
     
     return {
