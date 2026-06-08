@@ -6033,6 +6033,217 @@ def get_ride_passengers(ride_id: int, db: Session = Depends(get_db)):
 # MY RIDES ENDPOINT
 # ============================================
 
+# @router.get("/my-rides/{phone}")
+# def get_my_rides(phone: str, db: Session = Depends(get_db)):
+#     norm_phone = normalize_phone(phone)
+    
+#     # POSTED RIDES (Driver)
+#     posted_rides = db.query(Ride).filter(
+#         Ride.phone_number == norm_phone,
+#         Ride.is_deleted == False
+#     ).order_by(Ride.departure_time.desc()).all()
+    
+#     posted_ride_ids = [r.id for r in posted_rides]
+#     bookings_map = {}
+    
+#     if posted_ride_ids:
+#         bookings_raw = db.execute(text("""
+#             SELECT 
+#                 rb.id, rb.ride_id, rb.passenger_phone, rb.seats_booked, rb.status,
+#                 rb.created_at, rb.total_amount, rb.cancellation_reason,
+#                 u.full_name as passenger_name, u.first_name, u.last_name, 
+#                 u.profile_picture as passenger_profile_picture,
+#                 u.gender as passenger_gender
+#             FROM ride_bookings rb 
+#             LEFT JOIN users u ON u.phone_number = rb.passenger_phone
+#             WHERE rb.ride_id = ANY(:ride_ids)
+#             ORDER BY rb.created_at DESC
+#         """), {"ride_ids": posted_ride_ids}).mappings().all()
+        
+#         for bk in bookings_raw:
+#             ride_id = bk["ride_id"]
+#             if ride_id not in bookings_map:
+#                 bookings_map[ride_id] = []
+            
+#             passenger_name = bk["passenger_name"] or " ".join(
+#                 p for p in [bk["first_name"], bk["last_name"]] if p
+#             ).strip() or f"Passenger {bk['passenger_phone'][-4:]}"
+            
+#             bookings_map[ride_id].append({
+#                 "id": bk["id"],
+#                 "ride_id": ride_id,
+#                 "passenger_phone": bk["passenger_phone"],
+#                 "passenger_name": passenger_name,
+#                 "passenger_photo": bk["passenger_profile_picture"],
+#                 "passenger_gender": bk["passenger_gender"],
+#                 "seats_requested": bk["seats_booked"],
+#                 "status": bk["status"],
+#                 "cancellation_reason": bk["cancellation_reason"],
+#                 "total_amount": float(bk["total_amount"]) if bk["total_amount"] else None,
+#                 "created_at": bk["created_at"].isoformat() if bk["created_at"] else None,
+#             })
+    
+#     posted_formatted = []
+#     for ride in posted_rides:
+#         total_booked = get_total_booked_seats(db, ride.id)
+#         remaining_seats = max(0, ride.available_seats - total_booked)
+        
+#         display_status = ride.status
+#         if remaining_seats == 0 and ride.status == "active":
+#             display_status = "full"
+        
+#         driver_info = db.query(User).filter(User.phone_number == ride.phone_number).first()
+#         driver_profile_picture = driver_info.profile_picture if driver_info else None
+        
+#         vehicle = None
+#         if ride.vehicle_id:
+#             vehicle = db.query(Vehicle).filter(Vehicle.id == ride.vehicle_id).first()
+        
+#         vehicle_data = None
+#         if vehicle:
+#             vehicle_data = {
+#                 "id": vehicle.id,
+#                 "make": vehicle.make,
+#                 "model": vehicle.model,
+#                 "color": vehicle.color,
+#                 "registration_number": vehicle.registration_number,
+#                 "photo_url": vehicle.photo_url,
+#             }
+        
+#         # Get live session if exists
+#         live_session_data = None
+#         try:
+#             live_session = db.query(RideSession).filter(
+#                 RideSession.ride_id == ride.id,
+#                 RideSession.status.in_(["driver_started", "boarding", "en_route", "emergency_stopped"])
+#             ).order_by(RideSession.id.desc()).first()
+            
+#             if live_session:
+#                 boarded_count = sum(1 for r in live_session.riders if r.status in ["boarded", "dropped_off", "completed"])
+#                 dropped_count = sum(1 for r in live_session.riders if r.status in ["dropped_off", "completed"])
+#                 live_session_data = {
+#                     "session_id": live_session.id,
+#                     "status": live_session.status,
+#                     "current_phase": live_session.current_phase,
+#                     "boarded_count": boarded_count,
+#                     "dropped_count": dropped_count,
+#                     "total_riders": len(live_session.riders)
+#                 }
+#         except Exception as e:
+#             print(f"Error fetching live session: {str(e)}")
+        
+#         posted_formatted.append({
+#             "id": ride.id,
+#             "phone_number": ride.phone_number,
+#             "origin": ride.origin,
+#             "destination": ride.destination,
+#             "origin_coords": [ride.origin_lon, ride.origin_lat] if ride.origin_lon and ride.origin_lat else None,
+#             "destination_coords": [ride.destination_lon, ride.destination_lat] if ride.destination_lon and ride.destination_lat else None,
+#             "departure_time": ride.departure_time.isoformat(),
+#             "departure_time_display": to_ist(ride.departure_time).strftime("%d %b %Y, %I:%M %p") if ride.departure_time else None,
+#             "available_seats": ride.available_seats,
+#             "remaining_seats": remaining_seats,
+#             "total_booked_seats": total_booked,
+#             "price_per_seat": ride.price_per_seat,
+#             "distance_km": ride.distance_km,
+#             "duration_text": ride.duration_text,
+#             "total_estimated_price": ride.total_estimated_price,
+#             "preferences": ride.preferences,
+#             "women_only": ride.women_only,
+#             "status": display_status,
+#             "vehicle_id": ride.vehicle_id,
+#             "vehicle": vehicle_data,
+#             "route_coordinates": ride.route_coordinates,
+#             "created_at": ride.created_at.isoformat() if ride.created_at else None,
+#             "bookings": bookings_map.get(ride.id, []),
+#             "live_session": live_session_data,
+#             "driver_profile_picture": driver_profile_picture,
+#             "started_at": ride.started_at.isoformat() if ride.started_at else None,
+#             "cancellation_reason": ride.cancellation_reason
+#         })
+    
+#     # REQUESTED RIDES (Passenger bookings)
+#     requested_raw = db.execute(text("""
+#         SELECT 
+#             rb.id, rb.ride_id, rb.passenger_phone, rb.seats_booked, rb.status,
+#             rb.created_at, rb.total_amount, rb.cancellation_reason,
+#             r.origin, r.destination, r.departure_time, r.price_per_seat, r.available_seats,
+#             r.distance_km, r.duration_text, r.status as ride_status, r.women_only,
+#             r.route_coordinates, r.started_at as ride_started_at,
+#             u.full_name as driver_name, u.first_name, u.last_name, u.phone_number as driver_phone,
+#             u.user_id as driver_user_id, u.profile_completed, 
+#             u.profile_picture as driver_profile_picture,
+#             u.avg_rating as driver_rating,
+#             v.id as vehicle_id, v.make, v.model, v.color, v.registration_number,
+#             ls.id as session_id, ls.status as session_status
+#         FROM ride_bookings rb
+#         JOIN rides r ON r.id = rb.ride_id
+#         LEFT JOIN users u ON u.phone_number = r.phone_number
+#         LEFT JOIN vehicles v ON v.id = r.vehicle_id
+#         LEFT JOIN ride_sessions ls ON ls.ride_id = r.id AND ls.status IN ('driver_started', 'boarding', 'en_route')
+#         WHERE rb.passenger_phone = :phone
+#         ORDER BY rb.created_at DESC
+#     """), {"phone": norm_phone}).mappings().all()
+    
+#     requested_formatted = []
+#     for row in requested_raw:
+#         driver_name = row["driver_name"] or " ".join(
+#             p for p in [row["first_name"], row["last_name"]] if p
+#         ).strip() or f"Driver {row['driver_phone'][-4:] if row['driver_phone'] else 'Unknown'}"
+        
+#         vehicle_data = None
+#         if row["vehicle_id"]:
+#             vehicle_data = {
+#                 "id": row["vehicle_id"],
+#                 "make": row["make"],
+#                 "model": row["model"],
+#                 "color": row["color"],
+#                 "registration_number": row["registration_number"],
+#             }
+        
+#         live_session_data = None
+#         if row["session_id"]:
+#             live_session_data = {
+#                 "session_id": row["session_id"],
+#                 "status": row["session_status"]
+#             }
+        
+#         requested_formatted.append({
+#             "id": row["id"],
+#             "ride_id": row["ride_id"],
+#             "passenger_phone": row["passenger_phone"],
+#             "seats_requested": row["seats_booked"],
+#             "total_amount": float(row["total_amount"]) if row["total_amount"] else None,
+#             "status": row["status"],
+#             "cancellation_reason": row["cancellation_reason"],
+#             "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+#             "origin": row["origin"],
+#             "destination": row["destination"],
+#             "departure_time": row["departure_time"].isoformat() if row["departure_time"] else None,
+#             "departure_time_display": to_ist(row["departure_time"]).strftime("%d %b %Y, %I:%M %p") if row["departure_time"] else None,
+#             "price_per_seat": row["price_per_seat"],
+#             "available_seats": row["available_seats"],
+#             "distance_km": row["distance_km"],
+#             "duration_text": row["duration_text"],
+#             "ride_status": row["ride_status"],
+#             "women_only": row["women_only"],
+#             "driver_name": driver_name,
+#             "driver_phone": row["driver_phone"],
+#             "driver_user_id": row["driver_user_id"],
+#             "driver_photo": row["driver_profile_picture"],
+#             "driver_rating": float(row["driver_rating"]) if row["driver_rating"] else 4.5,
+#             "profile_completed": row["profile_completed"],
+#             "route_coordinates": row["route_coordinates"],
+#             "vehicle": vehicle_data,
+#             "live_session": live_session_data,
+#             "started_at": row["ride_started_at"].isoformat() if row["ride_started_at"] else None
+#         })
+    
+#     return {
+#         "posted_rides": posted_formatted,
+#         "requested_rides": requested_formatted
+#     }
+
 @router.get("/my-rides/{phone}")
 def get_my_rides(phone: str, db: Session = Depends(get_db)):
     norm_phone = normalize_phone(phone)
@@ -6081,6 +6292,19 @@ def get_my_rides(phone: str, db: Session = Depends(get_db)):
                 "cancellation_reason": bk["cancellation_reason"],
                 "total_amount": float(bk["total_amount"]) if bk["total_amount"] else None,
                 "created_at": bk["created_at"].isoformat() if bk["created_at"] else None,
+                # Add pickup/dropoff for posted rides (rider's specific locations)
+                "pickup_lat": bk.get("pickup_lat"),
+                "pickup_lon": bk.get("pickup_lon"),
+                "drop_lat": bk.get("drop_lat"),
+                "drop_lon": bk.get("drop_lon"),
+                "intersection_pickup_lat": bk.get("intersection_pickup_lat"),
+                "intersection_pickup_lon": bk.get("intersection_pickup_lon"),
+                "intersection_drop_lat": bk.get("intersection_drop_lat"),
+                "intersection_drop_lon": bk.get("intersection_drop_lon"),
+                "pickup_walk_distance_m": bk.get("pickup_walk_distance_m"),
+                "drop_walk_distance_m": bk.get("drop_walk_distance_m"),
+                "suggested_pickup": bk.get("suggested_pickup"),
+                "suggested_drop": bk.get("suggested_drop"),
             })
     
     posted_formatted = []
@@ -6162,11 +6386,19 @@ def get_my_rides(phone: str, db: Session = Depends(get_db)):
             "cancellation_reason": ride.cancellation_reason
         })
     
-    # REQUESTED RIDES (Passenger bookings)
+    # ============================================
+    # REQUESTED RIDES (Passenger bookings) - ADD PICKUP/DROPOFF LOCATIONS
+    # ============================================
     requested_raw = db.execute(text("""
         SELECT 
             rb.id, rb.ride_id, rb.passenger_phone, rb.seats_booked, rb.status,
             rb.created_at, rb.total_amount, rb.cancellation_reason,
+            -- ADD RIDER'S SPECIFIC PICKUP/DROPOFF LOCATIONS
+            rb.pickup_lat, rb.pickup_lon, rb.drop_lat, rb.drop_lon,
+            rb.intersection_pickup_lat, rb.intersection_pickup_lon,
+            rb.intersection_drop_lat, rb.intersection_drop_lon,
+            rb.pickup_walk_distance_m, rb.drop_walk_distance_m,
+            rb.suggested_pickup, rb.suggested_drop,
             r.origin, r.destination, r.departure_time, r.price_per_seat, r.available_seats,
             r.distance_km, r.duration_text, r.status as ride_status, r.women_only,
             r.route_coordinates, r.started_at as ride_started_at,
@@ -6208,6 +6440,63 @@ def get_my_rides(phone: str, db: Session = Depends(get_db)):
                 "status": row["session_status"]
             }
         
+        # Build suggested pickup/drop objects for the rider
+        suggested_pickup_obj = None
+        suggested_drop_obj = None
+        
+        # Use intersection points if available (these are the rider's specific pickup/drop points on the route)
+        if row["intersection_pickup_lat"] and row["intersection_pickup_lon"]:
+            suggested_pickup_obj = {
+                "lat": float(row["intersection_pickup_lat"]),
+                "lng": float(row["intersection_pickup_lon"])
+            }
+        elif row["pickup_lat"] and row["pickup_lon"]:
+            suggested_pickup_obj = {
+                "lat": float(row["pickup_lat"]),
+                "lng": float(row["pickup_lon"])
+            }
+        
+        if row["intersection_drop_lat"] and row["intersection_drop_lon"]:
+            suggested_drop_obj = {
+                "lat": float(row["intersection_drop_lat"]),
+                "lng": float(row["intersection_drop_lon"])
+            }
+        elif row["drop_lat"] and row["drop_lon"]:
+            suggested_drop_obj = {
+                "lat": float(row["drop_lat"]),
+                "lng": float(row["drop_lon"])
+            }
+        
+        # Build pickup/dropoff location strings
+        pickup_location_str = None
+        dropoff_location_str = None
+        
+        if row["suggested_pickup"]:
+            pickup_location_str = row["suggested_pickup"]
+        elif row["intersection_pickup_lat"] and row["intersection_pickup_lon"]:
+            walk_dist = row["pickup_walk_distance_m"]
+            if walk_dist:
+                pickup_location_str = f"Meet point ({walk_dist}m walk from your location)"
+            else:
+                pickup_location_str = "Meet point on route"
+        elif row["pickup_lat"] and row["pickup_lon"]:
+            pickup_location_str = f"Your pickup location"
+        else:
+            pickup_location_str = row["origin"].split(",")[0] if row["origin"] else "Pickup point"
+        
+        if row["suggested_drop"]:
+            dropoff_location_str = row["suggested_drop"]
+        elif row["intersection_drop_lat"] and row["intersection_drop_lon"]:
+            walk_dist = row["drop_walk_distance_m"]
+            if walk_dist:
+                dropoff_location_str = f"Drop point ({walk_dist}m walk to destination)"
+            else:
+                dropoff_location_str = "Drop point on route"
+        elif row["drop_lat"] and row["drop_lon"]:
+            dropoff_location_str = f"Your dropoff location"
+        else:
+            dropoff_location_str = row["destination"].split(",")[0] if row["destination"] else "Drop point"
+        
         requested_formatted.append({
             "id": row["id"],
             "ride_id": row["ride_id"],
@@ -6236,15 +6525,36 @@ def get_my_rides(phone: str, db: Session = Depends(get_db)):
             "route_coordinates": row["route_coordinates"],
             "vehicle": vehicle_data,
             "live_session": live_session_data,
-            "started_at": row["ride_started_at"].isoformat() if row["ride_started_at"] else None
+            "started_at": row["ride_started_at"].isoformat() if row["ride_started_at"] else None,
+            # ============================================
+            # RIDER'S SPECIFIC PICKUP/DROPOFF LOCATIONS
+            # ============================================
+            "suggested_pickup": row["suggested_pickup"],
+            "suggested_drop": row["suggested_drop"],
+            "pickup_location": pickup_location_str,
+            "dropoff_location": dropoff_location_str,
+            "pickup_lat": float(row["pickup_lat"]) if row["pickup_lat"] else None,
+            "pickup_lon": float(row["pickup_lon"]) if row["pickup_lon"] else None,
+            "drop_lat": float(row["drop_lat"]) if row["drop_lat"] else None,
+            "drop_lon": float(row["drop_lon"]) if row["drop_lon"] else None,
+            "intersection_pickup": {
+                "lat": float(row["intersection_pickup_lat"]) if row["intersection_pickup_lat"] else None,
+                "lng": float(row["intersection_pickup_lon"]) if row["intersection_pickup_lon"] else None
+            } if row["intersection_pickup_lat"] and row["intersection_pickup_lon"] else None,
+            "intersection_drop": {
+                "lat": float(row["intersection_drop_lat"]) if row["intersection_drop_lat"] else None,
+                "lng": float(row["intersection_drop_lon"]) if row["intersection_drop_lon"] else None
+            } if row["intersection_drop_lat"] and row["intersection_drop_lon"] else None,
+            "pickup_walk_distance_m": row["pickup_walk_distance_m"],
+            "drop_walk_distance_m": row["drop_walk_distance_m"],
+            "suggested_pickup_point": suggested_pickup_obj,
+            "suggested_drop_point": suggested_drop_obj
         })
     
     return {
         "posted_rides": posted_formatted,
         "requested_rides": requested_formatted
     }
-
-
 # ============================================
 # RIDE SESSION ENDPOINTS (Live Tracking)
 # ============================================
