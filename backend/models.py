@@ -1111,6 +1111,7 @@ class Ride(Base):
     is_deleted = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     started_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
     cancellation_reason = Column(String(255), nullable=True)
 
     # Relationships
@@ -1254,7 +1255,8 @@ class RideSessionRider(Base):
     qr_expires_at = Column(DateTime(timezone=True), nullable=True)
     seats_booked = Column(Integer, default=1)
     price_paid = Column(Numeric(10, 2), nullable=True)
-
+    driver_rating_given = Column(Boolean, default=False)
+    rider_rating_given = Column(Boolean, default=False)
 class UserNotification(Base):
     __tablename__ = "user_notifications"
 
