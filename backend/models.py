@@ -1080,6 +1080,7 @@ class Ride(Base):
     __tablename__ = "rides"
 
     id = Column(Integer, primary_key=True, index=True)
+    custom_ride_id = Column(String(20), unique=True, index=True, nullable=False)
     phone_number = Column(String(20), ForeignKey("users.phone_number"), index=True, nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
@@ -1122,11 +1123,14 @@ class Ride(Base):
     ride_sessions = relationship("RideSession", back_populates="ride", cascade="all, delete-orphan")
     conversations = relationship("Conversation", back_populates="ride")
 
+# Add these columns to your RideBooking class in models.py
 
 class RideBooking(Base):
     __tablename__ = "ride_bookings"
 
     id = Column(Integer, primary_key=True, index=True)
+    custom_booking_id = Column(String(20), unique=True, index=True, nullable=False)
+
     ride_id = Column(Integer, ForeignKey("rides.id"), nullable=False)
     passenger_phone = Column(String(20), ForeignKey("users.phone_number"), index=True, nullable=False)
     passenger_id = Column(Integer, ForeignKey("users.id"), nullable=True)
@@ -1134,16 +1138,25 @@ class RideBooking(Base):
     seats_booked = Column(Integer, nullable=False)
     total_amount = Column(Float, nullable=False)
 
+    # ADD THESE ADDRESS FIELDS
+    pickup_address = Column(String(500), nullable=True)  # Full formatted pickup address
+    dropoff_address = Column(String(500), nullable=True)  # Full formatted dropoff address
+    pickup_place_name = Column(String(255), nullable=True)  # Short name/landmark for pickup
+    dropoff_place_name = Column(String(255), nullable=True)  # Short name/landmark for dropoff
+
+    # Original coordinates from user
     pickup_lat = Column(Float, nullable=True)
     pickup_lon = Column(Float, nullable=True)
     drop_lat = Column(Float, nullable=True)
     drop_lon = Column(Float, nullable=True)
 
+    # Intersection points on driver's route
     intersection_pickup_lat = Column(Float, nullable=True)
     intersection_pickup_lon = Column(Float, nullable=True)
     intersection_drop_lat = Column(Float, nullable=True)
     intersection_drop_lon = Column(Float, nullable=True)
 
+    # Walk distances in meters
     pickup_walk_distance_m = Column(Integer, nullable=True)
     drop_walk_distance_m = Column(Integer, nullable=True)
 
@@ -1157,8 +1170,6 @@ class RideBooking(Base):
     modification_requests = relationship("ModificationRequest", back_populates="booking", cascade="all, delete-orphan")
     session_riders = relationship("RideSessionRider", back_populates="booking", cascade="all, delete-orphan")
     ride_feedback = relationship("RideFeedback", foreign_keys="RideFeedback.ride_booking_id", back_populates="ride_booking")
-
-
 class ModificationRequest(Base):
     __tablename__ = "modification_requests"
     
