@@ -1126,7 +1126,6 @@ def cancel_modification_request(booking_id: int, db: Session = Depends(get_db)):
 # ============================================
 # RIDE PASSENGERS ENDPOINT
 # ============================================
-
 @router.get("/ride/{ride_id}/passengers")
 def get_ride_passengers(ride_id: int, db: Session = Depends(get_db)):
     ride = db.query(Ride).filter(Ride.id == ride_id).first()
@@ -1151,6 +1150,20 @@ def get_ride_passengers(ride_id: int, db: Session = Depends(get_db)):
         if not passenger_name:
             passenger_name = f"Passenger {bk.passenger_phone[-4:]}"
 
+        # Get rating information from ride_session_riders if available
+        driver_rating_given = False
+        driver_rating = 0
+        driver_feedback = ""
+        
+        rider_session = db.query(RideSessionRider).filter(
+            RideSessionRider.booking_id == bk.id
+        ).first()
+        
+        if rider_session:
+            driver_rating_given = rider_session.driver_rating is not None
+            driver_rating = rider_session.driver_rating or 0
+            driver_feedback = rider_session.driver_feedback or ""
+
         passengers.append({
             "booking_id": bk.id,
             "passenger_phone": bk.passenger_phone,
@@ -1160,6 +1173,23 @@ def get_ride_passengers(ride_id: int, db: Session = Depends(get_db)):
             "status": bk.status,
             "total_amount": float(bk.total_amount) if bk.total_amount else None,
             "created_at": bk.created_at.isoformat() if bk.created_at else None,
+            # ============================================
+            # ADD COORDINATES FOR MAP DISPLAY
+            # ============================================
+            "pickup_lat": float(bk.pickup_lat) if bk.pickup_lat is not None else None,
+            "pickup_lon": float(bk.pickup_lon) if bk.pickup_lon is not None else None,
+            "drop_lat": float(bk.drop_lat) if bk.drop_lat is not None else None,
+            "drop_lon": float(bk.drop_lon) if bk.drop_lon is not None else None,
+            "intersection_pickup_lat": float(bk.intersection_pickup_lat) if bk.intersection_pickup_lat is not None else None,
+            "intersection_pickup_lon": float(bk.intersection_pickup_lon) if bk.intersection_pickup_lon is not None else None,
+            "intersection_drop_lat": float(bk.intersection_drop_lat) if bk.intersection_drop_lat is not None else None,
+            "intersection_drop_lon": float(bk.intersection_drop_lon) if bk.intersection_drop_lon is not None else None,
+            "pickup_walk_distance_m": bk.pickup_walk_distance_m,
+            "drop_walk_distance_m": bk.drop_walk_distance_m,
+            # Rating information
+            "driver_rating_given": driver_rating_given,
+            "driver_rating": driver_rating,
+            "driver_feedback": driver_feedback,
         })
 
     total_booked = get_total_booked_seats(db, ride_id)
@@ -1184,7 +1214,6 @@ def get_ride_passengers(ride_id: int, db: Session = Depends(get_db)):
         "distance_km": ride.distance_km,
         "price_per_seat": ride.price_per_seat,
     }
-
 @router.get("/my-rides/{phone}")
 def get_my_rides(phone: str, db: Session = Depends(get_db)):
     norm_phone = normalize_phone(phone)
