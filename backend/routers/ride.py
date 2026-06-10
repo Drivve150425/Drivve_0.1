@@ -168,6 +168,10 @@ def find_nearest_route_vertex(route_coords: List[List[float]], lng: float, lat: 
 # ============================================
 class ModifySeatsRequest(BaseModel):
     new_seats: int
+    pickup_address: Optional[str] = None
+    dropoff_address: Optional[str] = None
+    pickup_place_name: Optional[str] = None
+    dropoff_place_name: Optional[str] = None
 class CreateRideRequest(BaseModel):
     phone_number: str
     origin: str
@@ -2678,7 +2682,6 @@ def update_ride(ride_id: int, data: UpdateRideRequest, db: Session = Depends(get
     }
 # Add this Pydantic model at the top with your other models (if not already there)
 
-
 @router.put("/booking/{booking_id}/modify-seats")
 def modify_booking_seats(booking_id: int, request: ModifySeatsRequest, db: Session = Depends(get_db)):
     """Modify seats for a pending booking (not modification request)"""
@@ -2718,11 +2721,20 @@ def modify_booking_seats(booking_id: int, request: ModifySeatsRequest, db: Sessi
     booking.seats_booked = new_seats
     booking.total_amount = ride.price_per_seat * new_seats
     
+    # Update address fields if provided
+    if request.pickup_address is not None:
+        booking.pickup_address = request.pickup_address
+    if request.dropoff_address is not None:
+        booking.dropoff_address = request.dropoff_address
+    if request.pickup_place_name is not None:
+        booking.pickup_place_name = request.pickup_place_name
+    if request.dropoff_place_name is not None:
+        booking.dropoff_place_name = request.dropoff_place_name
+    
     db.commit()
     
-    # Create notification for the driver about seat modification
+    # Create notification for the driver
     try:
-        from models import NotificationType
         notification = UserNotification(
             phone_number=ride.phone_number,
             title="Booking Modified 🔄",
@@ -2735,11 +2747,10 @@ def modify_booking_seats(booking_id: int, request: ModifySeatsRequest, db: Sessi
         )
         db.add(notification)
         db.commit()
-        print(f"✅ Modification notification sent to driver: {ride.phone_number}")
     except Exception as e:
-        print(f"⚠️ Error sending modification notification: {str(e)}")
+        print(f"Error sending modification notification: {str(e)}")
     
-    # Emit socket event to driver for real-time update
+    # Emit socket event
     try:
         emit_to_user(ride.phone_number, "booking-modified", {
             "booking_id": booking.id,
@@ -2749,7 +2760,7 @@ def modify_booking_seats(booking_id: int, request: ModifySeatsRequest, db: Sessi
             "ride_id": ride.id
         })
     except Exception as e:
-        print(f"⚠️ Error emitting socket event: {str(e)}")
+        print(f"Error emitting socket event: {str(e)}")
     
     return {
         "message": f"Seats updated from {old_seats} to {new_seats}",
