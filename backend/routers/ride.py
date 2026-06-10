@@ -1311,14 +1311,14 @@ def reject_modification_request(request_id: int, db: Session = Depends(get_db)):
         mod_request.status = "rejected"
         mod_request.rejection_reason = "Driver declined the modification request"
         mod_request.rejected_at = datetime.now(timezone.utc)
-        mod_request.is_active = False
+        mod_request.is_active = False  # Deactivate the request
         
         # ============================================
         # 2. CRITICAL: Cancel the original booking
         # ============================================
         booking.status = "cancelled"
-        booking.seats_booked = 0  # Release the seats
-        booking.cancellation_reason = "Modification request rejected - Original booking cancelled"
+        booking.seats_booked = 0  # ← RELEASE THE SEATS
+        booking.cancellation_reason = f"Modification request rejected - Original booking of {original_seats} seat(s) cancelled"
         
         db.flush()
         
@@ -1335,6 +1335,7 @@ def reject_modification_request(request_id: int, db: Session = Depends(get_db)):
         
         # Send notifications
         try:
+            # Notify passenger about booking cancellation
             emit_to_user(booking.passenger_phone, "booking-cancelled", {
                 "booking_id": booking.id,
                 "ride_id": ride.id,
@@ -1342,6 +1343,7 @@ def reject_modification_request(request_id: int, db: Session = Depends(get_db)):
                 "message": f"Your booking for {original_seats} seat(s) has been cancelled because your modification request was rejected."
             })
             
+            # Notify ride room that seats are available
             emit_to_ride(ride.id, "seats-released", {
                 "ride_id": ride.id,
                 "seats_released": original_seats,
@@ -1349,18 +1351,19 @@ def reject_modification_request(request_id: int, db: Session = Depends(get_db)):
                 "message": f"{original_seats} seat(s) are now available for this ride"
             })
         except Exception as e:
-            print(f"Socket error: {e}")
+            print(f"Socket error (non-critical): {e}")
         
         return {
             "success": True,
-            "message": f"Modification rejected. Booking for {original_seats} seat(s) cancelled.",
+            "message": f"Modification request rejected. Original booking for {original_seats} seat(s) has been CANCELLED.",
             "booking_cancelled": True,
             "booking_id": booking.id,
-            "seats_released": original_seats
+            "seats_released": original_seats,
+            "new_available_seats": ride.available_seats - total_booked_after
         }
         
     except Exception as e:
-        print(f"Error: {str(e)}")
+        print(f"Error in reject_modification_request: {str(e)}")
         db.rollback()
         return {"success": False, "message": str(e)}
 @router.delete("/booking/{booking_id}/cancel-modification-request")
