@@ -1316,7 +1316,7 @@ def reject_modification_request(request_id: int, db: Session = Depends(get_db)):
         # ============================================
         # 2. CRITICAL: Cancel the original booking
         # ============================================
-        booking.status = "cancelled"
+        booking.status = "cancelled"  # ← CHANGE THIS TO CANCELLED
         booking.seats_booked = 0  # ← RELEASE THE SEATS
         booking.cancellation_reason = f"Modification request rejected - Original booking of {original_seats} seat(s) cancelled"
         
@@ -1366,6 +1366,38 @@ def reject_modification_request(request_id: int, db: Session = Depends(get_db)):
         print(f"Error in reject_modification_request: {str(e)}")
         db.rollback()
         return {"success": False, "message": str(e)}
+@router.get("/ride/{ride_id}/rejected-modifications")
+def get_rejected_modifications(ride_id: int, db: Session = Depends(get_db)):
+    """Get all rejected modification requests for a ride"""
+    try:
+        rejected_requests = db.query(ModificationRequest).filter(
+            ModificationRequest.ride_id == ride_id,
+            ModificationRequest.status == "rejected"
+        ).all()
+        
+        results = []
+        for req in rejected_requests:
+            results.append({
+                "id": req.id,
+                "booking_id": req.booking_id,
+                "passenger_phone": req.passenger_phone,
+                "current_seats": req.current_seats,
+                "requested_seats": req.requested_seats,
+                "status": req.status,
+                "rejection_reason": req.rejection_reason,
+                "created_at": req.created_at.isoformat() if req.created_at else None,
+                "rejected_at": req.rejected_at.isoformat() if req.rejected_at else None
+            })
+        
+        return {
+            "success": True,
+            "rejected_requests": results,
+            "count": len(results)
+        }
+        
+    except Exception as e:
+        print(f"Error in get_rejected_modifications: {str(e)}")
+        return {"success": False, "rejected_requests": [], "error": str(e)}
 @router.delete("/booking/{booking_id}/cancel-modification-request")
 def cancel_modification_request(booking_id: int, db: Session = Depends(get_db)):
     """Cancel a pending modification request"""
