@@ -1186,7 +1186,9 @@ class ModificationRequest(Base):
     approved_at = Column(DateTime(timezone=True), nullable=True)
     rejected_at = Column(DateTime(timezone=True), nullable=True)
     cancelled_at = Column(DateTime(timezone=True), nullable=True)
-    
+    is_active = Column(Boolean, default=True)
+    superseded_by_id = Column(Integer, ForeignKey("modification_requests.id"), nullable=True)
+    superseded_at = Column(DateTime, nullable=True)
     # Relationships
     booking = relationship("RideBooking", back_populates="modification_requests")
     ride = relationship("Ride", back_populates="modification_requests")
