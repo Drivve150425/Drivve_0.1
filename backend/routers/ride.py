@@ -1305,18 +1305,20 @@ def reject_modification_request(request_id: int, db: Session = Depends(get_db)):
         # Store original seat count before cancellation
         original_seats = booking.seats_booked
         
-        # Mark modification as rejected
+        # ============================================
+        # CRITICAL: Update modification request
+        # ============================================
         mod_request.status = "rejected"
         mod_request.rejection_reason = "Driver declined the modification request"
         mod_request.rejected_at = datetime.now(timezone.utc)
-        mod_request.is_active = False
+        mod_request.is_active = False  # ← IMPORTANT: Deactivate the request
         
-        # IMPORTANT: Cancel the original booking
+        # ============================================
+        # CRITICAL FIX: Cancel the original booking
+        # ============================================
         booking.status = "cancelled"
-        
-        # Add cancellation reason
-        if hasattr(booking, 'cancellation_reason'):
-            booking.cancellation_reason = f"Modification request rejected - Original booking cancelled"
+        booking.seats_booked = 0  # ← Release the seats
+        booking.cancellation_reason = f"Modification request rejected - Original booking cancelled"
         
         db.flush()  # Flush to ensure changes are applied
         
@@ -1331,44 +1333,41 @@ def reject_modification_request(request_id: int, db: Session = Depends(get_db)):
         
         db.commit()
         
-        # Notify passenger about booking cancellation
+        # Send notifications
         try:
+            # Notify passenger about booking cancellation
             emit_to_user(booking.passenger_phone, "booking-cancelled", {
                 "booking_id": booking.id,
                 "ride_id": ride.id,
                 "seats_cancelled": original_seats,
-                "message": f"Your booking for {original_seats} seat(s) has been cancelled because your modification request was rejected.",
-                "reason": "Modification request rejected"
+                "message": f"Your booking for {original_seats} seat(s) has been cancelled because your modification request was rejected."
             })
             
-            # Also send modification rejected notification
+            # Notify passenger about modification rejection
             emit_to_user(booking.passenger_phone, "modification-rejected", {
                 "request_id": mod_request.id,
                 "booking_id": booking.id,
                 "original_seats": original_seats,
-                "message": f"Your request to change from {mod_request.current_seats} to {mod_request.requested_seats} seats was rejected. Your original booking has been CANCELLED and {original_seats} seat(s) are now available."
+                "message": f"Your request to change from {mod_request.current_seats} to {mod_request.requested_seats} seats was rejected. Your original booking has been CANCELLED."
             })
-        except Exception as e:
-            print(f"Socket notification error (non-critical): {e}")
-        
-        # Also emit to ride room so all parties know seats are now available
-        try:
+            
+            # Notify ride room that seats are now available
             emit_to_ride(ride.id, "seats-released", {
                 "ride_id": ride.id,
                 "seats_released": original_seats,
-                "new_available_seats": ride.available_seats - get_total_booked_seats(db, ride.id),
+                "new_available_seats": ride.available_seats - total_booked_after,
                 "message": f"{original_seats} seat(s) are now available for this ride"
             })
         except Exception as e:
-            print(f"Ride socket error: {e}")
+            print(f"Socket error (non-critical): {e}")
         
         return {
             "success": True, 
-            "message": f"Modification request rejected. Original booking for {original_seats} seat(s) has been cancelled and {original_seats} seat(s) are now available.",
+            "message": f"Modification request rejected. Original booking for {original_seats} seat(s) has been CANCELLED and {original_seats} seat(s) are now available.",
             "booking_cancelled": True,
             "booking_id": booking.id,
             "seats_released": original_seats,
-            "new_available_seats": ride.available_seats - get_total_booked_seats(db, ride.id)
+            "new_available_seats": ride.available_seats - total_booked_after
         }
         
     except Exception as e:
