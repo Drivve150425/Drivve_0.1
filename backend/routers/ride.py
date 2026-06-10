@@ -1,7 +1,6 @@
 
 import secrets
 from fastapi import APIRouter, Depends, HTTPException, Query
-from grpc import Status
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, text, and_, or_
 from database import get_db
@@ -921,16 +920,13 @@ def cancel_ride(ride_id: int, db: Session = Depends(get_db)):
         traceback.print_exc()
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error cancelling ride: {str(e)}")
-# ============================================
-# MODIFICATION REQUEST ENDPOINTS
-# ============================================
 @router.post("/booking/{booking_id}/request-modification")
 async def request_modification(
     booking_id: int,
     request: ModificationRequestSchema,
     db: Session = Depends(get_db)
 ):
-    """Request to modify seat count for a booking"""
+    """Request to modify seat count for a booking - ONE TIME ONLY"""
     try:
         booking = db.query(RideBooking).filter(RideBooking.id == booking_id).first()
         if not booking:
@@ -950,6 +946,64 @@ async def request_modification(
         if booking.status != "accepted":
             return {"success": False, "message": "Cannot modify seats - Booking is not confirmed yet"}
         
+        # ============================================
+        # CRITICAL FIX: Check if user has ALREADY modified before
+        # ============================================
+        # Check for ANY existing modification request (not just pending)
+        existing_modification = db.query(ModificationRequest).filter(
+            ModificationRequest.booking_id == booking_id,
+            ModificationRequest.is_active == True
+        ).first()
+        
+        if existing_modification:
+            # Check if it's still pending
+            if existing_modification.status == "pending":
+                return {
+                    "success": False, 
+                    "message": "You already have a pending modification request. Please wait for driver's response.",
+                    "code": "PENDING_REQUEST_EXISTS",
+                    "existing_request": {
+                        "id": existing_modification.id,
+                        "requested_seats": existing_modification.requested_seats,
+                        "current_seats": existing_modification.current_seats,
+                        "status": existing_modification.status
+                    }
+                }
+            else:
+                # User has already requested modification (approved, rejected, or cancelled)
+                # This means they've used their one-time modification
+                return {
+                    "success": False, 
+                    "message": "You can only modify your seats once per booking. You have already submitted a modification request.",
+                    "code": "ALREADY_MODIFIED",
+                    "previous_request": {
+                        "id": existing_modification.id,
+                        "requested_seats": existing_modification.requested_seats,
+                        "current_seats": existing_modification.current_seats,
+                        "status": existing_modification.status,
+                        "approved_at": existing_modification.approved_at.isoformat() if existing_modification.approved_at else None,
+                        "rejected_at": existing_modification.rejected_at.isoformat() if existing_modification.rejected_at else None
+                    }
+                }
+        
+        # Check for any modification request in history (inactive ones also count)
+        historical_modification = db.query(ModificationRequest).filter(
+            ModificationRequest.booking_id == booking_id
+        ).first()
+        
+        if historical_modification:
+            return {
+                "success": False,
+                "message": "You have already used your one-time modification for this booking. Further modifications are not allowed.",
+                "code": "MODIFICATION_LIMIT_REACHED",
+                "previous_request": {
+                    "id": historical_modification.id,
+                    "requested_seats": historical_modification.requested_seats,
+                    "status": historical_modification.status,
+                    "created_at": historical_modification.created_at.isoformat() if historical_modification.created_at else None
+                }
+            }
+        
         # Calculate available seats
         total_booked = db.query(func.sum(RideBooking.seats_booked)).filter(
             RideBooking.ride_id == ride.id,
@@ -965,29 +1019,11 @@ async def request_modification(
         if request.requested_seats < 1:
             return {"success": False, "message": "Minimum 1 seat required"}
         
-        # If request is the same as current seats
+        # If request is the same as current seats, don't create modification
         if request.requested_seats == booking.seats_booked:
-            # Cancel any pending request
-            existing_pending = db.query(ModificationRequest).filter(
-                ModificationRequest.booking_id == booking_id,
-                ModificationRequest.status == "pending",
-                ModificationRequest.is_active == True
-            ).first()
-            if existing_pending:
-                existing_pending.is_active = False
-                existing_pending.status = "cancelled"
-                db.commit()
-            return {"success": True, "message": "Modification request cancelled"}
+            return {"success": False, "message": "No change in seat count"}
         
-        # ============================================
-        # CRITICAL FIX: Mark ALL existing requests as inactive
-        # ============================================
-        all_existing = db.query(ModificationRequest).filter(
-            ModificationRequest.booking_id == booking_id,
-            ModificationRequest.is_active == True
-        ).all()
-        
-        # Create new modification request first
+        # Create new modification request
         new_mod_request = ModificationRequest(
             booking_id=booking_id,
             ride_id=ride.id,
@@ -1000,23 +1036,12 @@ async def request_modification(
         )
         
         db.add(new_mod_request)
-        db.flush()  # Get the ID without committing
-        
-        # Mark old requests as inactive and link to new one
-        for existing in all_existing:
-            existing.is_active = False
-            existing.superseded_by_id = new_mod_request.id
-            existing.superseded_at = datetime.now(timezone.utc)
-            # Optionally mark old pending as cancelled
-            if existing.status == "pending":
-                existing.status = "cancelled"
-        
         db.commit()
         db.refresh(new_mod_request)
         
         return {
             "success": True, 
-            "message": "Modification request sent to driver",
+            "message": "Modification request sent to driver (one-time modification only)",
             "request": {
                 "id": new_mod_request.id,
                 "current_seats": new_mod_request.current_seats,
@@ -1031,7 +1056,6 @@ async def request_modification(
         print(f"Error in request_modification: {str(e)}")
         db.rollback()
         return {"success": False, "message": str(e)}
-
 @router.get("/booking/{booking_id}/modification-request")
 def get_pending_modification_request(booking_id: int, db: Session = Depends(get_db)):
     """Get pending modification request for a booking"""
@@ -4524,3 +4548,51 @@ async def get_driver_feedback_for_ride(
     
     print("❌ No feedback found for this ride")
     return {"success": False, "message": "No feedback found"}
+@router.get("/booking/{booking_id}/modification-available")
+def check_modification_available(booking_id: int, db: Session = Depends(get_db)):
+    """Check if user can request modification (one-time check)"""
+    try:
+        booking = db.query(RideBooking).filter(RideBooking.id == booking_id).first()
+        if not booking:
+            return {
+                "available": False, 
+                "reason": "Booking not found",
+                "code": "NOT_FOUND"
+            }
+        
+        # Check if user has already made ANY modification request
+        existing_modification = db.query(ModificationRequest).filter(
+            ModificationRequest.booking_id == booking_id
+        ).first()
+        
+        if existing_modification:
+            return {
+                "available": False,
+                "reason": f"You have already submitted a modification request (Status: {existing_modification.status}). One modification only per booking.",
+                "code": "ALREADY_MODIFIED",
+                "modification": {
+                    "id": existing_modification.id,
+                    "requested_seats": existing_modification.requested_seats,
+                    "current_seats": existing_modification.current_seats,
+                    "status": existing_modification.status
+                }
+            }
+        
+        ride = db.query(Ride).filter(Ride.id == booking.ride_id).first()
+        if not ride:
+            return {"available": False, "reason": "Ride not found", "code": "RIDE_NOT_FOUND"}
+        
+        if ride.started_at:
+            return {"available": False, "reason": "Ride has already started", "code": "RIDE_STARTED"}
+        
+        if booking.status != "accepted":
+            return {"available": False, "reason": "Booking is not confirmed", "code": "BOOKING_NOT_CONFIRMED"}
+        
+        return {
+            "available": True,
+            "message": "You can request one modification for this booking",
+            "current_seats": booking.seats_booked
+        }
+        
+    except Exception as e:
+        return {"available": False, "reason": str(e), "code": "ERROR"}
