@@ -1281,52 +1281,76 @@ def approve_modification_request(request_id: int, db: Session = Depends(get_db))
 def reject_modification_request(request_id: int, db: Session = Depends(get_db)):
     """Reject a modification request - THIS WILL CANCEL THE ORIGINAL BOOKING"""
     try:
-        mod_request = db.query(ModificationRequest).filter(ModificationRequest.id == request_id).first()
+        print(f"🚫 ========== STARTING REJECTION PROCESS ==========")
+        print(f"📝 Rejecting modification request ID: {request_id}")
+        
+        # Get modification request with lock
+        mod_request = db.query(ModificationRequest).filter(
+            ModificationRequest.id == request_id
+        ).with_for_update().first()
         
         if not mod_request:
+            print(f"❌ Modification request {request_id} not found")
             return {"success": False, "message": "Modification request not found"}
         
+        print(f"✅ Found modification request: status={mod_request.status}, is_active={mod_request.is_active}")
+        
         if mod_request.status != "pending":
+            print(f"⚠️ Request already {mod_request.status}")
             return {"success": False, "message": f"Request already {mod_request.status}"}
         
-        # Get the associated booking
-        booking = db.query(RideBooking).filter(RideBooking.id == mod_request.booking_id).first()
+        # Get associated booking
+        booking = db.query(RideBooking).filter(
+            RideBooking.id == mod_request.booking_id
+        ).with_for_update().first()
         
         if not booking:
+            print(f"❌ Booking {mod_request.booking_id} not found")
             return {"success": False, "message": "Associated booking not found"}
         
+        print(f"✅ Found booking: ID={booking.id}, status={booking.status}, seats={booking.seats_booked}")
+        
         # Get the ride
-        ride = db.query(Ride).filter(Ride.id == mod_request.ride_id).first()
+        ride = db.query(Ride).filter(Ride.id == mod_request.ride_id).with_for_update().first()
         
         if not ride:
+            print(f"❌ Ride {mod_request.ride_id} not found")
             return {"success": False, "message": "Ride not found"}
+        
+        print(f"✅ Found ride: ID={ride.id}, total_seats={ride.available_seats}, status={ride.status}")
         
         # Store original seat count before cancellation
         original_seats = booking.seats_booked
         
         print(f"🔴 Rejecting modification request {request_id}")
-        print(f"   Booking ID: {booking.id}, Original seats: {original_seats}")
-        print(f"   Ride ID: {ride.id}, Total seats: {ride.available_seats}")
+        print(f"   📍 Booking ID: {booking.id}, Original seats: {original_seats}")
+        print(f"   📍 Ride ID: {ride.id}, Total seats: {ride.available_seats}")
         
         # ============================================
-        # 1. Update modification request
+        # CRITICAL FIX - Update modification request
         # ============================================
         mod_request.status = "rejected"
         mod_request.rejection_reason = "Driver declined the modification request"
         mod_request.rejected_at = datetime.now(timezone.utc)
-        mod_request.is_active = False  # ← THIS IS CRITICAL - MUST BE FALSE
+        mod_request.is_active = False  # ✅ CRITICAL: Mark as inactive
+        mod_request.updated_at = datetime.now(timezone.utc)
+        
+        print(f"   ✅ Modification request updated: status=rejected, is_active=False")
         
         # ============================================
-        # 2. CRITICAL: Cancel the original booking and release seats
+        # CRITICAL FIX - Cancel booking and release seats
         # ============================================
+        old_status = booking.status
         booking.status = "cancelled"
-        booking.seats_booked = 0  # ← RELEASE THE SEATS
+        booking.seats_booked = 0  # ✅ CRITICAL: Release the seats
         booking.cancellation_reason = f"Modification request rejected - Original booking of {original_seats} seat(s) cancelled"
+        booking.updated_at = datetime.now(timezone.utc)
+        
+        print(f"   ✅ Booking updated: status={old_status} -> cancelled, seats={original_seats} -> 0")
         
         db.flush()
         
         # Recalculate total booked seats after cancellation
-        total_booked_before = get_total_booked_seats(db, ride.id)
         total_booked_after = db.query(func.sum(RideBooking.seats_booked)).filter(
             RideBooking.ride_id == ride.id,
             RideBooking.status == "accepted"
@@ -1334,26 +1358,32 @@ def reject_modification_request(request_id: int, db: Session = Depends(get_db)):
         
         remaining_seats = ride.available_seats - total_booked_after
         
-        print(f"   Before cancellation - Total booked: {total_booked_before}")
-        print(f"   After cancellation - Total booked: {total_booked_after}")
-        print(f"   Remaining seats: {remaining_seats}")
+        print(f"   📊 After cancellation calculation:")
+        print(f"      Total booked (accepted): {total_booked_after}")
+        print(f"      Remaining seats: {remaining_seats}")
         
-        # Update ride status if it was full and now has seats available
-        old_status = ride.status
+        # Update ride status if needed
+        old_ride_status = ride.status
         if ride.status == "full" and remaining_seats > 0:
             ride.status = "active"
-            print(f"   Ride status changed from 'full' to 'active'")
+            print(f"   ✅ Ride status changed: {old_ride_status} -> active")
         elif ride.status == "active" and remaining_seats == 0:
             ride.status = "full"
-            print(f"   Ride status changed from 'active' to 'full'")
+            print(f"   ✅ Ride status changed: {old_ride_status} -> full")
+        else:
+            print(f"   ℹ️ Ride status unchanged: {ride.status}")
+        
+        ride.updated_at = datetime.now(timezone.utc)
         
         db.commit()
+        print(f"💾 Database commit successful")
         
         # ============================================
-        # 3. Send multiple socket events for real-time updates
+        # Send socket events for real-time updates
         # ============================================
+        print(f"📡 Sending socket events...")
         
-        # Event 1: Notify the specific passenger whose booking was cancelled
+        # Notify the passenger
         try:
             emit_to_user(booking.passenger_phone, "booking-cancelled", {
                 "booking_id": booking.id,
@@ -1361,11 +1391,11 @@ def reject_modification_request(request_id: int, db: Session = Depends(get_db)):
                 "seats_cancelled": original_seats,
                 "message": f"Your booking for {original_seats} seat(s) has been cancelled because your modification request was rejected."
             })
-            print(f"📡 Sent booking-cancelled to passenger {booking.passenger_phone}")
+            print(f"   ✅ Sent booking-cancelled to passenger {booking.passenger_phone}")
         except Exception as e:
-            print(f"Socket error (non-critical): {e}")
+            print(f"   ⚠️ Socket error (booking-cancelled): {e}")
         
-        # Event 2: Notify ALL users in the ride room that seats are available
+        # Notify all users in the ride room that seats are available
         try:
             emit_to_ride(ride.id, "seats-released", {
                 "ride_id": ride.id,
@@ -1373,11 +1403,11 @@ def reject_modification_request(request_id: int, db: Session = Depends(get_db)):
                 "new_available_seats": remaining_seats,
                 "message": f"{original_seats} seat(s) are now available for this ride!"
             })
-            print(f"📡 Sent seats-released to ride room: ride_{ride.id}")
+            print(f"   ✅ Sent seats-released to ride room: ride_{ride.id}")
         except Exception as e:
-            print(f"Socket error (non-critical): {e}")
+            print(f"   ⚠️ Socket error (seats-released): {e}")
         
-        # Event 3: Specific modification rejected event
+        # Specific modification rejected event
         try:
             emit_to_ride(ride.id, "modification-rejected", {
                 "ride_id": ride.id,
@@ -1386,11 +1416,11 @@ def reject_modification_request(request_id: int, db: Session = Depends(get_db)):
                 "new_available_seats": remaining_seats,
                 "message": f"A modification request was rejected. {original_seats} seat(s) are now available."
             })
-            print(f"📡 Sent modification-rejected to ride room: ride_{ride.id}")
+            print(f"   ✅ Sent modification-rejected to ride room: ride_{ride.id}")
         except Exception as e:
-            print(f"Socket error (non-critical): {e}")
+            print(f"   ⚠️ Socket error (modification-rejected): {e}")
         
-        # Event 4: Broadcast to all connected clients about seat update
+        # Broadcast to all connected clients
         try:
             if _sio:
                 _sio.emit("seat-availability-update", {
@@ -1400,22 +1430,11 @@ def reject_modification_request(request_id: int, db: Session = Depends(get_db)):
                     "action": "seats_released",
                     "seats_released": original_seats
                 })
-                print(f"📡 Sent seat-availability-update to all clients")
+                print(f"   ✅ Sent seat-availability-update to all clients")
         except Exception as e:
-            print(f"Socket error (non-critical): {e}")
+            print(f"   ⚠️ Socket error (seat-availability-update): {e}")
         
-        # Event 5: Notify the driver who rejected (for their UI update)
-        try:
-            emit_to_user(ride.phone_number, "modification-handled", {
-                "ride_id": ride.id,
-                "booking_id": booking.id,
-                "action": "rejected",
-                "seats_released": original_seats,
-                "message": f"You rejected a modification request. {original_seats} seat(s) are now available."
-            })
-            print(f"📡 Sent modification-handled to driver {ride.phone_number}")
-        except Exception as e:
-            print(f"Socket error (non-critical): {e}")
+        print(f"✅ ========== REJECTION COMPLETED SUCCESSFULLY ==========")
         
         return {
             "success": True,
@@ -1429,7 +1448,8 @@ def reject_modification_request(request_id: int, db: Session = Depends(get_db)):
         }
         
     except Exception as e:
-        print(f"Error in reject_modification_request: {str(e)}")
+        print(f"❌ ========== ERROR IN REJECTION ==========")
+        print(f"❌ Error: {str(e)}")
         import traceback
         traceback.print_exc()
         db.rollback()
@@ -4740,3 +4760,51 @@ def refresh_seat_count(ride_id: int, db: Session = Depends(get_db)):
     except Exception as e:
         print(f"Error in refresh_seat_count: {str(e)}")
         return {"success": False, "message": str(e)}
+@router.get("/debug/modification-request/{request_id}")
+def debug_modification_request(request_id: int, db: Session = Depends(get_db)):
+    """Debug endpoint to check modification request status"""
+    try:
+        mod_request = db.query(ModificationRequest).filter(
+            ModificationRequest.id == request_id
+        ).first()
+        
+        if not mod_request:
+            return {"error": "Modification request not found"}
+        
+        booking = db.query(RideBooking).filter(
+            RideBooking.id == mod_request.booking_id
+        ).first()
+        
+        ride = db.query(Ride).filter(Ride.id == mod_request.ride_id).first()
+        
+        total_booked = get_total_booked_seats(db, ride.id) if ride else 0
+        remaining_seats = ride.available_seats - total_booked if ride else 0
+        
+        return {
+            "modification_request": {
+                "id": mod_request.id,
+                "status": mod_request.status,
+                "is_active": mod_request.is_active,
+                "booking_id": mod_request.booking_id,
+                "current_seats": mod_request.current_seats,
+                "requested_seats": mod_request.requested_seats,
+                "created_at": mod_request.created_at.isoformat() if mod_request.created_at else None,
+                "rejected_at": mod_request.rejected_at.isoformat() if mod_request.rejected_at else None,
+                "rejection_reason": mod_request.rejection_reason
+            },
+            "booking": {
+                "id": booking.id if booking else None,
+                "status": booking.status if booking else None,
+                "seats_booked": booking.seats_booked if booking else None,
+                "passenger_phone": booking.passenger_phone if booking else None
+            },
+            "ride": {
+                "id": ride.id if ride else None,
+                "total_seats": ride.available_seats if ride else None,
+                "status": ride.status if ride else None,
+                "total_booked": total_booked,
+                "remaining_seats": remaining_seats
+            }
+        }
+    except Exception as e:
+        return {"error": str(e)}
