@@ -1314,7 +1314,7 @@ def reject_modification_request(request_id: int, db: Session = Depends(get_db)):
         mod_request.status = "rejected"
         mod_request.rejection_reason = "Driver declined the modification request"
         mod_request.rejected_at = datetime.now(timezone.utc)
-        mod_request.is_active = False
+        mod_request.is_active = False  # ← THIS IS CRITICAL - MUST BE FALSE
         
         # ============================================
         # 2. CRITICAL: Cancel the original booking and release seats
