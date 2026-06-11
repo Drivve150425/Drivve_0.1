@@ -4808,3 +4808,135 @@ def debug_modification_request(request_id: int, db: Session = Depends(get_db)):
         }
     except Exception as e:
         return {"error": str(e)}
+@router.post("/fix-rejected-modifications")
+def fix_rejected_modifications(db: Session = Depends(get_db)):
+    """
+    Fix rejected modification requests that didn't cancel their bookings
+    This will find all rejected modification requests that still have active bookings
+    """
+    try:
+        print("🔧 ========== STARTING FIX FOR REJECTED MODIFICATIONS ==========")
+        
+        # Find all rejected modification requests that are still active
+        bad_mod_requests = db.query(ModificationRequest).filter(
+            ModificationRequest.status == "rejected",
+            ModificationRequest.is_active == True
+        ).all()
+        
+        fixed_count = 0
+        fixed_bookings = []
+        
+        for mod_request in bad_mod_requests:
+            print(f"\n🔍 Processing modification request {mod_request.id}")
+            
+            # Get associated booking
+            booking = db.query(RideBooking).filter(
+                RideBooking.id == mod_request.booking_id
+            ).first()
+            
+            if not booking:
+                print(f"   ⚠️ Booking {mod_request.booking_id} not found")
+                continue
+            
+            print(f"   📍 Booking ID: {booking.id}, Current status: {booking.status}, Seats: {booking.seats_booked}")
+            
+            # Check if booking is still accepted (should be cancelled)
+            if booking.status == "accepted" and booking.seats_booked > 0:
+                original_seats = booking.seats_booked
+                
+                # Cancel the booking
+                booking.status = "cancelled"
+                booking.seats_booked = 0
+                booking.cancellation_reason = f"Auto-fix: Modification request {mod_request.id} was rejected but booking not cancelled"
+                booking.updated_at = datetime.now(timezone.utc)
+                
+                # Mark modification request as inactive
+                mod_request.is_active = False
+                mod_request.updated_at = datetime.now(timezone.utc)
+                
+                fixed_bookings.append({
+                    "modification_request_id": mod_request.id,
+                    "booking_id": booking.id,
+                    "seats_released": original_seats,
+                    "passenger_phone": booking.passenger_phone
+                })
+                
+                fixed_count += 1
+                print(f"   ✅ Fixed: Cancelled booking {booking.id}, released {original_seats} seat(s)")
+            else:
+                # Just mark modification as inactive
+                mod_request.is_active = False
+                mod_request.updated_at = datetime.now(timezone.utc)
+                print(f"   ℹ️ Booking already cancelled, just marked mod request inactive")
+        
+        # Update ride statuses for affected rides
+        affected_ride_ids = set()
+        for fix in fixed_bookings:
+            booking = db.query(RideBooking).filter(RideBooking.id == fix["booking_id"]).first()
+            if booking:
+                affected_ride_ids.add(booking.ride_id)
+        
+        ride_updates = []
+        for ride_id in affected_ride_ids:
+            ride = db.query(Ride).filter(Ride.id == ride_id).first()
+            if ride:
+                total_booked = get_total_booked_seats(db, ride.id)
+                remaining_seats = ride.available_seats - total_booked
+                
+                old_status = ride.status
+                if remaining_seats == 0 and ride.status == "active":
+                    ride.status = "full"
+                elif remaining_seats > 0 and ride.status == "full":
+                    ride.status = "active"
+                
+                ride.updated_at = datetime.now(timezone.utc)
+                
+                ride_updates.append({
+                    "ride_id": ride_id,
+                    "old_status": old_status,
+                    "new_status": ride.status,
+                    "remaining_seats": remaining_seats
+                })
+                
+                print(f"   🚗 Updated ride {ride_id}: {old_status} -> {ride.status}, {remaining_seats} seats available")
+        
+        db.commit()
+        
+        # Send socket notifications for fixed rides
+        for ride_id in affected_ride_ids:
+            ride = db.query(Ride).filter(Ride.id == ride_id).first()
+            if ride:
+                total_booked = get_total_booked_seats(db, ride.id)
+                remaining_seats = ride.available_seats - total_booked
+                
+                try:
+                    emit_to_ride(ride_id, "seats-released", {
+                        "ride_id": ride_id,
+                        "seats_released": sum(f["seats_released"] for f in fixed_bookings if f.get("ride_id") == ride_id),
+                        "new_available_seats": remaining_seats,
+                        "message": f"System fix: {remaining_seats} seat(s) are now available!"
+                    })
+                except Exception as e:
+                    print(f"   ⚠️ Socket error for ride {ride_id}: {e}")
+        
+        print(f"\n✅ ========== FIX COMPLETED ==========")
+        print(f"   Fixed {fixed_count} rejected modification requests")
+        print(f"   Updated {len(affected_ride_ids)} rides")
+        
+        return {
+            "success": True,
+            "message": f"Fixed {fixed_count} rejected modification requests",
+            "fixed_modifications": fixed_count,
+            "updated_rides": len(affected_ride_ids),
+            "details": {
+                "fixed_bookings": fixed_bookings,
+                "ride_updates": ride_updates
+            }
+        }
+        
+    except Exception as e:
+        print(f"❌ Error in fix_rejected_modifications: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        db.rollback()
+        return {"success": False, "message": str(e)}
