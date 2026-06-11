@@ -917,7 +917,7 @@
 #     total_ratings = Column(Integer, default=0)
   
 from datetime import datetime, timezone
-from sqlalchemy import BigInteger, Column, Integer, Numeric, String, DateTime, Boolean, Text, Enum, Date, JSON, Float, UniqueConstraint, ForeignKey
+from sqlalchemy import BigInteger, Column, Index, Integer, Numeric, String, DateTime, Boolean, Text, Enum, Date, JSON, Float, UniqueConstraint, ForeignKey
 from sqlalchemy.sql import func
 from database import Base
 import enum
@@ -1704,4 +1704,46 @@ class BlockedUsers(Base):
     
     __table_args__ = (
         UniqueConstraint('blocker_phone', 'blocked_phone', name='unique_block'),
+    )
+# Add this to your models.py
+
+class RideRequest(Base):
+    """Stores ride requests from passengers for notification when rides become available"""
+    __tablename__ = "ride_requests"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    passenger_phone = Column(String(20), nullable=False, index=True)
+    passenger_name = Column(String(255), nullable=True)
+    passenger_email = Column(String(255), nullable=False, index=True)
+    
+    # Route information
+    from_location = Column(Text, nullable=False)
+    to_location = Column(Text, nullable=False)
+    from_lat = Column(Float, nullable=True)
+    from_lon = Column(Float, nullable=True)
+    to_lat = Column(Float, nullable=True)
+    to_lon = Column(Float, nullable=True)
+    
+    # Time preferences
+    preferred_date = Column(DateTime, nullable=True)
+    preferred_time = Column(String(50), nullable=True)
+    
+    # Ride requirements
+    seats_needed = Column(Integer, default=1)
+    notes = Column(Text, nullable=True)
+    
+    # Status tracking
+    status = Column(String(20), default="active")  # active, notified, expired, cancelled
+    notified_at = Column(DateTime, nullable=True)
+    cancelled_at = Column(DateTime, nullable=True)
+    
+    # Timestamps
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    expires_at = Column(DateTime, nullable=True)  # 7 days from creation
+    
+    # Indexes
+    __table_args__ = (
+        Index('idx_ride_requests_phone_status', 'passenger_phone', 'status'),
+        Index('idx_ride_requests_email_status', 'passenger_email', 'status'),
+        Index('idx_ride_requests_route', 'from_location', 'to_location'),
     )

@@ -1,10 +1,11 @@
 
+import os
 import secrets
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, text, and_, or_
 from database import get_db
-from models import Ride, RideBooking, ModificationRequest, RideFeedback, User, UserNotification, NotificationType, Vehicle, RideSession, RideSessionRider
+from models import Ride, RideBooking, ModificationRequest, RideFeedback, RideRequest, User, UserNotification, NotificationType, Vehicle, RideSession, RideSessionRider
 from datetime import datetime, timezone, timedelta
 from pydantic import BaseModel, field_validator
 from typing import Optional, Dict, List
@@ -341,7 +342,9 @@ def post_ride(data: CreateRideRequest, db: Session = Depends(get_db)):
     db.add(ride)
     db.commit()
     db.refresh(ride)
-
+    if ride.id:
+        # Call the matching function
+        check_matching_ride_requests(db, ride)
     return {
         "message": "Ride posted successfully", 
         "ride_id": ride.id,
@@ -4940,3 +4943,438 @@ def fix_rejected_modifications(db: Session = Depends(get_db)):
         traceback.print_exc()
         db.rollback()
         return {"success": False, "message": str(e)}
+# Pydantic model for ride request
+class RideRequestAlert(BaseModel):
+    from_location: str
+    to_location: str
+    from_coords: Optional[List[float]] = None
+    to_coords: Optional[List[float]] = None
+    preferred_date: Optional[datetime] = None
+    preferred_time: Optional[str] = None
+    seats_needed: int = 1
+    passenger_phone: str
+    passenger_name: Optional[str] = None
+    passenger_email: str
+    notes: Optional[str] = None
+
+
+# Azure Email Function (Add this to ride.py or import from your email module)
+def send_ride_available_email_azure(to_email: str, passenger_name: str, ride_data: dict) -> bool:
+    """Send email notification using Azure Communication Services when a matching ride is posted"""
+    
+    from azure.communication.email import EmailClient
+
+    AZURE_EMAIL_CONNECTION_STRING = os.getenv("AZURE_EMAIL_CONNECTION_STRING")
+    AZURE_EMAIL_FROM = "DoNotReply@drivve.in"
+    
+    if not AZURE_EMAIL_CONNECTION_STRING:
+        print("Azure Email connection string not configured")
+        return False
+    
+    try:
+        email_client = EmailClient.from_connection_string(AZURE_EMAIL_CONNECTION_STRING)
+        
+        # Format the date nicely
+        departure_time = ride_data.get('departure_time_display', 'Flexible')
+        
+        # Generate deep link URL (update with your app's scheme)
+        deep_link = f"drivve://ride/{ride_data.get('ride_id')}"
+        
+        html_content = f"""
+        <html>
+            <body style="font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #f5f5f5;">
+                <div style="max-width: 600px; margin: 0 auto; background: white; padding: 30px;">
+                    
+                    <!-- Header -->
+                    <div style="text-align: center; margin-bottom: 30px;">
+                        <img src="https://drivvestorage.blob.core.windows.net/drivvestorage/adaptive-icon.png" 
+                             alt="Drivve Logo" style="max-height: 60px;">
+                        <h2 style="color: #ED7117; margin-top: 10px;">Ride Available! 🚗</h2>
+                    </div>
+                    
+                    <!-- Greeting -->
+                    <p style="font-size: 16px; color: #333; margin-bottom: 20px;">
+                        Hey {passenger_name or 'there'},
+                    </p>
+                    
+                    <p style="font-size: 16px; color: #333; margin-bottom: 20px;">
+                        Good news! A ride matching your requested route has been posted:
+                    </p>
+                    
+                    <!-- Ride Details Card -->
+                    <div style="background-color: #f9fafb; border-radius: 12px; padding: 20px; margin: 20px 0; border-left: 4px solid #ED7117;">
+                        <div style="margin-bottom: 15px;">
+                            <div style="display: flex; align-items: center; margin-bottom: 10px;">
+                                <span style="font-size: 20px; margin-right: 10px;">📍</span>
+                                <div>
+                                    <div style="font-size: 12px; color: #6b7280;">FROM</div>
+                                    <div style="font-weight: bold; color: #111827;">{ride_data.get('origin', 'N/A')}</div>
+                                </div>
+                            </div>
+                            <div style="display: flex; align-items: center;">
+                                <span style="font-size: 20px; margin-right: 10px;">🎯</span>
+                                <div>
+                                    <div style="font-size: 12px; color: #6b7280;">TO</div>
+                                    <div style="font-weight: bold; color: #111827;">{ride_data.get('destination', 'N/A')}</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div style="border-top: 1px solid #e5e7eb; padding-top: 15px; margin-top: 10px;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                                <span style="color: #6b7280;">📅 Date & Time</span>
+                                <span style="font-weight: 600;">{departure_time}</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                                <span style="color: #6b7280;">💺 Seats Available</span>
+                                <span style="font-weight: 600;">{ride_data.get('seats_available', 'Check app')} seats</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between;">
+                                <span style="color: #6b7280;">💰 Price</span>
+                                <span style="font-weight: 600; color: #ED7117;">₹{ride_data.get('price_per_seat', 'Check app')} per seat</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- CTA Button -->
+                    <div style="text-align: center; margin: 30px 0;">
+                        <a href="{deep_link}" 
+                           style="background-color: #ED7117; color: white; padding: 12px 30px; 
+                                  text-decoration: none; border-radius: 25px; display: inline-block;
+                                  font-weight: bold;">
+                            Book This Ride Now →
+                        </a>
+                    </div>
+                    
+                    <!-- Note -->
+                    <p style="font-size: 13px; color: #6b7280; text-align: center; margin-top: 30px;">
+                        You requested this notification on {ride_data.get('request_date', 'a previous date')}.<br>
+                        Seats fill up quickly - book now to secure your spot!
+                    </p>
+                    
+                    <p style="font-size: 13px; color: #6b7280; text-align: center;">
+                        <a href="drivve://settings/notifications" style="color: #ED7117;">Manage notifications</a>
+                    </p>
+                    
+                    <!-- Footer -->
+                    <div style="text-align: center; border-top: 1px solid #e5e5e5; padding-top: 20px; margin-top: 30px;">
+                        <p style="font-size: 12px; color: #9ca3af;">
+                            Safe travels!<br>
+                            <strong>Team Drivve</strong>
+                        </p>
+                    </div>
+                    
+                </div>
+            </body>
+        </html>
+        """
+        
+        message = {
+            "senderAddress": AZURE_EMAIL_FROM,
+            "recipients": {
+                "to": [{"address": to_email}]
+            },
+            "content": {
+                "subject": f"🚗 Ride Available: {ride_data.get('origin', 'Ride')} → {ride_data.get('destination', 'Available')}",
+                "html": html_content
+            }
+        }
+        
+        poller = email_client.begin_send(message)
+        result = poller.result()
+        print(f"✅ Ride alert email sent to {to_email}")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Failed to send ride alert email: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+@router.post("/request-ride-alert")
+def request_ride_alert(
+    request: RideRequestAlert,
+    db: Session = Depends(get_db)
+):
+    """
+    Passenger requests email notification when a matching ride is posted
+    """
+    try:
+        normalized_phone = normalize_phone(request.passenger_phone)
+        
+        # Check if user already has an active request for this exact route
+        existing_request = db.query(RideRequest).filter(
+            RideRequest.passenger_phone == normalized_phone,
+            func.lower(RideRequest.from_location) == func.lower(request.from_location),
+            func.lower(RideRequest.to_location) == func.lower(request.to_location),
+            RideRequest.status == "active",
+            RideRequest.expires_at > datetime.now(timezone.utc)
+        ).first()
+        
+        if existing_request:
+            return {
+                "success": False,
+                "message": "You already have an active request for this route. We'll notify you when a ride is available.",
+                "request_id": existing_request.id,
+                "expires_at": existing_request.expires_at.isoformat()
+            }
+        
+        # Calculate expiry (7 days from now)
+        expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+        
+        # Create new request
+        new_request = RideRequest(
+            passenger_phone=normalized_phone,
+            passenger_name=request.passenger_name,
+            passenger_email=request.passenger_email,
+            from_location=request.from_location,
+            to_location=request.to_location,
+            from_lat=request.from_coords[1] if request.from_coords and len(request.from_coords) >= 2 else None,
+            from_lon=request.from_coords[0] if request.from_coords and len(request.from_coords) >= 2 else None,
+            to_lat=request.to_coords[1] if request.to_coords and len(request.to_coords) >= 2 else None,
+            to_lon=request.to_coords[0] if request.to_coords and len(request.to_coords) >= 2 else None,
+            preferred_date=request.preferred_date,
+            preferred_time=request.preferred_time,
+            seats_needed=request.seats_needed,
+            notes=request.notes,
+            status="active",
+            expires_at=expires_at
+        )
+        
+        db.add(new_request)
+        db.commit()
+        db.refresh(new_request)
+        
+        # Also check if there's already a matching ride (in case one was just posted)
+        check_and_notify_immediate_match(db, new_request)
+        
+        return {
+            "success": True,
+            "message": "Ride request alert created successfully. We'll email you when a matching ride is posted.",
+            "request_id": new_request.id,
+            "expires_at": expires_at.isoformat()
+        }
+        
+    except Exception as e:
+        print(f"Error creating ride request alert: {str(e)}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def check_and_notify_immediate_match(db: Session, ride_request: RideRequest):
+    """Check if there's already a matching ride for this request"""
+    try:
+        now = datetime.now(timezone.utc)
+        
+        # Find matching active ride
+        matching_ride = db.query(Ride).filter(
+            Ride.status.in_(["active", "full"]),
+            Ride.departure_time > now,
+            func.lower(Ride.origin).contains(func.lower(ride_request.from_location.split(',')[0])),
+            func.lower(Ride.destination).contains(func.lower(ride_request.to_location.split(',')[0]))
+        ).first()
+        
+        if matching_ride:
+            # Check time match if preferred date specified
+            if ride_request.preferred_date:
+                time_diff = abs((matching_ride.departure_time - ride_request.preferred_date).total_seconds()) / 3600
+                if time_diff > 6:  # More than 6 hours difference
+                    return  # Skip if time doesn't match
+            
+            # Send immediate notification
+            ride_data = {
+                "ride_id": matching_ride.id,
+                "origin": matching_ride.origin,
+                "destination": matching_ride.destination,
+                "departure_time_display": to_ist(matching_ride.departure_time).strftime("%d %b %Y, %I:%M %p"),
+                "seats_available": matching_ride.available_seats,
+                "price_per_seat": matching_ride.price_per_seat,
+                "request_date": ride_request.created_at.strftime("%d %b %Y")
+            }
+            
+            send_ride_available_email_azure(
+                ride_request.passenger_email,
+                ride_request.passenger_name,
+                ride_data
+            )
+            
+            # Mark as notified
+            ride_request.status = "notified"
+            ride_request.notified_at = datetime.now(timezone.utc)
+            db.commit()
+            
+    except Exception as e:
+        print(f"Error checking immediate match: {str(e)}")
+
+
+def check_matching_ride_requests(db: Session, ride: Ride):
+    """Check for matching ride requests when a new ride is posted"""
+    try:
+        # Find active ride requests that match this route
+        matching_requests = db.query(RideRequest).filter(
+            RideRequest.status == "active",
+            RideRequest.expires_at > datetime.now(timezone.utc),
+            # Check if route matches (using LIKE for partial matching)
+            or_(
+                func.lower(RideRequest.from_location).contains(func.lower(ride.origin.split(',')[0])),
+                func.lower(ride.origin).contains(func.lower(RideRequest.from_location.split(',')[0]))
+            ),
+            or_(
+                func.lower(RideRequest.to_location).contains(func.lower(ride.destination.split(',')[0])),
+                func.lower(ride.destination).contains(func.lower(RideRequest.to_location.split(',')[0]))
+            )
+        ).all()
+        
+        notified_count = 0
+        
+        for req in matching_requests:
+            # Check time match if preferred date specified
+            if req.preferred_date:
+                time_diff = abs((ride.departure_time - req.preferred_date).total_seconds()) / 3600
+                if time_diff > 6:  # More than 6 hours difference
+                    continue  # Skip if time doesn't match within window
+            
+            # Check seats availability
+            total_booked = get_total_booked_seats(db, ride.id)
+            available_seats = ride.available_seats - total_booked
+            
+            if available_seats < req.seats_needed:
+                continue  # Not enough seats for this requester
+            
+            # Prepare ride data for email
+            ride_data = {
+                "ride_id": ride.id,
+                "origin": ride.origin,
+                "destination": ride.destination,
+                "departure_time_display": to_ist(ride.departure_time).strftime("%d %b %Y, %I:%M %p"),
+                "seats_available": available_seats,
+                "price_per_seat": ride.price_per_seat,
+                "request_date": req.created_at.strftime("%d %b %Y")
+            }
+            
+            # Send email notification using Azure
+            success = send_ride_available_email_azure(
+                req.passenger_email,
+                req.passenger_name,
+                ride_data
+            )
+            
+            if success:
+                # Mark request as notified
+                req.status = "notified"
+                req.notified_at = datetime.now(timezone.utc)
+                notified_count += 1
+        
+        if notified_count > 0:
+            db.commit()
+            print(f"📧 Sent {notified_count} ride alert email notifications")
+            
+    except Exception as e:
+        print(f"Error checking matching ride requests: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        db.rollback()
+
+
+
+@router.get("/my-ride-requests/{phone_number}")
+def get_user_ride_requests(
+    phone_number: str,
+    db: Session = Depends(get_db)
+):
+    """Get all ride requests for a user"""
+    try:
+        normalized_phone = normalize_phone(phone_number)
+        
+        requests = db.query(RideRequest).filter(
+            RideRequest.passenger_phone == normalized_phone
+        ).order_by(RideRequest.created_at.desc()).all()
+        
+        return {
+            "success": True,
+            "requests": [
+                {
+                    "id": req.id,
+                    "from_location": req.from_location,
+                    "to_location": req.to_location,
+                    "preferred_date": req.preferred_date.isoformat() if req.preferred_date else None,
+                    "preferred_time": req.preferred_time,
+                    "seats_needed": req.seats_needed,
+                    "status": req.status,
+                    "created_at": req.created_at.isoformat(),
+                    "expires_at": req.expires_at.isoformat() if req.expires_at else None,
+                    "notified_at": req.notified_at.isoformat() if req.notified_at else None,
+                    "notes": req.notes
+                }
+                for req in requests
+            ]
+        }
+        
+    except Exception as e:
+        print(f"Error getting ride requests: {str(e)}")
+        return {"success": False, "requests": [], "error": str(e)}
+
+@router.delete("/ride-request/{request_id}")
+def cancel_ride_request(
+    request_id: int,
+    phone_number: str,
+    db: Session = Depends(get_db)
+):
+    """Cancel an active ride request"""
+    try:
+        normalized_phone = normalize_phone(phone_number)
+        
+        ride_request = db.query(RideRequest).filter(
+            RideRequest.id == request_id,
+            RideRequest.passenger_phone == normalized_phone
+        ).first()
+        
+        if not ride_request:
+            raise HTTPException(status_code=404, detail="Ride request not found")
+        
+        if ride_request.status != "active":
+            raise HTTPException(status_code=400, detail=f"Cannot cancel request that is already {ride_request.status}")
+        
+        ride_request.status = "cancelled"
+        ride_request.cancelled_at = datetime.now(timezone.utc)
+        db.commit()
+        
+        return {
+            "success": True,
+            "message": "Ride request cancelled successfully"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error cancelling ride request: {str(e)}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/ride-requests/cleanup-expired")
+def cleanup_expired_ride_requests(db: Session = Depends(get_db)):
+    """Admin endpoint to mark expired ride requests"""
+    try:
+        expired_requests = db.query(RideRequest).filter(
+            RideRequest.status == "active",
+            RideRequest.expires_at < datetime.now(timezone.utc)
+        ).all()
+        
+        expired_count = 0
+        for req in expired_requests:
+            req.status = "expired"
+            expired_count += 1
+        
+        db.commit()
+        
+        return {
+            "success": True,
+            "message": f"Marked {expired_count} expired ride requests",
+            "expired_count": expired_count
+        }
+        
+    except Exception as e:
+        print(f"Error cleaning up expired requests: {str(e)}")
+        return {"success": False, "error": str(e)}
