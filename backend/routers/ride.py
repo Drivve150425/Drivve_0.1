@@ -10095,8 +10095,12 @@ import random
 import string
 
 router = APIRouter()
+from zoneinfo import ZoneInfo
 
 IST = timezone(timedelta(hours=5, minutes=30))
+
+# With this:
+IST = ZoneInfo('Asia/Kolkata')
 SEARCH_RADIUS_M = 2000
 TIME_WINDOW_MINUTES = 60
 
@@ -10924,7 +10928,9 @@ def post_ride(data: CreateRideRequest, db: Session = Depends(get_db)):
     # If the time has no timezone, assume it's IST
     if departure_time.tzinfo is None:
         ist = timezone(timedelta(hours=5, minutes=30))
-        departure_time_ist = ist.localize(departure_time)
+        # departure_time_ist = ist.localize(departure_time)
+        departure_time_ist = departure_time.replace(tzinfo=IST)
+
     else:
         # If it has a timezone, convert to IST
         departure_time_ist = departure_time.astimezone(IST)
@@ -11539,11 +11545,12 @@ def search_rides(data: SearchRidesRequest, db: Session = Depends(get_db)):
         print("SEARCH RIDES CALLED")
         
         req_time = data.departure_time
-        
+        ist = timezone(timedelta(hours=5, minutes=30))
         # Handle timezone using pytz
         if req_time.tzinfo is None:
             # Assume IST if no timezone
-            req_time_ist = IST.localize(req_time)
+            # req_time_ist = IST.localize(req_time)
+            req_time_ist = req_time.replace(tzinfo=IST)
         else:
             req_time_ist = req_time.astimezone(IST)
         
@@ -11558,9 +11565,10 @@ def search_rides(data: SearchRidesRequest, db: Session = Depends(get_db)):
         
         # Get start and end of day in IST
         from datetime import datetime as dt
-        start_of_day_ist = IST.localize(dt.combine(req_date, dt.min.time()))
-        end_of_day_ist = IST.localize(dt.combine(req_date, dt.max.time()))
-        
+        # start_of_day_ist = IST.localize(dt.combine(req_date, dt.min.time()))
+        # end_of_day_ist = IST.localize(dt.combine(req_date, dt.max.time()))
+        start_of_day_ist = dt.combine(req_date, dt.min.time()).replace(tzinfo=ist)
+        end_of_day_ist = dt.combine(req_date, dt.max.time()).replace(tzinfo=ist)
         # Convert to UTC for database query
         start_of_day_utc = start_of_day_ist.astimezone(timezone.utc)
         end_of_day_utc = end_of_day_ist.astimezone(timezone.utc)
