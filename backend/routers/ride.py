@@ -4957,21 +4957,25 @@ class RideRequestAlert(BaseModel):
     passenger_email: str
     notes: Optional[str] = None
 
-
-# Azure Email Function (Add this to ride.py or import from your email module)
 def send_ride_available_email_azure(to_email: str, passenger_name: str, ride_data: dict) -> bool:
     """Send email notification using Azure Communication Services when a matching ride is posted"""
     
     from azure.communication.email import EmailClient
+    from azure.core.exceptions import HttpResponseError
 
     AZURE_EMAIL_CONNECTION_STRING = os.getenv("AZURE_EMAIL_CONNECTION_STRING")
     AZURE_EMAIL_FROM = "DoNotReply@drivve.in"
     
     if not AZURE_EMAIL_CONNECTION_STRING:
-        print("Azure Email connection string not configured")
+        print("❌ Azure Email connection string not configured")
+        return False
+    
+    if not to_email or '@' not in to_email:
+        print(f"❌ Invalid email address: {to_email}")
         return False
     
     try:
+        print(f"📧 Initializing Azure Email client...")
         email_client = EmailClient.from_connection_string(AZURE_EMAIL_CONNECTION_STRING)
         
         # Format the date nicely
@@ -4987,9 +4991,7 @@ def send_ride_available_email_azure(to_email: str, passenger_name: str, ride_dat
                     
                     <!-- Header -->
                     <div style="text-align: center; margin-bottom: 30px;">
-                        <img src="https://drivvestorage.blob.core.windows.net/drivvestorage/adaptive-icon.png" 
-                             alt="Drivve Logo" style="max-height: 60px;">
-                        <h2 style="color: #ED7117; margin-top: 10px;">Ride Available! 🚗</h2>
+                        <h2 style="color: #ED7117; margin-top: 10px;">🚗 Ride Available!</h2>
                     </div>
                     
                     <!-- Greeting -->
@@ -5046,16 +5048,6 @@ def send_ride_available_email_azure(to_email: str, passenger_name: str, ride_dat
                         </a>
                     </div>
                     
-                    <!-- Note -->
-                    <p style="font-size: 13px; color: #6b7280; text-align: center; margin-top: 30px;">
-                        You requested this notification on {ride_data.get('request_date', 'a previous date')}.<br>
-                        Seats fill up quickly - book now to secure your spot!
-                    </p>
-                    
-                    <p style="font-size: 13px; color: #6b7280; text-align: center;">
-                        <a href="drivve://settings/notifications" style="color: #ED7117;">Manage notifications</a>
-                    </p>
-                    
                     <!-- Footer -->
                     <div style="text-align: center; border-top: 1px solid #e5e5e5; padding-top: 20px; margin-top: 30px;">
                         <p style="font-size: 12px; color: #9ca3af;">
@@ -5075,22 +5067,25 @@ def send_ride_available_email_azure(to_email: str, passenger_name: str, ride_dat
                 "to": [{"address": to_email}]
             },
             "content": {
-                "subject": f"🚗 Ride Available: {ride_data.get('origin', 'Ride')} → {ride_data.get('destination', 'Available')}",
+                "subject": f"🚗 Ride Available: {ride_data.get('origin', 'Ride')[:50]} → {ride_data.get('destination', 'Available')[:50]}",
                 "html": html_content
             }
         }
         
+        print(f"📤 Sending email to {to_email}...")
         poller = email_client.begin_send(message)
         result = poller.result()
         print(f"✅ Ride alert email sent to {to_email}")
         return True
         
+    except HttpResponseError as e:
+        print(f"❌ Azure HTTP Error: {e.message}")
+        return False
     except Exception as e:
         print(f"❌ Failed to send ride alert email: {str(e)}")
         import traceback
         traceback.print_exc()
         return False
-
 
 @router.post("/request-ride-alert")
 def request_ride_alert(
@@ -5207,40 +5202,78 @@ def check_and_notify_immediate_match(db: Session, ride_request: RideRequest):
     except Exception as e:
         print(f"Error checking immediate match: {str(e)}")
 
-
 def check_matching_ride_requests(db: Session, ride: Ride):
     """Check for matching ride requests when a new ride is posted"""
     try:
+        print(f"\n🔍 ========== CHECKING MATCHING RIDE REQUESTS ==========")
+        print(f"🚗 New ride posted: {ride.origin} → {ride.destination}")
+        print(f"   Departure: {to_ist(ride.departure_time).strftime('%d %b %Y, %I:%M %p')}")
+        
+        # Normalize the ride locations for better matching
+        ride_from_keyword = ride.origin.split(',')[0].strip().lower()
+        ride_to_keyword = ride.destination.split(',')[0].strip().lower()
+        
+        print(f"   Normalized from: '{ride_from_keyword}'")
+        print(f"   Normalized to: '{ride_to_keyword}'")
+        
         # Find active ride requests that match this route
         matching_requests = db.query(RideRequest).filter(
             RideRequest.status == "active",
-            RideRequest.expires_at > datetime.now(timezone.utc),
-            # Check if route matches (using LIKE for partial matching)
-            or_(
-                func.lower(RideRequest.from_location).contains(func.lower(ride.origin.split(',')[0])),
-                func.lower(ride.origin).contains(func.lower(RideRequest.from_location.split(',')[0]))
-            ),
-            or_(
-                func.lower(RideRequest.to_location).contains(func.lower(ride.destination.split(',')[0])),
-                func.lower(ride.destination).contains(func.lower(RideRequest.to_location.split(',')[0]))
-            )
+            RideRequest.expires_at > datetime.now(timezone.utc)
         ).all()
         
+        print(f"\n📋 Found {len(matching_requests)} active ride requests")
+        
         notified_count = 0
+        matched_requests = []
         
         for req in matching_requests:
+            # Normalize request locations
+            req_from_keyword = req.from_location.split(',')[0].strip().lower()
+            req_to_keyword = req.to_location.split(',')[0].strip().lower()
+            
+            # Check if locations match (either direction or exact)
+            from_match = (ride_from_keyword == req_from_keyword or 
+                         req_from_keyword in ride_from_keyword or 
+                         ride_from_keyword in req_from_keyword)
+            
+            to_match = (ride_to_keyword == req_to_keyword or 
+                       req_to_keyword in ride_to_keyword or 
+                       ride_to_keyword in req_to_keyword)
+            
+            if not (from_match and to_match):
+                continue
+            
+            print(f"\n✅ Found matching request #{req.id}:")
+            print(f"   Request: {req.from_location} → {req.to_location}")
+            print(f"   Request normalized: '{req_from_keyword}' → '{req_to_keyword}'")
+            
             # Check time match if preferred date specified
             if req.preferred_date:
-                time_diff = abs((ride.departure_time - req.preferred_date).total_seconds()) / 3600
-                if time_diff > 6:  # More than 6 hours difference
-                    continue  # Skip if time doesn't match within window
+                time_diff_hours = abs((ride.departure_time - req.preferred_date).total_seconds()) / 3600
+                print(f"   Time difference: {time_diff_hours:.1f} hours")
+                
+                # Allow up to 6 hours difference
+                if time_diff_hours > 6:
+                    print(f"   ⏰ Skipped - time difference too large ({time_diff_hours:.1f}h > 6h)")
+                    continue
             
             # Check seats availability
             total_booked = get_total_booked_seats(db, ride.id)
             available_seats = ride.available_seats - total_booked
             
+            print(f"   Seats needed: {req.seats_needed}, Available: {available_seats}")
+            
             if available_seats < req.seats_needed:
-                continue  # Not enough seats for this requester
+                print(f"   💺 Skipped - not enough seats")
+                continue
+            
+            matched_requests.append(req)
+        
+        # Send notifications for matched requests
+        for req in matched_requests:
+            total_booked = get_total_booked_seats(db, ride.id)
+            available_seats = ride.available_seats - total_booked
             
             # Prepare ride data for email
             ride_data = {
@@ -5252,6 +5285,8 @@ def check_matching_ride_requests(db: Session, ride: Ride):
                 "price_per_seat": ride.price_per_seat,
                 "request_date": req.created_at.strftime("%d %b %Y")
             }
+            
+            print(f"\n📧 Sending email to {req.passenger_email} for request #{req.id}")
             
             # Send email notification using Azure
             success = send_ride_available_email_azure(
@@ -5265,18 +5300,26 @@ def check_matching_ride_requests(db: Session, ride: Ride):
                 req.status = "notified"
                 req.notified_at = datetime.now(timezone.utc)
                 notified_count += 1
+                print(f"   ✅ Email sent successfully")
+            else:
+                print(f"   ❌ Failed to send email")
         
         if notified_count > 0:
             db.commit()
+            print(f"\n✅ ========== SUMMARY ==========")
             print(f"📧 Sent {notified_count} ride alert email notifications")
-            
+        else:
+            print(f"\n📭 No matching requests found for this ride")
+        
+        print(f"🔍 ==================================\n")
+        
+        return notified_count
+        
     except Exception as e:
-        print(f"Error checking matching ride requests: {str(e)}")
+        print(f"❌ Error checking matching ride requests: {str(e)}")
         import traceback
         traceback.print_exc()
-        db.rollback()
-
-
+        return 0
 
 @router.get("/my-ride-requests/{phone_number}")
 def get_user_ride_requests(
