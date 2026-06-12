@@ -10489,7 +10489,40 @@ def send_ride_notification_email(
             </body>
         </html>
         """
-    
+    elif notification_type == "booking_request_driver":
+        subject = f"📝 New Booking Request - {ride_data.get('origin', 'Ride')[:50]} → {ride_data.get('destination', '')[:50]}"
+        html_content = f"""
+        <html>
+            <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                <div style="background: linear-gradient(135deg, #ED7117, #FF8C42); padding: 20px; text-align: center; border-radius: 12px 12px 0 0;">
+                    <h2 style="color: white; margin: 0;">📝 New Booking Request!</h2>
+                </div>
+                <div style="border: 1px solid #e0e0e0; border-top: none; padding: 20px; border-radius: 0 0 12px 12px;">
+                    <p style="font-size: 16px;">Hey <strong>{user_name}</strong>,</p>
+                    <p>A passenger has requested to book your ride!</p>
+                    
+                    <div style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin: 20px 0;">
+                        <p><strong>👤 Passenger Details:</strong></p>
+                        <p>👤 <strong>Name:</strong> {ride_data.get('passenger_name', 'N/A')}</p>
+                        <p>📱 <strong>Phone:</strong> {ride_data.get('passenger_phone', 'N/A')}</p>
+                        <p>💺 <strong>Seats Requested:</strong> {ride_data.get('seats', 'N/A')}</p>
+                        <p>💰 <strong>Total Amount:</strong> ₹{ride_data.get('total_amount', 'N/A')}</p>
+                    </div>
+                    
+                    <div style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin: 20px 0;">
+                        <p><strong>🚗 Your Ride Details:</strong></p>
+                        <p>📍 <strong>From:</strong> {ride_data.get('origin', 'N/A')}</p>
+                        <p>🎯 <strong>To:</strong> {ride_data.get('destination', 'N/A')}</p>
+                        <p>📅 <strong>Departure:</strong> {ride_data.get('departure_time_display', 'N/A')}</p>
+                    </div>
+                    
+                    <p>Please open the app to accept or reject this booking request.</p>
+                    <hr>
+                    <p style="font-size: 12px; color: #666;">Team Drivve</p>
+                </div>
+            </body>
+        </html>
+        """
     elif notification_type == "booking_cancelled":
         subject = f"❌ Booking Cancelled - {ride_data.get('origin', 'Ride')[:50]} → {ride_data.get('destination', '')[:50]}"
         html_content = f"""
@@ -11179,6 +11212,42 @@ def create_ride_booking(data: CreateRideBookingRequest, db: Session = Depends(ge
             send_ride_notification_email(passenger_email, passenger_name, ride_data, "booking_request", booking.id, ride.id)
     except Exception as e:
         print(f"Failed to send booking request email: {str(e)}")
+    try:
+        driver_email = get_user_email(db, driver_phone)
+        print(f"📧 Checking driver email for {driver_phone}: {driver_email}")
+        
+        if driver_email:
+            driver_name = get_user_name(db, driver_phone)
+            passenger_name = get_user_name(db, passenger_phone)
+            
+            driver_ride_data = {
+                "origin": ride.origin,
+                "destination": ride.destination,
+                "departure_time_display": to_ist(ride.departure_time).strftime("%d %b %Y, %I:%M %p"),
+                "seats": data.seats_requested,
+                "total_amount": total_amount,
+                "passenger_name": passenger_name,
+                "passenger_phone": passenger_phone,
+                "booking_id": booking.id,
+                "message": f"{passenger_name} has requested {data.seats_requested} seat(s) for your ride from {ride.origin} to {ride.destination}."
+            }
+            
+            print(f"📧 Attempting to send booking request email to driver: {driver_email}")
+            email_sent = send_ride_notification_email(
+                driver_email,
+                driver_name,
+                driver_ride_data,
+                "booking_request_driver",  # New notification type
+                booking.id,
+                ride.id
+            )
+            print(f"📧 Driver email sent result: {email_sent}")
+        else:
+            print(f"⚠️ No email found for driver: {driver_phone}")
+    except Exception as e:
+        print(f"❌ Failed to send booking request email to driver: {str(e)}")
+        import traceback
+        traceback.print_exc()
 
     return {
         "message": "Ride request sent successfully", 
@@ -11491,7 +11560,30 @@ def cancel_booking(booking_id: int, db: Session = Depends(get_db)):
             send_ride_notification_email(passenger_email, passenger_name, ride_data, "booking_cancelled", booking.id, ride.id)
     except Exception as e:
         print(f"Failed to send booking cancellation email: {str(e)}")
-    
+    try:
+        driver_email = get_user_email(db, ride.phone_number)
+        if driver_email:
+            driver_name = get_user_name(db, ride.phone_number)
+            passenger_name = get_user_name(db, booking.passenger_phone)
+            
+            driver_ride_data = {
+                "origin": ride.origin,
+                "destination": ride.destination,
+                "departure_time_display": to_ist(ride.departure_time).strftime("%d %b %Y, %I:%M %p"),
+                "seats": booking.seats_booked,
+                "passenger_name": passenger_name,
+                "cancellation_reason": "Passenger cancelled their booking"
+            }
+            send_ride_notification_email(
+                driver_email,
+                driver_name,
+                driver_ride_data,
+                "booking_cancelled_driver",  # New type
+                booking.id,
+                ride.id
+            )
+    except Exception as e:
+        print(f"Failed to send booking cancellation email to driver: {str(e)}")
     # Socket events
     emit_to_user(ride.phone_number, "booking-cancelled", {
         "booking_id": booking.id,
