@@ -5545,14 +5545,24 @@ def get_user_email(db: Session, phone_number: str) -> Optional[str]:
     if user and user.email:
         return user.email
     return None
-
 def send_email_notification_azure(to_email: str, subject: str, html_content: str) -> bool:
     """Send email notification using Azure Communication Services"""
-    from azure.communication.email import EmailClient
-    from azure.core.exceptions import HttpResponseError
+    print(f"📧 EMAIL DEBUG: Attempting to send to {to_email}")
+    print(f"📧 EMAIL DEBUG: Subject: {subject}")
+    
+    try:
+        from azure.communication.email import EmailClient
+        from azure.core.exceptions import HttpResponseError
+        print(f"📧 EMAIL DEBUG: Azure packages imported successfully")
+    except ImportError as e:
+        print(f"❌ EMAIL DEBUG: Azure package not installed: {e}")
+        return False
 
     AZURE_EMAIL_CONNECTION_STRING = os.getenv("AZURE_EMAIL_CONNECTION_STRING")
-    AZURE_EMAIL_FROM = "DoNotReply@drivve.in"
+    AZURE_EMAIL_FROM = os.getenv("AZURE_EMAIL_FROM", "DoNotReply@drivve.in")
+    
+    print(f"📧 EMAIL DEBUG: Connection string present: {bool(AZURE_EMAIL_CONNECTION_STRING)}")
+    print(f"📧 EMAIL DEBUG: From email: {AZURE_EMAIL_FROM}")
     
     if not AZURE_EMAIL_CONNECTION_STRING:
         print("❌ Azure Email connection string not configured")
@@ -5563,6 +5573,7 @@ def send_email_notification_azure(to_email: str, subject: str, html_content: str
         return False
     
     try:
+        print(f"📧 EMAIL DEBUG: Creating EmailClient...")
         email_client = EmailClient.from_connection_string(AZURE_EMAIL_CONNECTION_STRING)
         
         message = {
@@ -5576,16 +5587,16 @@ def send_email_notification_azure(to_email: str, subject: str, html_content: str
             }
         }
         
+        print(f"📧 EMAIL DEBUG: Sending email...")
         poller = email_client.begin_send(message)
         result = poller.result()
         print(f"✅ Email sent to {to_email}")
         return True
         
-    except HttpResponseError as e:
-        print(f"❌ Azure HTTP Error: {e.message}")
-        return False
     except Exception as e:
         print(f"❌ Failed to send email: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return False
 
 def send_ride_notification_email(
@@ -8467,7 +8478,6 @@ def get_ride_ratings(ride_id: int, db: Session = Depends(get_db)):
     
     return {"ratings": ratings}
 
-
 @router.put("/update-ride/{ride_id}")
 def update_ride(ride_id: int, data: UpdateRideRequest, db: Session = Depends(get_db)):
     """Update an existing ride"""
@@ -8508,7 +8518,7 @@ def update_ride(ride_id: int, data: UpdateRideRequest, db: Session = Depends(get
     min_departure_time = datetime.now(timezone.utc) + timedelta(minutes=30)
     if departure_time_utc < min_departure_time:
         min_time_ist = to_ist(min_departure_time)
-        raise HTTPException(status_code=400, detail=f"Departure time must be at least 30 minutes from now. Please select a time after {min_time_ist.strftime('%I:%M %p')}.")
+        raise HTTPException(status_code=400, detail=f"Departure time must be at least 30 minutes from now")
     
     if data.available_seats < total_booked_seats:
         raise HTTPException(
@@ -8565,6 +8575,7 @@ def update_ride(ride_id: int, data: UpdateRideRequest, db: Session = Depends(get
                 detail=f"Cannot modify: {', '.join(critical_changes)}. This ride has {len(confirmed_bookings)} confirmed booking(s)."
             )
     
+    # Update ride fields
     ride.origin = data.origin
     ride.destination = data.destination
     ride.departure_time = departure_time_utc
@@ -8593,6 +8604,9 @@ def update_ride(ride_id: int, data: UpdateRideRequest, db: Session = Depends(get
     db.commit()
     db.refresh(ride)
     
+    # ============================================
+    # IN-APP NOTIFICATION TO DRIVER
+    # ============================================
     try:
         origin_short = data.origin.split(",")[0].strip() if data.origin else "start"
         dest_short = data.destination.split(",")[0].strip() if data.destination else "destination"
@@ -8609,8 +8623,77 @@ def update_ride(ride_id: int, data: UpdateRideRequest, db: Session = Depends(get
         )
         db.add(notification)
         db.commit()
+        print(f"✅ In-app notification sent to driver: {normalized_phone}")
     except Exception as e:
         print(f"Error creating update notification: {str(e)}")
+    
+    # ============================================
+    # EMAIL NOTIFICATION TO DRIVER
+    # ============================================
+    try:
+        driver_email = get_user_email(db, normalized_phone)
+        print(f"📧 Driver email check: {driver_email}")
+        
+        if driver_email:
+            driver_name = get_user_email(db, normalized_phone)
+            email_ride_data = {
+                "origin": ride.origin,
+                "destination": ride.destination,
+                "departure_time_display": to_ist(ride.departure_time).strftime("%d %b %Y, %I:%M %p"),
+                "seats_available": ride.available_seats,
+                "price_per_seat": ride.price_per_seat
+            }
+            
+            print(f"📧 Sending ride update email to driver: {driver_email}")
+            email_sent = send_ride_notification_email(
+                driver_email,
+                driver_name,
+                email_ride_data,
+                "ride_updated_driver",
+                None,
+                ride.id
+            )
+            print(f"📧 Email sent result: {email_sent}")
+        else:
+            print(f"⚠️ No email found for driver: {normalized_phone}")
+    except Exception as e:
+        print(f"❌ Failed to send ride update email to driver: {str(e)}")
+        import traceback
+        traceback.print_exc()
+    
+    # ============================================
+    # NOTIFY ALL PASSENGERS ABOUT RIDE UPDATE
+    # ============================================
+    if has_confirmed_bookings:
+        print(f"📧 Notifying {len(confirmed_bookings)} passengers about ride update")
+        for booking in confirmed_bookings:
+            try:
+                passenger_email = get_user_email(db, booking.passenger_phone)
+                print(f"📧 Passenger email check for {booking.passenger_phone}: {passenger_email}")
+                
+                if passenger_email:
+                    passenger_name = get_user_email(db, booking.passenger_phone)
+                    passenger_email_data = {
+                        "origin": ride.origin,
+                        "destination": ride.destination,
+                        "departure_time_display": to_ist(ride.departure_time).strftime("%d %b %Y, %I:%M %p"),
+                        "message": f"The ride from {ride.origin} to {ride.destination} has been updated by the driver. Please check the app for details."
+                    }
+                    
+                    print(f"📧 Sending ride update email to passenger: {passenger_email}")
+                    email_sent = send_ride_notification_email(
+                        passenger_email,
+                        passenger_name,
+                        passenger_email_data,
+                        "ride_updated",
+                        booking.id,
+                        ride.id
+                    )
+                    print(f"📧 Email sent to passenger {passenger_email}: {email_sent}")
+                else:
+                    print(f"⚠️ No email found for passenger: {booking.passenger_phone}")
+            except Exception as e:
+                print(f"❌ Failed to send update email to passenger {booking.passenger_phone}: {str(e)}")
     
     return {
         "message": "Ride updated successfully",
@@ -8618,7 +8701,6 @@ def update_ride(ride_id: int, data: UpdateRideRequest, db: Session = Depends(get
         "remaining_seats": max(0, ride.available_seats - total_booked_seats),
         "total_booked": total_booked_seats
     }
-
 
 @router.put("/booking/{booking_id}/modify-seats")
 def modify_booking_seats(booking_id: int, request: ModifySeatsRequest, db: Session = Depends(get_db)):
@@ -9928,3 +10010,35 @@ def refresh_seat_count(ride_id: int, db: Session = Depends(get_db)):
     except Exception as e:
         print(f"Error in refresh_seat_count: {str(e)}")
         return {"success": False, "message": str(e)}
+@router.get("/test-email/{phone_number}")
+def test_email(phone_number: str, db: Session = Depends(get_db)):
+    """Test email sending"""
+    normalized = normalize_phone(phone_number)
+    user_email = get_user_email(db, normalized)
+    
+    if not user_email:
+        return {
+            "success": False,
+            "message": f"No email found for {normalized}",
+            "user": db.query(User).filter(User.phone_number == normalized).first()
+        }
+    
+    test_data = {
+        "origin": "Test Location",
+        "destination": "Test Destination", 
+        "departure_time_display": datetime.now().strftime("%d %b %Y, %I:%M %p"),
+        "message": "This is a test email from DRIVVE to verify email notifications are working correctly."
+    }
+    
+    result = send_ride_notification_email(
+        user_email,
+        "Test User",
+        test_data,
+        "test"
+    )
+    
+    return {
+        "success": result,
+        "email_sent_to": user_email,
+        "message": "Test email sent successfully" if result else "Failed to send test email"
+    }
