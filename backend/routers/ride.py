@@ -11257,6 +11257,111 @@ def create_ride_booking(data: CreateRideBookingRequest, db: Session = Depends(ge
     }
 
 
+# @router.post("/search-rides")
+# def search_rides(data: SearchRidesRequest, db: Session = Depends(get_db)):
+#     req_time_utc = data.departure_time
+#     if req_time_utc.tzinfo is None:
+#         req_time_utc = req_time_utc.replace(tzinfo=IST).astimezone(timezone.utc)
+#     else:
+#         req_time_utc = req_time_utc.astimezone(timezone.utc)
+
+#     query = db.query(Ride).filter(
+#         Ride.status.in_(["active", "full"]),
+#         Ride.departure_time.between(
+#             req_time_utc - timedelta(minutes=TIME_WINDOW_MINUTES),
+#             req_time_utc + timedelta(minutes=TIME_WINDOW_MINUTES)
+#         )
+#     )
+    
+#     if data.passenger_gender != 'female':
+#         query = query.filter(Ride.women_only == False)
+
+#     all_rides = query.all()
+    
+#     rides = []
+    
+#     for ride in all_rides:
+#         total_booked = get_total_booked_seats(db, ride.id)
+#         remaining_seats = max(0, ride.available_seats - total_booked)
+        
+#         pickup_distance_m = 0
+#         drop_distance_m = 0
+#         pickup_point = None
+#         drop_point = None
+        
+#         if ride.origin_lat and ride.origin_lon and ride.destination_lat and ride.destination_lon:
+#             pickup_distance_m = haversine_m(
+#                 ride.origin_lat, ride.origin_lon,
+#                 data.from_coords[1], data.from_coords[0]
+#             )
+#             drop_distance_m = haversine_m(
+#                 ride.destination_lat, ride.destination_lon,
+#                 data.to_coords[1], data.to_coords[0]
+#             )
+            
+#             if ride.route_coordinates:
+#                 pickup_point = find_nearest_route_vertex(ride.route_coordinates, data.from_coords[0], data.from_coords[1])
+#                 drop_point = find_nearest_route_vertex(ride.route_coordinates, data.to_coords[0], data.to_coords[1])
+        
+#         if pickup_distance_m > SEARCH_RADIUS_M * 2 or drop_distance_m > SEARCH_RADIUS_M * 2:
+#             continue
+        
+#         pickup_score = max(0, 1 - (pickup_distance_m / SEARCH_RADIUS_M))
+#         drop_score = max(0, 1 - (drop_distance_m / SEARCH_RADIUS_M))
+#         time_diff_min = abs((ride.departure_time - req_time_utc).total_seconds()) / 60
+#         time_score = max(0, 1 - (time_diff_min / 60))
+#         match_percentage = round(100 * (0.35 * pickup_score + 0.35 * drop_score + 0.20 * time_score + 0.10))
+        
+#         driver = db.query(User).filter(User.phone_number == ride.phone_number).first()
+#         driver_name = None
+#         if driver:
+#             driver_name = driver.full_name or " ".join(filter(None, [driver.first_name, driver.last_name]))
+#         if not driver_name:
+#             driver_name = f"Driver {ride.phone_number[-4:]}"
+        
+#         vehicle = db.query(Vehicle).filter(Vehicle.id == ride.vehicle_id).first() if ride.vehicle_id else None
+        
+#         departure_time_ist = to_ist(ride.departure_time)
+        
+#         rides.append({
+#             "id": ride.id,
+#             "driverName": driver_name,
+#             "driverUserId": driver.user_id if driver else None,
+#             "phoneNumber": ride.phone_number,
+#             "profilePicture": driver.profile_picture if driver else None,
+#             "driverGender": driver.gender if driver else None,
+#             "womenOnly": ride.women_only,
+#             "vehicle": {
+#                 "id": vehicle.id if vehicle else None,
+#                 "make": vehicle.make if vehicle else None,
+#                 "model": vehicle.model if vehicle else None,
+#                 "color": vehicle.color if vehicle else None,
+#                 "registrationNumber": vehicle.registration_number if vehicle else None,
+#                 "photoUrl": vehicle.photo_url if vehicle else None,
+#             },
+#             "rating": driver.avg_rating if driver and driver.avg_rating else 4.5,
+#             "date": departure_time_ist.strftime("%d %b %Y"),
+#             "time": departure_time_ist.strftime("%I:%M %p"),
+#             "from": ride.origin,
+#             "to": ride.destination,
+#             "suggestedPickup": pickup_point,
+#             "suggestedDrop": drop_point,
+#             "pickupWalkDistanceM": int(pickup_distance_m),
+#             "dropWalkDistanceM": int(drop_distance_m),
+#             "price": ride.price_per_seat,
+#             "matchPercentage": match_percentage,
+#             "seatsAvailable": remaining_seats,
+#             "totalSeats": ride.available_seats,
+#             "bookedSeats": total_booked,
+#             "distanceKm": ride.distance_km,
+#             "durationText": ride.duration_text,
+#             "routeCoordinates": ride.route_coordinates or [],
+#             "status": ride.status,
+#             "isFull": remaining_seats == 0,
+#         })
+    
+#     rides.sort(key=lambda x: (-x["matchPercentage"]))
+#     return {"rides": rides}
 @router.post("/search-rides")
 def search_rides(data: SearchRidesRequest, db: Session = Depends(get_db)):
     req_time_utc = data.departure_time
@@ -11264,13 +11369,29 @@ def search_rides(data: SearchRidesRequest, db: Session = Depends(get_db)):
         req_time_utc = req_time_utc.replace(tzinfo=IST).astimezone(timezone.utc)
     else:
         req_time_utc = req_time_utc.astimezone(timezone.utc)
-
+    
+    # Convert to IST for date comparison
+    req_time_ist = to_ist(req_time_utc)
+    req_date = req_time_ist.date()
+    
+    # Get start and end of the day in UTC
+    start_of_day_ist = datetime.combine(req_date, datetime.min.time())
+    start_of_day_ist = IST.localize(start_of_day_ist)
+    start_of_day_utc = start_of_day_ist.astimezone(timezone.utc)
+    
+    end_of_day_ist = datetime.combine(req_date, datetime.max.time())
+    end_of_day_ist = IST.localize(end_of_day_ist)
+    end_of_day_utc = end_of_day_ist.astimezone(timezone.utc)
+    
+    print(f"📅 Searching for rides on date: {req_date}")
+    print(f"   Start of day (UTC): {start_of_day_utc}")
+    print(f"   End of day (UTC): {end_of_day_utc}")
+    
+    # Query rides for the entire day
     query = db.query(Ride).filter(
         Ride.status.in_(["active", "full"]),
-        Ride.departure_time.between(
-            req_time_utc - timedelta(minutes=TIME_WINDOW_MINUTES),
-            req_time_utc + timedelta(minutes=TIME_WINDOW_MINUTES)
-        )
+        Ride.departure_time >= start_of_day_utc,
+        Ride.departure_time <= end_of_day_utc
     )
     
     if data.passenger_gender != 'female':
@@ -11308,9 +11429,14 @@ def search_rides(data: SearchRidesRequest, db: Session = Depends(get_db)):
         
         pickup_score = max(0, 1 - (pickup_distance_m / SEARCH_RADIUS_M))
         drop_score = max(0, 1 - (drop_distance_m / SEARCH_RADIUS_M))
-        time_diff_min = abs((ride.departure_time - req_time_utc).total_seconds()) / 60
-        time_score = max(0, 1 - (time_diff_min / 60))
-        match_percentage = round(100 * (0.35 * pickup_score + 0.35 * drop_score + 0.20 * time_score + 0.10))
+        
+        # Calculate time difference in hours for scoring (but not filtering)
+        time_diff_hours = abs((ride.departure_time - req_time_utc).total_seconds()) / 3600
+        # Time score decreases as time difference increases (max 6 hours)
+        time_score = max(0, 1 - (time_diff_hours / 6))
+        
+        # Match percentage calculation - time has less weight now
+        match_percentage = round(100 * (0.40 * pickup_score + 0.40 * drop_score + 0.15 * time_score + 0.05))
         
         driver = db.query(User).filter(User.phone_number == ride.phone_number).first()
         driver_name = None
@@ -11358,11 +11484,15 @@ def search_rides(data: SearchRidesRequest, db: Session = Depends(get_db)):
             "routeCoordinates": ride.route_coordinates or [],
             "status": ride.status,
             "isFull": remaining_seats == 0,
+            "timeDifferenceHours": round(time_diff_hours, 1),  # For debugging
         })
     
+    # Sort by match percentage (highest first)
     rides.sort(key=lambda x: (-x["matchPercentage"]))
+    
+    print(f"✅ Found {len(rides)} rides for date {req_date}")
+    
     return {"rides": rides}
-
 
 @router.put("/booking/{booking_id}/accept")
 def accept_booking(booking_id: int, db: Session = Depends(get_db)):
