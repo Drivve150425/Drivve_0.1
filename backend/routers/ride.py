@@ -11535,176 +11535,162 @@ def create_ride_booking(data: CreateRideBookingRequest, db: Session = Depends(ge
 @router.post("/search-rides")
 def search_rides(data: SearchRidesRequest, db: Session = Depends(get_db)):
     try:
-        # Handle departure time
+        print("=" * 50)
+        print("SEARCH RIDES CALLED")
+        
         req_time = data.departure_time
         
-        # If no timezone, assume IST
+        # Handle timezone using pytz
         if req_time.tzinfo is None:
+            # Assume IST if no timezone
             req_time_ist = IST.localize(req_time)
         else:
             req_time_ist = req_time.astimezone(IST)
         
-        # Get just the date in IST
+        # Convert to UTC for database query
+        req_time_utc = req_time_ist.astimezone(timezone.utc)
+        
+        print(f"req_time_ist: {req_time_ist}")
+        print(f"req_time_utc: {req_time_utc}")
+        
+        # Get the date in IST
         req_date = req_time_ist.date()
         
-        print(f"📅 Search request for date: {req_date}")
-        print(f"   Request time IST: {req_time_ist.strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"   From: {data.from_location[:50]}")
-        print(f"   To: {data.to_location[:50]}")
+        # Get start and end of day in IST
+        from datetime import datetime as dt
+        start_of_day_ist = IST.localize(dt.combine(req_date, dt.min.time()))
+        end_of_day_ist = IST.localize(dt.combine(req_date, dt.max.time()))
         
-        # Get start and end of day in UTC (for database query)
-        start_of_day_ist = datetime.combine(req_date, datetime.min.time())
-        start_of_day_ist = IST.localize(start_of_day_ist)
+        # Convert to UTC for database query
         start_of_day_utc = start_of_day_ist.astimezone(timezone.utc)
-        
-        end_of_day_ist = datetime.combine(req_date, datetime.max.time())
-        end_of_day_ist = IST.localize(end_of_day_ist)
         end_of_day_utc = end_of_day_ist.astimezone(timezone.utc)
         
-        # Query rides for the entire day in UTC
+        print(f"Searching for rides between {start_of_day_utc} and {end_of_day_utc}")
+        
+        # Query rides for the entire day
         query = db.query(Ride).filter(
             Ride.status.in_(["active", "full"]),
             Ride.departure_time >= start_of_day_utc,
             Ride.departure_time <= end_of_day_utc
         )
         
-        # Filter women-only rides
         if data.passenger_gender != 'female':
             query = query.filter(Ride.women_only == False)
         
         all_rides = query.all()
-        print(f"📊 Found {len(all_rides)} rides on {req_date}")
+        print(f"Found {len(all_rides)} rides")
         
         rides = []
-        MAX_DISTANCE_M = 5000  # 5km
+        SEARCH_RADIUS_M = 5000  # 5km radius
         
         for ride in all_rides:
-            try:
-                total_booked = get_total_booked_seats(db, ride.id)
-                remaining_seats = max(0, ride.available_seats - total_booked)
+            total_booked = get_total_booked_seats(db, ride.id)
+            remaining_seats = max(0, ride.available_seats - total_booked)
+            
+            pickup_distance_m = 0
+            drop_distance_m = 0
+            pickup_point = None
+            drop_point = None
+            
+            if ride.origin_lat and ride.origin_lon and ride.destination_lat and ride.destination_lon:
+                pickup_distance_m = haversine_m(
+                    ride.origin_lat, ride.origin_lon,
+                    data.from_coords[1], data.from_coords[0]
+                )
+                drop_distance_m = haversine_m(
+                    ride.destination_lat, ride.destination_lon,
+                    data.to_coords[1], data.to_coords[0]
+                )
                 
-                pickup_distance_m = 0
-                drop_distance_m = 0
-                pickup_point = None
-                drop_point = None
+                # Also check reverse direction
+                reverse_pickup = haversine_m(
+                    ride.origin_lat, ride.origin_lon,
+                    data.to_coords[1], data.to_coords[0]
+                )
+                reverse_drop = haversine_m(
+                    ride.destination_lat, ride.destination_lon,
+                    data.from_coords[1], data.from_coords[0]
+                )
                 
-                if ride.origin_lat and ride.origin_lon and ride.destination_lat and ride.destination_lon:
-                    # Calculate distances
-                    pickup_distance_m = haversine_m(
-                        ride.origin_lat, ride.origin_lon,
-                        data.from_coords[1], data.from_coords[0]
-                    )
-                    drop_distance_m = haversine_m(
-                        ride.destination_lat, ride.destination_lon,
-                        data.to_coords[1], data.to_coords[0]
-                    )
-                    
-                    # Also check reverse direction
-                    reverse_pickup = haversine_m(
-                        ride.origin_lat, ride.origin_lon,
-                        data.to_coords[1], data.to_coords[0]
-                    )
-                    reverse_drop = haversine_m(
-                        ride.destination_lat, ride.destination_lon,
-                        data.from_coords[1], data.from_coords[0]
-                    )
-                    
-                    # Use the better match
-                    if (reverse_pickup < pickup_distance_m and reverse_drop < drop_distance_m) or \
-                       (pickup_distance_m > MAX_DISTANCE_M and reverse_pickup <= MAX_DISTANCE_M):
-                        pickup_distance_m = reverse_pickup
-                        drop_distance_m = reverse_drop
-                        print(f"   Using reverse direction for ride {ride.id}")
-                    
-                    if ride.route_coordinates:
-                        pickup_point = find_nearest_route_vertex(ride.route_coordinates, data.from_coords[0], data.from_coords[1])
-                        drop_point = find_nearest_route_vertex(ride.route_coordinates, data.to_coords[0], data.to_coords[1])
-                    
-                    # Skip if too far
-                    if pickup_distance_m > MAX_DISTANCE_M * 2 or drop_distance_m > MAX_DISTANCE_M * 2:
-                        continue
-                else:
-                    # Fallback to text matching
-                    ride_from = ride.origin.split(',')[0].strip().lower()
-                    ride_to = ride.destination.split(',')[0].strip().lower()
-                    req_from = data.from_location.split(',')[0].strip().lower()
-                    req_to = data.to_location.split(',')[0].strip().lower()
-                    
-                    from_match = (ride_from == req_from or ride_from in req_from or req_from in ride_from)
-                    to_match = (ride_to == req_to or ride_to in req_to or req_to in ride_to)
-                    
-                    if not (from_match and to_match):
-                        continue
+                # Use the better match (closer)
+                if reverse_pickup < pickup_distance_m and reverse_drop < drop_distance_m:
+                    pickup_distance_m = reverse_pickup
+                    drop_distance_m = reverse_drop
+                    print(f"   Using reverse direction for ride {ride.id}")
                 
-                # Calculate scores
-                pickup_score = max(0, 1 - (pickup_distance_m / MAX_DISTANCE_M))
-                drop_score = max(0, 1 - (drop_distance_m / MAX_DISTANCE_M))
-                
-                # Time difference in hours (using UTC for calculation)
-                time_diff_hours = abs((ride.departure_time - req_time).total_seconds()) / 3600
-                time_score = max(0, 1 - (time_diff_hours / 12))
-                
-                match_percentage = round(100 * (0.40 * pickup_score + 0.40 * drop_score + 0.15 * time_score + 0.05))
-                
-                # Get driver info
-                driver = db.query(User).filter(User.phone_number == ride.phone_number).first()
-                driver_name = None
-                if driver:
-                    driver_name = driver.full_name or " ".join(filter(None, [driver.first_name, driver.last_name]))
-                if not driver_name:
-                    driver_name = f"Driver {ride.phone_number[-4:]}"
-                
-                vehicle = db.query(Vehicle).filter(Vehicle.id == ride.vehicle_id).first() if ride.vehicle_id else None
-                
-                # Convert to IST for display
-                departure_time_ist = to_ist(ride.departure_time)
-                
-                rides.append({
-                    "id": ride.id,
-                    "driverName": driver_name,
-                    "driverUserId": driver.user_id if driver else None,
-                    "phoneNumber": ride.phone_number,
-                    "profilePicture": driver.profile_picture if driver else None,
-                    "driverGender": driver.gender if driver else None,
-                    "womenOnly": ride.women_only,
-                    "vehicle": {
-                        "id": vehicle.id if vehicle else None,
-                        "make": vehicle.make if vehicle else None,
-                        "model": vehicle.model if vehicle else None,
-                        "color": vehicle.color if vehicle else None,
-                        "registrationNumber": vehicle.registration_number if vehicle else None,
-                        "photoUrl": vehicle.photo_url if vehicle else None,
-                    },
-                    "rating": driver.avg_rating if driver and driver.avg_rating else 4.5,
-                    "date": departure_time_ist.strftime("%d %b %Y"),
-                    "time": departure_time_ist.strftime("%I:%M %p"),
-                    "from": ride.origin,
-                    "to": ride.destination,
-                    "suggestedPickup": pickup_point,
-                    "suggestedDrop": drop_point,
-                    "pickupWalkDistanceM": int(pickup_distance_m),
-                    "dropWalkDistanceM": int(drop_distance_m),
-                    "price": ride.price_per_seat,
-                    "matchPercentage": match_percentage,
-                    "seatsAvailable": remaining_seats,
-                    "totalSeats": ride.available_seats,
-                    "bookedSeats": total_booked,
-                    "distanceKm": ride.distance_km,
-                    "durationText": ride.duration_text,
-                    "routeCoordinates": ride.route_coordinates or [],
-                    "status": ride.status,
-                    "isFull": remaining_seats == 0,
-                })
-            except Exception as e:
-                print(f"   ⚠️ Error processing ride {ride.id}: {str(e)}")
+                if ride.route_coordinates:
+                    pickup_point = find_nearest_route_vertex(ride.route_coordinates, data.from_coords[0], data.from_coords[1])
+                    drop_point = find_nearest_route_vertex(ride.route_coordinates, data.to_coords[0], data.to_coords[1])
+            
+            # Skip if too far
+            if pickup_distance_m > SEARCH_RADIUS_M * 2 or drop_distance_m > SEARCH_RADIUS_M * 2:
                 continue
+            
+            # Calculate scores
+            pickup_score = max(0, 1 - (pickup_distance_m / SEARCH_RADIUS_M))
+            drop_score = max(0, 1 - (drop_distance_m / SEARCH_RADIUS_M))
+            
+            # Time difference in hours
+            time_diff_hours = abs((ride.departure_time - req_time_utc).total_seconds()) / 3600
+            time_score = max(0, 1 - (time_diff_hours / 12))  # 12-hour window
+            
+            match_percentage = round(100 * (0.40 * pickup_score + 0.40 * drop_score + 0.15 * time_score + 0.05))
+            
+            driver = db.query(User).filter(User.phone_number == ride.phone_number).first()
+            driver_name = None
+            if driver:
+                driver_name = driver.full_name or " ".join(filter(None, [driver.first_name, driver.last_name]))
+            if not driver_name:
+                driver_name = f"Driver {ride.phone_number[-4:]}"
+            
+            vehicle = db.query(Vehicle).filter(Vehicle.id == ride.vehicle_id).first() if ride.vehicle_id else None
+            
+            # Convert to IST for display
+            departure_time_ist = to_ist(ride.departure_time)
+            
+            rides.append({
+                "id": ride.id,
+                "driverName": driver_name,
+                "driverUserId": driver.user_id if driver else None,
+                "phoneNumber": ride.phone_number,
+                "profilePicture": driver.profile_picture if driver else None,
+                "driverGender": driver.gender if driver else None,
+                "womenOnly": ride.women_only,
+                "vehicle": {
+                    "id": vehicle.id if vehicle else None,
+                    "make": vehicle.make if vehicle else None,
+                    "model": vehicle.model if vehicle else None,
+                    "color": vehicle.color if vehicle else None,
+                    "registrationNumber": vehicle.registration_number if vehicle else None,
+                    "photoUrl": vehicle.photo_url if vehicle else None,
+                },
+                "rating": driver.avg_rating if driver and driver.avg_rating else 4.5,
+                "date": departure_time_ist.strftime("%d %b %Y"),
+                "time": departure_time_ist.strftime("%I:%M %p"),
+                "from": ride.origin,
+                "to": ride.destination,
+                "suggestedPickup": pickup_point,
+                "suggestedDrop": drop_point,
+                "pickupWalkDistanceM": int(pickup_distance_m),
+                "dropWalkDistanceM": int(drop_distance_m),
+                "price": ride.price_per_seat,
+                "matchPercentage": match_percentage,
+                "seatsAvailable": remaining_seats,
+                "totalSeats": ride.available_seats,
+                "bookedSeats": total_booked,
+                "distanceKm": ride.distance_km,
+                "durationText": ride.duration_text,
+                "routeCoordinates": ride.route_coordinates or [],
+                "status": ride.status,
+                "isFull": remaining_seats == 0,
+            })
         
         rides.sort(key=lambda x: (-x["matchPercentage"]))
-        print(f"✅ Returning {len(rides)} rides")
+        print(f"Returning {len(rides)} rides")
         return {"rides": rides}
         
     except Exception as e:
-        print(f"❌ Error in search_rides: {str(e)}")
+        print(f"ERROR in search_rides: {str(e)}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
