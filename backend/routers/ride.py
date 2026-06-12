@@ -6135,6 +6135,43 @@ def post_ride(data: CreateRideRequest, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(ride)
     
+    # ============================================
+    # SEND EMAIL NOTIFICATION TO DRIVER
+    # ============================================
+    try:
+        driver_email = get_user_email(db, normalized_phone)
+        print(f"📧 Driver email check for {normalized_phone}: {driver_email}")
+        
+        if driver_email:
+            driver_name = get_user_email(db, normalized_phone)
+            
+            email_ride_data = {
+                "origin": ride.origin,
+                "destination": ride.destination,
+                "departure_time_display": to_ist(ride.departure_time).strftime("%d %b %Y, %I:%M %p"),
+                "seats_available": ride.available_seats,
+                "price_per_seat": ride.price_per_seat,
+                "message": f"Your ride from {ride.origin} to {ride.destination} has been posted successfully!"
+            }
+            
+            print(f"📧 Attempting to send ride posted email to: {driver_email}")
+            email_sent = send_ride_notification_email(
+                driver_email,
+                driver_name,
+                email_ride_data,
+                "ride_posted_driver",
+                None,
+                ride.id
+            )
+            print(f"📧 Email sent result: {email_sent}")
+        else:
+            print(f"⚠️ No email found for driver: {normalized_phone}")
+    except Exception as e:
+        print(f"❌ Failed to send ride posted email: {str(e)}")
+        import traceback
+        traceback.print_exc()
+    
+    # Call matching function to notify passengers with saved requests
     if ride.id:
         check_matching_ride_requests(db, ride)
     
@@ -6143,7 +6180,6 @@ def post_ride(data: CreateRideRequest, db: Session = Depends(get_db)):
         "ride_id": ride.id,
         "custom_ride_id": ride.custom_ride_id
     }
-
 
 @router.post("/ride-bookings")
 def create_ride_booking(data: CreateRideBookingRequest, db: Session = Depends(get_db)):
