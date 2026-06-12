@@ -10911,30 +10911,38 @@ def check_overlapping_rides_for_driver(db: Session, phone_number: str, departure
 # ============================================
 # RIDE ENDPOINTS
 # ============================================
-
 @router.post("/post-ride")
 def post_ride(data: CreateRideRequest, db: Session = Depends(get_db)):
     normalized_phone = normalize_phone(data.phone_number)
     duration_minutes = parse_duration_to_minutes(data.duration_text)
     
-    # Convert departure time to UTC for storage
+    # ============================================
+    # WORK ENTIRELY IN IST - NO UTC CONVERSION
+    # ============================================
     departure_time = data.departure_time
     
+    # If the time has no timezone, assume it's IST
     if departure_time.tzinfo is None:
         ist = timezone(timedelta(hours=5, minutes=30))
         departure_time_ist = ist.localize(departure_time)
-        departure_time_utc = departure_time_ist.astimezone(timezone.utc)
     else:
-        departure_time_utc = departure_time.astimezone(timezone.utc)
+        # If it has a timezone, convert to IST
+        departure_time_ist = departure_time.astimezone(IST)
+    
+    # Expected end time in IST
+    expected_end_time_ist = departure_time_ist + timedelta(minutes=duration_minutes)
     
     print(f"📅 Received departure time: {departure_time}")
-    print(f"📅 Converted to UTC: {departure_time_utc}")
-    print(f"📅 Back to IST: {to_ist(departure_time_utc)}")
+    print(f"📅 Using IST: {departure_time_ist.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+    print(f"📅 Expected end time (IST): {expected_end_time_ist.strftime('%Y-%m-%d %H:%M:%S %Z')}")
     
-    expected_end_time = departure_time_utc + timedelta(minutes=duration_minutes)
+    # Generate unique custom ride ID
     custom_ride_id = generate_unique_ride_id(db)
     
-    # Check for passenger overlap
+    # Check for passenger overlap (convert to UTC for comparison or keep in IST)
+    # For overlap checks, convert to UTC temporarily
+    departure_time_utc = departure_time_ist.astimezone(timezone.utc)
+    
     passenger_overlap = check_overlapping_bookings_for_passenger(db, normalized_phone, departure_time_utc, duration_minutes)
     if passenger_overlap:
         raise HTTPException(
@@ -10965,21 +10973,26 @@ def post_ride(data: CreateRideRequest, db: Session = Depends(get_db)):
     if distance > MAX_DISTANCE_KM:
         raise HTTPException(status_code=400, detail=f"Distance too far ({distance:.1f} km)")
     
-    # Validate time
-    min_departure_time = datetime.now(timezone.utc) + timedelta(minutes=30)
-    if departure_time_utc < min_departure_time:
-        min_time_ist = to_ist(min_departure_time)
-        raise HTTPException(status_code=400, detail=f"Departure time must be at least 30 minutes from now")
+    # Validate time - minimum 30 minutes from NOW in IST
+    now_ist = datetime.now(IST)
+    min_departure_time_ist = now_ist + timedelta(minutes=30)
+    
+    if departure_time_ist < min_departure_time_ist:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Departure time must be at least 30 minutes from now. Current time: {now_ist.strftime('%I:%M %p')}, Minimum departure: {min_departure_time_ist.strftime('%I:%M %p')}"
+        )
     
     women_only = data.preferences.get('womenOnly', False) if data.preferences else data.women_only
     
+    # STORE IN IST (NOT UTC)
     ride = Ride(
         custom_ride_id=custom_ride_id,
         phone_number=normalized_phone,
         origin=data.origin,
         destination=data.destination,
-        departure_time=departure_time_utc,
-        expected_end_time=expected_end_time,
+        departure_time=departure_time_ist,  # Store in IST
+        expected_end_time=expected_end_time_ist,  # Store in IST
         duration_minutes=duration_minutes,
         available_seats=data.available_seats,
         price_per_seat=data.price_per_seat,
@@ -11028,7 +11041,7 @@ def post_ride(data: CreateRideRequest, db: Session = Depends(get_db)):
             email_ride_data = {
                 "origin": ride.origin,
                 "destination": ride.destination,
-                "departure_time_display": to_ist(ride.departure_time).strftime("%d %b %Y, %I:%M %p"),
+                "departure_time_display": ride.departure_time.strftime("%d %b %Y, %I:%M %p"),  # Already in IST
                 "seats_available": ride.available_seats,
                 "price_per_seat": ride.price_per_seat,
                 "message": f"Your ride from {ride.origin} to {ride.destination} has been posted successfully!"
@@ -11060,14 +11073,171 @@ def post_ride(data: CreateRideRequest, db: Session = Depends(get_db)):
         "ride_id": ride.id,
         "origin": ride.origin,
         "destination": ride.destination,
-        "departure_time": ride.departure_time.isoformat()
+        "departure_time": ride.departure_time.isoformat()  # Will be in IST with +05:30 offset
     })
     
     return {
         "message": "Ride posted successfully", 
         "ride_id": ride.id,
-        "custom_ride_id": ride.custom_ride_id
+        "custom_ride_id": ride.custom_ride_id,
+        "departure_time_ist": ride.departure_time.strftime("%Y-%m-%d %H:%M:%S %Z")
     }
+# @router.post("/post-ride")
+# def post_ride(data: CreateRideRequest, db: Session = Depends(get_db)):
+#     normalized_phone = normalize_phone(data.phone_number)
+#     duration_minutes = parse_duration_to_minutes(data.duration_text)
+    
+#     # Convert departure time to UTC for storage
+#     departure_time = data.departure_time
+    
+#     if departure_time.tzinfo is None:
+#         ist = timezone(timedelta(hours=5, minutes=30))
+#         departure_time_ist = ist.localize(departure_time)
+#         departure_time_utc = departure_time_ist.astimezone(timezone.utc)
+#     else:
+#         departure_time_utc = departure_time.astimezone(timezone.utc)
+    
+#     print(f"📅 Received departure time: {departure_time}")
+#     print(f"📅 Converted to UTC: {departure_time_utc}")
+#     print(f"📅 Back to IST: {to_ist(departure_time_utc)}")
+    
+#     expected_end_time = departure_time_utc + timedelta(minutes=duration_minutes)
+#     custom_ride_id = generate_unique_ride_id(db)
+    
+#     # Check for passenger overlap
+#     passenger_overlap = check_overlapping_bookings_for_passenger(db, normalized_phone, departure_time_utc, duration_minutes)
+#     if passenger_overlap:
+#         raise HTTPException(
+#             status_code=409,
+#             detail=f"You have a confirmed booking as a passenger from {passenger_overlap['origin']} to {passenger_overlap['destination']} at {to_ist(passenger_overlap['departure_time']).strftime('%I:%M %p')} that overlaps with this ride."
+#         )
+    
+#     # Check for driver overlapping rides
+#     overlapping = check_overlapping_rides_for_driver(db, normalized_phone, departure_time_utc, duration_minutes)
+#     if overlapping:
+#         end_time_ist = to_ist(overlapping["expected_end_time"])
+#         raise HTTPException(
+#             status_code=409,
+#             detail=f"You already have an active ride from {overlapping['origin']} to {overlapping['destination']} at {to_ist(overlapping['departure_time']).strftime('%I:%M %p')}. Please wait until {end_time_ist.strftime('%I:%M %p')} to post another ride."
+#         )
+    
+#     # Validate distance
+#     distance = calculate_distance_km(
+#         data.origin_coords[1], data.origin_coords[0],
+#         data.destination_coords[1], data.destination_coords[0]
+#     )
+    
+#     MIN_DISTANCE_KM = 3
+#     MAX_DISTANCE_KM = 300
+    
+#     if distance < MIN_DISTANCE_KM:
+#         raise HTTPException(status_code=400, detail=f"Pickup and destination are too close ({distance:.1f} km)")
+#     if distance > MAX_DISTANCE_KM:
+#         raise HTTPException(status_code=400, detail=f"Distance too far ({distance:.1f} km)")
+    
+#     # Validate time
+#     min_departure_time = datetime.now(timezone.utc) + timedelta(minutes=30)
+#     if departure_time_utc < min_departure_time:
+#         min_time_ist = to_ist(min_departure_time)
+#         raise HTTPException(status_code=400, detail=f"Departure time must be at least 30 minutes from now")
+    
+#     women_only = data.preferences.get('womenOnly', False) if data.preferences else data.women_only
+    
+#     ride = Ride(
+#         custom_ride_id=custom_ride_id,
+#         phone_number=normalized_phone,
+#         origin=data.origin,
+#         destination=data.destination,
+#         departure_time=departure_time_utc,
+#         expected_end_time=expected_end_time,
+#         duration_minutes=duration_minutes,
+#         available_seats=data.available_seats,
+#         price_per_seat=data.price_per_seat,
+#         distance_km=data.distance_km,
+#         duration_text=data.duration_text,
+#         total_estimated_price=data.total_estimated_price,
+#         preferences=data.preferences,
+#         origin_lon=data.origin_coords[0],
+#         origin_lat=data.origin_coords[1],
+#         destination_lon=data.destination_coords[0],
+#         destination_lat=data.destination_coords[1],
+#         route_coordinates=data.route_coordinates,
+#         vehicle_id=data.vehicle_id,
+#         women_only=women_only,
+#         status="active",
+#     )
+
+#     db.add(ride)
+#     db.commit()
+#     db.refresh(ride)
+    
+#     # ============================================
+#     # IN-APP NOTIFICATION TO DRIVER
+#     # ============================================
+#     origin_short = data.origin.split(",")[0].strip() if data.origin else "start"
+#     dest_short = data.destination.split(",")[0].strip() if data.destination else "destination"
+    
+#     send_in_app_notification(
+#         db, normalized_phone,
+#         title="Ride Posted Successfully! 🚗",
+#         message=f"Your ride from {origin_short} to {dest_short} has been posted. You'll receive notifications when passengers book.",
+#         action_type="ride",
+#         action_value=str(ride.id)
+#     )
+    
+#     # ============================================
+#     # SEND EMAIL NOTIFICATION TO DRIVER
+#     # ============================================
+#     try:
+#         driver_email = get_user_email(db, normalized_phone)
+#         print(f"📧 Driver email check for {normalized_phone}: {driver_email}")
+        
+#         if driver_email:
+#             driver_name = get_user_name(db, normalized_phone)
+            
+#             email_ride_data = {
+#                 "origin": ride.origin,
+#                 "destination": ride.destination,
+#                 "departure_time_display": to_ist(ride.departure_time).strftime("%d %b %Y, %I:%M %p"),
+#                 "seats_available": ride.available_seats,
+#                 "price_per_seat": ride.price_per_seat,
+#                 "message": f"Your ride from {ride.origin} to {ride.destination} has been posted successfully!"
+#             }
+            
+#             print(f"📧 Attempting to send ride posted email to: {driver_email}")
+#             email_sent = send_ride_notification_email(
+#                 driver_email,
+#                 driver_name,
+#                 email_ride_data,
+#                 "ride_posted_driver",
+#                 None,
+#                 ride.id
+#             )
+#             print(f"📧 Email sent result: {email_sent}")
+#         else:
+#             print(f"⚠️ No email found for driver: {normalized_phone}")
+#     except Exception as e:
+#         print(f"❌ Failed to send ride posted email: {str(e)}")
+#         import traceback
+#         traceback.print_exc()
+    
+#     # Call matching function to notify passengers with saved requests
+#     if ride.id:
+#         check_matching_ride_requests(db, ride)
+    
+#     # Socket event for real-time updates
+#     emit_to_ride(ride.id, "new-ride-posted", {
+#         "ride_id": ride.id,
+#         "origin": ride.origin,
+#         "destination": ride.destination,
+#         "departure_time": ride.departure_time.isoformat()
+#     })
+    
+#     return {
+#         "message": "Ride posted successfully", 
+#         "ride_id": ride.id,
+#         "custom_ride_id": ride.custom_ride_id
+#     }
 
 @router.post("/ride-bookings")
 def create_ride_booking(data: CreateRideBookingRequest, db: Session = Depends(get_db)):
@@ -14371,23 +14541,28 @@ def send_ride_available_email_azure(to_email: str, passenger_name: str, ride_dat
         import traceback
         traceback.print_exc()
         return False
-
-
 def check_matching_ride_requests(db: Session, ride: Ride):
-    """Check for matching ride requests when a new ride is posted"""
+    """Check for matching ride requests when a new ride is posted - WITH DISTANCE-BASED MATCHING"""
     try:
         print(f"\n🔍 ========== CHECKING MATCHING RIDE REQUESTS ==========")
         
         ride_time_ist = to_ist(ride.departure_time)
+        ride_date = ride_time_ist.date()
         
         print(f"🚗 New ride posted:")
         print(f"   From: {ride.origin[:50]}")
         print(f"   To: {ride.destination[:50]}")
         print(f"   Departure (IST): {ride_time_ist.strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"   Departure (IST display): {ride_time_ist.strftime('%d %b %Y, %I:%M %p')}")
+        print(f"   Date: {ride_date}")
         
-        ride_from = ride.origin.split(',')[0].strip().lower()
-        ride_to = ride.destination.split(',')[0].strip().lower()
+        # Get ride coordinates
+        ride_origin_lat = ride.origin_lat
+        ride_origin_lon = ride.origin_lon
+        ride_dest_lat = ride.destination_lat
+        ride_dest_lon = ride.destination_lon
+        
+        # Maximum allowed distance in meters (5 km = 5000 meters)
+        MAX_DISTANCE_M = 5000
         
         now_utc = datetime.now(timezone.utc)
         active_requests = db.query(RideRequest).filter(
@@ -14402,46 +14577,115 @@ def check_matching_ride_requests(db: Session, ride: Ride):
         for req in active_requests:
             print(f"\n--- Checking Request #{req.id} ---")
             
-            req_from = req.from_location.split(',')[0].strip().lower()
-            req_to = req.to_location.split(',')[0].strip().lower()
-            
-            from_match = (ride_from == req_from or ride_from in req_from or req_from in ride_from)
-            to_match = (ride_to == req_to or ride_to in req_to or req_to in ride_to)
-            
-            if not (from_match and to_match):
-                print(f"   ❌ Location mismatch")
+            if not req.preferred_date:
+                print(f"   ⏰ No preferred date - skipping")
                 continue
             
-            print(f"   ✅ Location matched")
+            req_time_ist = to_ist(req.preferred_date)
+            req_date = req_time_ist.date()
             
-            time_match = True
-            if req.preferred_date:
-                req_time_ist = to_ist(req.preferred_date)
+            if req_date != ride_date:
+                print(f"   ❌ Date mismatch: Request on {req_date}, Ride on {ride_date}")
+                continue
+            
+            print(f"   ✅ Same date match: {req_date}")
+            
+            # ============================================
+            # DISTANCE-BASED MATCHING (4-5 KM radius)
+            # ============================================
+            
+            # Get request coordinates
+            req_origin_lat = req.from_lat
+            req_origin_lon = req.from_lon
+            req_dest_lat = req.to_lat
+            req_dest_lon = req.to_lon
+            
+            # Skip if coordinates are missing
+            if not all([ride_origin_lat, ride_origin_lon, ride_dest_lat, ride_dest_lon,
+                       req_origin_lat, req_origin_lon, req_dest_lat, req_dest_lon]):
+                print(f"   ⚠️ Missing coordinates - cannot calculate distance")
+                # Fall back to text matching
+                ride_from = ride.origin.split(',')[0].strip().lower()
+                ride_to = ride.destination.split(',')[0].strip().lower()
+                req_from = req.from_location.split(',')[0].strip().lower()
+                req_to = req.to_location.split(',')[0].strip().lower()
                 
-                time_diff = abs((ride_time_ist - req_time_ist).total_seconds() / 3600)
+                from_match = (ride_from == req_from or ride_from in req_from or req_from in ride_from)
+                to_match = (ride_to == req_to or ride_to in req_to or req_to in ride_to)
                 
-                if time_diff > 6:
-                    print(f"   ❌ Time difference too large (>6 hours)")
-                    time_match = False
-                else:
-                    print(f"   ✅ Time within 6-hour window")
+                if not (from_match and to_match):
+                    print(f"   ❌ Text match failed")
+                    continue
             else:
-                print(f"   ⏰ No preferred time specified")
+                # Calculate distances
+                pickup_distance = haversine_m(
+                    ride_origin_lat, ride_origin_lon,
+                    req_origin_lat, req_origin_lon
+                )
+                
+                drop_distance = haversine_m(
+                    ride_dest_lat, ride_dest_lon,
+                    req_dest_lat, req_dest_lon
+                )
+                
+                # Also check reverse direction (ride pickup near request drop, ride drop near request pickup)
+                reverse_pickup_distance = haversine_m(
+                    ride_origin_lat, ride_origin_lon,
+                    req_dest_lat, req_dest_lon
+                )
+                
+                reverse_drop_distance = haversine_m(
+                    ride_dest_lat, ride_dest_lon,
+                    req_origin_lat, req_origin_lon
+                )
+                
+                print(f"   📍 Distance calculations:")
+                print(f"      Pickup distance: {pickup_distance:.0f}m")
+                print(f"      Drop distance: {drop_distance:.0f}m")
+                print(f"      Reverse pickup: {reverse_pickup_distance:.0f}m")
+                print(f"      Reverse drop: {reverse_drop_distance:.0f}m")
+                
+                # Check if either direction matches within 5km radius
+                same_direction_match = (pickup_distance <= MAX_DISTANCE_M and drop_distance <= MAX_DISTANCE_M)
+                reverse_direction_match = (reverse_pickup_distance <= MAX_DISTANCE_M and reverse_drop_distance <= MAX_DISTANCE_M)
+                
+                # Also allow partial matches (e.g., pickup close but drop a bit farther, but within extended range)
+                extended_range_m = MAX_DISTANCE_M * 2  # 10 km
+                partial_match = (
+                    (pickup_distance <= MAX_DISTANCE_M and drop_distance <= extended_range_m) or
+                    (drop_distance <= MAX_DISTANCE_M and pickup_distance <= extended_range_m) or
+                    (reverse_pickup_distance <= MAX_DISTANCE_M and reverse_drop_distance <= extended_range_m) or
+                    (reverse_drop_distance <= MAX_DISTANCE_M and reverse_pickup_distance <= extended_range_m)
+                )
+                
+                if same_direction_match:
+                    print(f"   ✅ SAME DIRECTION MATCH! (within {MAX_DISTANCE_M/1000:.1f}km)")
+                elif reverse_direction_match:
+                    print(f"   ✅ REVERSE DIRECTION MATCH! (within {MAX_DISTANCE_M/1000:.1f}km)")
+                elif partial_match:
+                    print(f"   ✅ PARTIAL MATCH! (within {extended_range_m/1000:.1f}km range)")
+                else:
+                    print(f"   ❌ Distance too far:")
+                    print(f"      Same direction: pickup={pickup_distance:.0f}m, drop={drop_distance:.0f}m")
+                    print(f"      Reverse direction: pickup={reverse_pickup_distance:.0f}m, drop={reverse_drop_distance:.0f}m")
+                    continue
             
-            if not time_match:
-                continue
+            print(f"   ✅ Location matched!")
             
+            # Check seats availability
             total_booked = get_total_booked_seats(db, ride.id)
             available_seats = ride.available_seats - total_booked
             
             if available_seats < req.seats_needed:
-                print(f"   ❌ Not enough seats available")
+                print(f"   ❌ Not enough seats: Need {req.seats_needed}, Available {available_seats}")
                 continue
             
+            # Check email
             if not req.passenger_email or '@' not in req.passenger_email:
-                print(f"   ❌ No valid email address for this request")
+                print(f"   ❌ No valid email address")
                 continue
             
+            # Prepare ride data for email (times in IST)
             ride_data = {
                 "ride_id": ride.id,
                 "origin": ride.origin,
@@ -14449,13 +14693,19 @@ def check_matching_ride_requests(db: Session, ride: Ride):
                 "departure_time_display": ride_time_ist.strftime("%d %b %Y, %I:%M %p"),
                 "seats_available": available_seats,
                 "price_per_seat": ride.price_per_seat,
-                "request_date": to_ist(req.created_at).strftime("%d %b %Y")
+                "request_date": to_ist(req.created_at).strftime("%d %b %Y"),
+                "pickup_distance_m": int(pickup_distance) if 'pickup_distance' in locals() else None,
+                "drop_distance_m": int(drop_distance) if 'drop_distance' in locals() else None
             }
             
             print(f"\n📧 SENDING EMAIL NOTIFICATION:")
             print(f"   To: {req.passenger_email}")
             print(f"   Name: {req.passenger_name or 'User'}")
+            if 'pickup_distance' in locals():
+                print(f"   Pickup distance: {pickup_distance:.0f}m")
+                print(f"   Drop distance: {drop_distance:.0f}m")
             
+            # Send email
             email_sent = send_ride_available_email_azure(
                 req.passenger_email,
                 req.passenger_name or "there",
@@ -14473,6 +14723,8 @@ def check_matching_ride_requests(db: Session, ride: Ride):
         if notified_count > 0:
             db.commit()
             print(f"\n✅ Total notifications sent: {notified_count}")
+        else:
+            print(f"\n📭 No matching requests found for date {ride_date}")
         
         print(f"🔍 ==================================\n")
         return notified_count
@@ -14482,7 +14734,6 @@ def check_matching_ride_requests(db: Session, ride: Ride):
         import traceback
         traceback.print_exc()
         return 0
-
 
 @router.post("/request-ride-alert")
 def request_ride_alert(
