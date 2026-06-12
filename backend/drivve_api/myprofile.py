@@ -580,11 +580,25 @@ def safe_bool(obj, attr):
 
 @router.get("/api/v1/users/profile")
 async def get_user_profile(phone_number: str, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.phone_number == phone_number).first()
+    # user = db.query(User).filter(User.phone_number == phone_number).first()
 
+    # if not user:
+    #     return {"success": False, "message": "User not found"}
+    phone_formats = [
+        phone_number,                           # +917428212310
+        phone_number.replace('+', ''),          # 917428212310
+        phone_number[-10:] if len(phone_number) > 10 else phone_number,  # 7428212310
+    ]
+    
+    user = None
+    for fmt in phone_formats:
+        user = db.query(User).filter(User.phone_number == fmt).first()
+        if user:
+            print(f"✅ Found user with format: {fmt}")
+            break
+    
     if not user:
         return {"success": False, "message": "User not found"}
-
     return {
         "success": True,
         "user": {
