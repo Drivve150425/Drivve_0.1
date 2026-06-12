@@ -5155,38 +5155,58 @@ def request_ride_alert(
         print(f"Error creating ride request alert: {str(e)}")
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
-
-
 def check_and_notify_immediate_match(db: Session, ride_request: RideRequest):
     """Check if there's already a matching ride for this request"""
     try:
-        now = datetime.now(timezone.utc)
+        now_utc = datetime.now(timezone.utc)
         
         # Find matching active ride
         matching_ride = db.query(Ride).filter(
             Ride.status.in_(["active", "full"]),
-            Ride.departure_time > now,
+            Ride.departure_time > now_utc,
             func.lower(Ride.origin).contains(func.lower(ride_request.from_location.split(',')[0])),
             func.lower(Ride.destination).contains(func.lower(ride_request.to_location.split(',')[0]))
-        ).first()
+        ).all()
         
-        if matching_ride:
+        for ride in matching_ride:
             # Check time match if preferred date specified
             if ride_request.preferred_date:
-                time_diff = abs((matching_ride.departure_time - ride_request.preferred_date).total_seconds()) / 3600
-                if time_diff > 6:  # More than 6 hours difference
-                    return  # Skip if time doesn't match
+                # Convert both to IST for comparison
+                ride_time_ist = to_ist(ride.departure_time)
+                
+                if ride_request.preferred_date.tzinfo is None:
+                    req_time_ist = ride_request.preferred_date.replace(tzinfo=IST)
+                else:
+                    req_time_ist = ride_request.preferred_date.astimezone(IST)
+                
+                time_diff_hours = abs((ride_time_ist - req_time_ist).total_seconds()) / 3600
+                
+                print(f"   Checking ride {ride.id}: Time diff = {time_diff_hours:.2f} hours")
+                
+                if time_diff_hours > 6:
+                    print(f"   ⏰ Skipped - time difference too large")
+                    continue
+            
+            # Check seats
+            total_booked = get_total_booked_seats(db, ride.id)
+            available_seats = ride.available_seats - total_booked
+            
+            if available_seats < ride_request.seats_needed:
+                print(f"   💺 Not enough seats: {available_seats} available, need {ride_request.seats_needed}")
+                continue
             
             # Send immediate notification
             ride_data = {
-                "ride_id": matching_ride.id,
-                "origin": matching_ride.origin,
-                "destination": matching_ride.destination,
-                "departure_time_display": to_ist(matching_ride.departure_time).strftime("%d %b %Y, %I:%M %p"),
-                "seats_available": matching_ride.available_seats,
-                "price_per_seat": matching_ride.price_per_seat,
+                "ride_id": ride.id,
+                "origin": ride.origin,
+                "destination": ride.destination,
+                "departure_time_display": to_ist(ride.departure_time).strftime("%d %b %Y, %I:%M %p"),
+                "seats_available": available_seats,
+                "price_per_seat": ride.price_per_seat,
                 "request_date": ride_request.created_at.strftime("%d %b %Y")
             }
+            
+            print(f"📧 Sending immediate match email for ride {ride.id}")
             
             send_ride_available_email_azure(
                 ride_request.passenger_email,
@@ -5198,16 +5218,21 @@ def check_and_notify_immediate_match(db: Session, ride_request: RideRequest):
             ride_request.status = "notified"
             ride_request.notified_at = datetime.now(timezone.utc)
             db.commit()
+            print(f"✅ Immediate notification sent for ride {ride.id}")
+            return True
             
     except Exception as e:
         print(f"Error checking immediate match: {str(e)}")
-
+        import traceback
+        traceback.print_exc()
+        return False
 def check_matching_ride_requests(db: Session, ride: Ride):
     """Check for matching ride requests when a new ride is posted"""
     try:
         print(f"\n🔍 ========== CHECKING MATCHING RIDE REQUESTS ==========")
         print(f"🚗 New ride posted: {ride.origin} → {ride.destination}")
-        print(f"   Departure: {to_ist(ride.departure_time).strftime('%d %b %Y, %I:%M %p')}")
+        print(f"   Departure (UTC): {ride.departure_time}")
+        print(f"   Departure (IST): {to_ist(ride.departure_time).strftime('%d %b %Y, %I:%M %p')}")
         
         # Normalize the ride locations for better matching
         ride_from_keyword = ride.origin.split(',')[0].strip().lower()
@@ -5216,7 +5241,7 @@ def check_matching_ride_requests(db: Session, ride: Ride):
         print(f"   Normalized from: '{ride_from_keyword}'")
         print(f"   Normalized to: '{ride_to_keyword}'")
         
-        # Find active ride requests that match this route
+        # Find active ride requests
         matching_requests = db.query(RideRequest).filter(
             RideRequest.status == "active",
             RideRequest.expires_at > datetime.now(timezone.utc)
@@ -5225,14 +5250,13 @@ def check_matching_ride_requests(db: Session, ride: Ride):
         print(f"\n📋 Found {len(matching_requests)} active ride requests")
         
         notified_count = 0
-        matched_requests = []
         
         for req in matching_requests:
             # Normalize request locations
             req_from_keyword = req.from_location.split(',')[0].strip().lower()
             req_to_keyword = req.to_location.split(',')[0].strip().lower()
             
-            # Check if locations match (either direction or exact)
+            # Check if locations match
             from_match = (ride_from_keyword == req_from_keyword or 
                          req_from_keyword in ride_from_keyword or 
                          ride_from_keyword in req_from_keyword)
@@ -5242,21 +5266,51 @@ def check_matching_ride_requests(db: Session, ride: Ride):
                        ride_to_keyword in req_to_keyword)
             
             if not (from_match and to_match):
+                print(f"\n❌ Location mismatch for request #{req.id}")
+                print(f"   Request: '{req_from_keyword}' → '{req_to_keyword}'")
+                print(f"   Ride: '{ride_from_keyword}' → '{ride_to_keyword}'")
                 continue
             
-            print(f"\n✅ Found matching request #{req.id}:")
+            print(f"\n✅ Location match for request #{req.id}")
             print(f"   Request: {req.from_location} → {req.to_location}")
-            print(f"   Request normalized: '{req_from_keyword}' → '{req_to_keyword}'")
             
-            # Check time match if preferred date specified
+            # ============================================
+            # FIXED TIME COMPARISON USING IST
+            # ============================================
+            time_match = True
+            time_diff_hours = 0
+            
             if req.preferred_date:
-                time_diff_hours = abs((ride.departure_time - req.preferred_date).total_seconds()) / 3600
-                print(f"   Time difference: {time_diff_hours:.1f} hours")
+                # Convert both times to IST for comparison
+                ride_time_ist = to_ist(ride.departure_time)
+                
+                # Handle request preferred date (it might be naive or with timezone)
+                if req.preferred_date.tzinfo is None:
+                    # Assume it's in IST and convert to UTC for comparison
+                    req_time_ist = req.preferred_date.replace(tzinfo=IST)
+                else:
+                    req_time_ist = req.preferred_date.astimezone(IST)
+                
+                # Calculate difference in hours using IST times
+                time_diff = abs(ride_time_ist - req_time_ist)
+                time_diff_hours = time_diff.total_seconds() / 3600
+                
+                print(f"   Ride time (IST): {ride_time_ist.strftime('%Y-%m-%d %H:%M:%S')}")
+                print(f"   Request time (IST): {req_time_ist.strftime('%Y-%m-%d %H:%M:%S')}")
+                print(f"   Time difference: {time_diff_hours:.2f} hours")
                 
                 # Allow up to 6 hours difference
-                if time_diff_hours > 6:
-                    print(f"   ⏰ Skipped - time difference too large ({time_diff_hours:.1f}h > 6h)")
-                    continue
+                if time_diff_hours <= 6:
+                    print(f"   ✅ Time within window (6 hours)")
+                    time_match = True
+                else:
+                    print(f"   ❌ Time outside window ({time_diff_hours:.2f}h > 6h)")
+                    time_match = False
+            else:
+                print(f"   No preferred time specified - matching anyway")
+            
+            if not time_match:
+                continue
             
             # Check seats availability
             total_booked = get_total_booked_seats(db, ride.id)
@@ -5265,22 +5319,15 @@ def check_matching_ride_requests(db: Session, ride: Ride):
             print(f"   Seats needed: {req.seats_needed}, Available: {available_seats}")
             
             if available_seats < req.seats_needed:
-                print(f"   💺 Skipped - not enough seats")
+                print(f"   ❌ Not enough seats available")
                 continue
-            
-            matched_requests.append(req)
-        
-        # Send notifications for matched requests
-        for req in matched_requests:
-            total_booked = get_total_booked_seats(db, ride.id)
-            available_seats = ride.available_seats - total_booked
             
             # Prepare ride data for email
             ride_data = {
                 "ride_id": ride.id,
                 "origin": ride.origin,
                 "destination": ride.destination,
-                "departure_time_display": to_ist(ride.departure_time).strftime("%d %b %Y, %I:%M %p"),
+                "departure_time_display": ride_time_ist.strftime("%d %b %Y, %I:%M %p"),
                 "seats_available": available_seats,
                 "price_per_seat": ride.price_per_seat,
                 "request_date": req.created_at.strftime("%d %b %Y")
@@ -5288,7 +5335,7 @@ def check_matching_ride_requests(db: Session, ride: Ride):
             
             print(f"\n📧 Sending email to {req.passenger_email} for request #{req.id}")
             
-            # Send email notification using Azure
+            # Send email notification
             success = send_ride_available_email_azure(
                 req.passenger_email,
                 req.passenger_name,
@@ -5296,7 +5343,6 @@ def check_matching_ride_requests(db: Session, ride: Ride):
             )
             
             if success:
-                # Mark request as notified
                 req.status = "notified"
                 req.notified_at = datetime.now(timezone.utc)
                 notified_count += 1
@@ -5306,13 +5352,11 @@ def check_matching_ride_requests(db: Session, ride: Ride):
         
         if notified_count > 0:
             db.commit()
-            print(f"\n✅ ========== SUMMARY ==========")
-            print(f"📧 Sent {notified_count} ride alert email notifications")
+            print(f"\n✅ Sent {notified_count} ride alert email notifications")
         else:
             print(f"\n📭 No matching requests found for this ride")
         
         print(f"🔍 ==================================\n")
-        
         return notified_count
         
     except Exception as e:
@@ -5320,7 +5364,6 @@ def check_matching_ride_requests(db: Session, ride: Ride):
         import traceback
         traceback.print_exc()
         return 0
-
 @router.get("/my-ride-requests/{phone_number}")
 def get_user_ride_requests(
     phone_number: str,
