@@ -10441,7 +10441,213 @@ def send_ride_notification_email(
             </body>
         </html>
         """
-    
+    # Add these to your send_ride_notification_email function in the notification_type conditions
+
+    elif notification_type == "modification_request_rider":
+        subject = f"🔄 Modification Request Sent - {ride_data.get('origin', 'Ride')[:50]} → {ride_data.get('destination', '')[:50]}"
+        html_content = f"""
+        <html>
+            <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                <div style="background: linear-gradient(135deg, #ffc107, #ff9800); padding: 20px; text-align: center; border-radius: 12px 12px 0 0;">
+                    <h2 style="color: #333; margin: 0;">🔄 Modification Request Sent</h2>
+                </div>
+                <div style="border: 1px solid #e0e0e0; border-top: none; padding: 20px; border-radius: 0 0 12px 12px;">
+                    <p style="font-size: 16px;">Hey <strong>{user_name}</strong>,</p>
+                    <p>Your seat modification request has been sent to the driver.</p>
+                    
+                    <div style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin: 20px 0;">
+                        <p><strong>📊 Modification Details:</strong></p>
+                        <p>🪑 <strong>Current Seats:</strong> {ride_data.get('current_seats', 'N/A')}</p>
+                        <p>🪑 <strong>Requested Seats:</strong> {ride_data.get('requested_seats', 'N/A')}</p>
+                        <p>🚗 <strong>Ride:</strong> {ride_data.get('origin', 'N/A')} → {ride_data.get('destination', 'N/A')}</p>
+                        <p>📅 <strong>Departure:</strong> {ride_data.get('departure_time_display', 'N/A')}</p>
+                    </div>
+                    
+                    <p>The driver will notify you once they review your request.</p>
+                    <hr>
+                    <p style="font-size: 12px; color: #666;">Team Drivve</p>
+                </div>
+            </body>
+        </html>
+        """
+
+    elif notification_type == "modification_request_driver":
+        subject = f"🔄 Modification Request Received - {ride_data.get('origin', 'Ride')[:50]} → {ride_data.get('destination', '')[:50]}"
+        html_content = f"""
+        <html>
+            <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                <div style="background: linear-gradient(135deg, #ffc107, #ff9800); padding: 20px; text-align: center; border-radius: 12px 12px 0 0;">
+                    <h2 style="color: #333; margin: 0;">🔄 Modification Request Received</h2>
+                </div>
+                <div style="border: 1px solid #e0e0e0; border-top: none; padding: 20px; border-radius: 0 0 12px 12px;">
+                    <p style="font-size: 16px;">Hey <strong>{user_name}</strong>,</p>
+                    <p>A passenger has requested to modify their seat count for your ride.</p>
+                    
+                    <div style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin: 20px 0;">
+                        <p><strong>👤 Passenger Details:</strong></p>
+                        <p>👤 <strong>Name:</strong> {ride_data.get('passenger_name', 'N/A')}</p>
+                        <p>📱 <strong>Phone:</strong> {ride_data.get('passenger_phone', 'N/A')}</p>
+                        
+                        <p style="margin-top: 15px;"><strong>📊 Modification Details:</strong></p>
+                        <p>🪑 <strong>Current Seats:</strong> {ride_data.get('current_seats', 'N/A')}</p>
+                        <p>🪑 <strong>Requested Seats:</strong> {ride_data.get('requested_seats', 'N/A')}</p>
+                        <p>📈 <strong>Change:</strong> {ride_data.get('seats_change', 'N/A')}</p>
+                        
+                        <p style="margin-top: 15px;"><strong>🚗 Ride Details:</strong></p>
+                        <p>📍 <strong>From:</strong> {ride_data.get('origin', 'N/A')}</p>
+                        <p>🎯 <strong>To:</strong> {ride_data.get('destination', 'N/A')}</p>
+                        <p>📅 <strong>Departure:</strong> {ride_data.get('departure_time_display', 'N/A')}</p>
+                    </div>
+                    
+                    <div style="text-align: center; margin: 25px 0;">
+                        <a href="drivve://ride/{ride_data.get('ride_id')}" 
+                        style="background-color: #ED7117; color: white; padding: 12px 25px; 
+                                text-decoration: none; border-radius: 25px; display: inline-block;
+                                font-weight: bold;">
+                            Open App to Respond
+                        </a>
+                    </div>
+                    
+                    <p>Please open the app to <strong>Approve</strong> or <strong>Reject</strong> this request.</p>
+                    <hr>
+                    <p style="font-size: 12px; color: #666;">Team Drivve</p>
+                </div>
+            </body>
+        </html>
+        """
+
+    elif notification_type == "modification_approved_rider":
+        subject = f"✅ Modification Approved - {ride_data.get('origin', 'Ride')[:50]} → {ride_data.get('destination', '')[:50]}"
+        html_content = f"""
+        <html>
+            <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                <div style="background: linear-gradient(135deg, #28a745, #20c997); padding: 20px; text-align: center; border-radius: 12px 12px 0 0;">
+                    <h2 style="color: white; margin: 0;">✅ Modification Approved!</h2>
+                </div>
+                <div style="border: 1px solid #e0e0e0; border-top: none; padding: 20px; border-radius: 0 0 12px 12px;">
+                    <p style="font-size: 16px;">Hey <strong>{user_name}</strong>,</p>
+                    <p>Great news! The driver has <strong style="color: #28a745;">approved</strong> your seat modification request.</p>
+                    
+                    <div style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin: 20px 0;">
+                        <p><strong>📊 Seat Changes:</strong></p>
+                        <p>🪑 <strong>Old Seats:</strong> {ride_data.get('old_seats', 'N/A')}</p>
+                        <p>🪑 <strong>New Seats:</strong> {ride_data.get('new_seats', 'N/A')}</p>
+                        <p>💰 <strong>New Total Amount:</strong> ₹{ride_data.get('new_total', 'N/A')}</p>
+                        <p>🚗 <strong>Ride:</strong> {ride_data.get('origin', 'N/A')} → {ride_data.get('destination', 'N/A')}</p>
+                    </div>
+                    
+                    <p>Your booking has been updated. Safe travels! 🚀</p>
+                    <hr>
+                    <p style="font-size: 12px; color: #666;">Team Drivve</p>
+                </div>
+            </body>
+        </html>
+        """
+
+    elif notification_type == "modification_approved_driver":
+        subject = f"✅ Modification Approved - {ride_data.get('origin', 'Ride')[:50]} → {ride_data.get('destination', '')[:50]}"
+        html_content = f"""
+        <html>
+            <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                <div style="background: linear-gradient(135deg, #28a745, #20c997); padding: 20px; text-align: center; border-radius: 12px 12px 0 0;">
+                    <h2 style="color: white; margin: 0;">✅ Modification Approved</h2>
+                </div>
+                <div style="border: 1px solid #e0e0e0; border-top: none; padding: 20px; border-radius: 0 0 12px 12px;">
+                    <p style="font-size: 16px;">Hey <strong>{user_name}</strong>,</p>
+                    <p>You have <strong style="color: #28a745;">approved</strong> the seat modification request.</p>
+                    
+                    <div style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin: 20px 0;">
+                        <p><strong>👤 Passenger:</strong> {ride_data.get('passenger_name', 'N/A')}</p>
+                        <p><strong>📊 Seat Changes:</strong></p>
+                        <p>🪑 <strong>Old Seats:</strong> {ride_data.get('old_seats', 'N/A')}</p>
+                        <p>🪑 <strong>New Seats:</strong> {ride_data.get('new_seats', 'N/A')}</p>
+                        <p>💰 <strong>New Total:</strong> ₹{ride_data.get('new_total', 'N/A')}</p>
+                    </div>
+                    
+                    <p>The passenger has been notified of the approval.</p>
+                    <hr>
+                    <p style="font-size: 12px; color: #666;">Team Drivve</p>
+                </div>
+            </body>
+        </html>
+        """
+
+    elif notification_type == "modification_rejected_rider":
+        subject = f"❌ Modification Rejected - Booking Cancelled - {ride_data.get('origin', 'Ride')[:50]} → {ride_data.get('destination', '')[:50]}"
+        html_content = f"""
+        <html>
+            <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                <div style="background: linear-gradient(135deg, #dc3545, #c82333); padding: 20px; text-align: center; border-radius: 12px 12px 0 0;">
+                    <h2 style="color: white; margin: 0;">❌ Modification Rejected & Booking Cancelled</h2>
+                </div>
+                <div style="border: 1px solid #e0e0e0; border-top: none; padding: 20px; border-radius: 0 0 12px 12px;">
+                    <p style="font-size: 16px;">Hey <strong>{user_name}</strong>,</p>
+                    <p>We regret to inform you that the driver has <strong style="color: #dc3545;">rejected</strong> your seat modification request.</p>
+                    
+                    <div style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin: 20px 0;">
+                        <p><strong>📊 Modification Request:</strong></p>
+                        <p>🪑 <strong>Requested Seats:</strong> {ride_data.get('requested_seats', 'N/A')}</p>
+                        <p>❌ <strong>Status:</strong> Rejected</p>
+                        <p>📝 <strong>Reason:</strong> {ride_data.get('rejection_reason', 'Driver declined the request')}</p>
+                    </div>
+                    
+                    <div style="background: #fff3cd; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #ffc107;">
+                        <p style="margin: 0; color: #856404;">
+                            <strong>⚠️ Important:</strong> Your original booking has been <strong>CANCELLED</strong> because the modification request was rejected.
+                        </p>
+                    </div>
+                    
+                    <div style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin: 20px 0;">
+                        <p><strong>🚗 Original Ride Details:</strong></p>
+                        <p>📍 <strong>From:</strong> {ride_data.get('origin', 'N/A')}</p>
+                        <p>🎯 <strong>To:</strong> {ride_data.get('destination', 'N/A')}</p>
+                        <p>📅 <strong>Departure:</strong> {ride_data.get('departure_time_display', 'N/A')}</p>
+                        <p>💺 <strong>Original Seats:</strong> {ride_data.get('current_seats', 'N/A')}</p>
+                    </div>
+                    
+                    <p>The {ride_data.get('current_seats', 'N/A')} seat(s) have been released and are now available for other passengers.</p>
+                    <p>You can search for alternative rides in the app.</p>
+                    <hr>
+                    <p style="font-size: 12px; color: #666;">Team Drivve</p>
+                </div>
+            </body>
+        </html>
+        """
+
+    elif notification_type == "modification_rejected_driver":
+        subject = f"❌ Modification Rejected - Booking Cancelled - {ride_data.get('origin', 'Ride')[:50]} → {ride_data.get('destination', '')[:50]}"
+        html_content = f"""
+        <html>
+            <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                <div style="background: linear-gradient(135deg, #dc3545, #c82333); padding: 20px; text-align: center; border-radius: 12px 12px 0 0;">
+                    <h2 style="color: white; margin: 0;">❌ Modification Rejected & Booking Cancelled</h2>
+                </div>
+                <div style="border: 1px solid #e0e0e0; border-top: none; padding: 20px; border-radius: 0 0 12px 12px;">
+                    <p style="font-size: 16px;">Hey <strong>{user_name}</strong>,</p>
+                    <p>You have <strong style="color: #dc3545;">rejected</strong> the modification request from <strong>{ride_data.get('passenger_name', 'N/A')}</strong>.</p>
+                    
+                    <div style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin: 20px 0;">
+                        <p><strong>👤 Passenger:</strong> {ride_data.get('passenger_name', 'N/A')}</p>
+                        <p>📱 <strong>Phone:</strong> {ride_data.get('passenger_phone', 'N/A')}</p>
+                        
+                        <p style="margin-top: 15px;"><strong>📊 Modification Details:</strong></p>
+                        <p>🪑 <strong>Current Seats:</strong> {ride_data.get('current_seats', 'N/A')}</p>
+                        <p>🪑 <strong>Requested Seats:</strong> {ride_data.get('requested_seats', 'N/A')}</p>
+                        <p>📝 <strong>Rejection Reason:</strong> {ride_data.get('rejection_reason', 'You declined the request')}</p>
+                    </div>
+                    
+                    <div style="background: #fff3cd; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #ffc107;">
+                        <p style="margin: 0; color: #856404;">
+                            <strong>⚠️ Note:</strong> The passenger's original booking has been <strong>CANCELLED</strong> and {ride_data.get('current_seats', 'N/A')} seat(s) have been released.
+                        </p>
+                    </div>
+                    
+                    <p>The passenger has been notified about the cancellation.</p>
+                    <hr>
+                    <p style="font-size: 12px; color: #666;">Team Drivve</p>
+                </div>
+            </html>
+        """
     elif notification_type == "modification_request":
         subject = f"🔄 Seat Modification Request - {ride_data.get('origin', 'Ride')[:50]} → {ride_data.get('destination', '')[:50]}"
         html_content = f"""
@@ -12131,7 +12337,6 @@ def cancel_ride(ride_id: int, db: Session = Depends(get_db)):
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error cancelling ride: {str(e)}")
 
-
 @router.post("/booking/{booking_id}/request-modification")
 async def request_modification(
     booking_id: int,
@@ -12256,22 +12461,61 @@ async def request_modification(
         )
         
         # ============================================
-        # EMAIL NOTIFICATION TO DRIVER
+        # EMAIL TO RIDER (Passenger) - Confirmation
+        # ============================================
+        try:
+            rider_email = get_user_email(db, booking.passenger_phone)
+            if rider_email:
+                rider_name = get_user_name(db, booking.passenger_phone)
+                
+                rider_email_data = {
+                    "origin": ride.origin,
+                    "destination": ride.destination,
+                    "departure_time_display": to_ist(ride.departure_time).strftime("%d %b %Y, %I:%M %p"),
+                    "current_seats": booking.seats_booked,
+                    "requested_seats": request.requested_seats,
+                    "ride_id": ride.id
+                }
+                send_ride_notification_email(
+                    rider_email, 
+                    rider_name, 
+                    rider_email_data, 
+                    "modification_request_rider", 
+                    booking.id, 
+                    ride.id
+                )
+                print(f"📧 Modification request confirmation email sent to rider: {rider_email}")
+        except Exception as e:
+            print(f"Failed to send modification request email to rider: {str(e)}")
+        
+        # ============================================
+        # EMAIL TO DRIVER - New modification request
         # ============================================
         try:
             driver_email = get_user_email(db, ride.phone_number)
             if driver_email:
                 driver_name = get_user_name(db, ride.phone_number)
                 
-                email_ride_data = {
+                driver_email_data = {
                     "origin": ride.origin,
                     "destination": ride.destination,
                     "departure_time_display": to_ist(ride.departure_time).strftime("%d %b %Y, %I:%M %p"),
                     "current_seats": booking.seats_booked,
                     "requested_seats": request.requested_seats,
-                    "passenger_name": passenger_name
+                    "seats_change": request.requested_seats - booking.seats_booked,
+                    "passenger_name": passenger_name,
+                    "passenger_phone": booking.passenger_phone,
+                    "ride_id": ride.id
                 }
-                send_ride_notification_email(driver_email, driver_name, email_ride_data, "modification_request", booking.id, ride.id)
+                send_ride_notification_email(
+                    driver_email, 
+                    driver_name, 
+                    driver_email_data, 
+                    "modification_request_driver", 
+                    booking.id, 
+                    ride.id
+                )
+                print(f"📧 Modification request notification email sent to driver: {driver_email}")
         except Exception as e:
             print(f"Failed to send modification request email to driver: {str(e)}")
         
@@ -12311,6 +12555,185 @@ async def request_modification(
         print(f"Error in request_modification: {str(e)}")
         db.rollback()
         return {"success": False, "message": str(e)}
+# @router.post("/booking/{booking_id}/request-modification")
+# async def request_modification(
+#     booking_id: int,
+#     request: ModificationRequestSchema,
+#     db: Session = Depends(get_db)
+# ):
+#     """Request to modify seat count for a booking - ONE TIME ONLY"""
+#     try:
+#         booking = db.query(RideBooking).filter(RideBooking.id == booking_id).first()
+#         if not booking:
+#             return {"success": False, "message": "Booking not found"}
+        
+#         ride = db.query(Ride).filter(Ride.id == booking.ride_id).first()
+#         if not ride:
+#             return {"success": False, "message": "Ride not found"}
+        
+#         if ride.started_at:
+#             return {"success": False, "message": "Cannot modify seats - Ride has already started"}
+        
+#         if ride.cancellation_reason:
+#             return {"success": False, "message": "Cannot modify seats - Ride has been cancelled"}
+        
+#         if booking.status != "accepted":
+#             return {"success": False, "message": "Cannot modify seats - Booking is not confirmed yet"}
+        
+#         # Check for ANY existing modification request
+#         existing_modification = db.query(ModificationRequest).filter(
+#             ModificationRequest.booking_id == booking_id,
+#             ModificationRequest.is_active == True
+#         ).first()
+        
+#         if existing_modification:
+#             if existing_modification.status == "pending":
+#                 return {
+#                     "success": False, 
+#                     "message": "You already have a pending modification request. Please wait for driver's response.",
+#                     "code": "PENDING_REQUEST_EXISTS",
+#                     "existing_request": {
+#                         "id": existing_modification.id,
+#                         "requested_seats": existing_modification.requested_seats,
+#                         "current_seats": existing_modification.current_seats,
+#                         "status": existing_modification.status
+#                     }
+#                 }
+#             else:
+#                 return {
+#                     "success": False, 
+#                     "message": "You can only modify your seats once per booking. You have already submitted a modification request.",
+#                     "code": "ALREADY_MODIFIED",
+#                     "previous_request": {
+#                         "id": existing_modification.id,
+#                         "requested_seats": existing_modification.requested_seats,
+#                         "current_seats": existing_modification.current_seats,
+#                         "status": existing_modification.status,
+#                         "approved_at": existing_modification.approved_at.isoformat() if existing_modification.approved_at else None,
+#                         "rejected_at": existing_modification.rejected_at.isoformat() if existing_modification.rejected_at else None
+#                     }
+#                 }
+        
+#         historical_modification = db.query(ModificationRequest).filter(
+#             ModificationRequest.booking_id == booking_id
+#         ).first()
+        
+#         if historical_modification:
+#             return {
+#                 "success": False,
+#                 "message": "You have already used your one-time modification for this booking. Further modifications are not allowed.",
+#                 "code": "MODIFICATION_LIMIT_REACHED",
+#                 "previous_request": {
+#                     "id": historical_modification.id,
+#                     "requested_seats": historical_modification.requested_seats,
+#                     "status": historical_modification.status,
+#                     "created_at": historical_modification.created_at.isoformat() if historical_modification.created_at else None
+#                 }
+#             }
+        
+#         total_booked = db.query(func.sum(RideBooking.seats_booked)).filter(
+#             RideBooking.ride_id == ride.id,
+#             RideBooking.status == "accepted"
+#         ).scalar() or 0
+        
+#         other_booked = total_booked - booking.seats_booked
+#         available_seats = ride.available_seats - other_booked
+        
+#         if request.requested_seats > available_seats:
+#             return {"success": False, "message": f"Only {available_seats} seat(s) available"}
+        
+#         if request.requested_seats < 1:
+#             return {"success": False, "message": "Minimum 1 seat required"}
+        
+#         if request.requested_seats == booking.seats_booked:
+#             return {"success": False, "message": "No change in seat count"}
+        
+#         new_mod_request = ModificationRequest(
+#             booking_id=booking_id,
+#             ride_id=ride.id,
+#             passenger_phone=booking.passenger_phone,
+#             current_seats=booking.seats_booked,
+#             requested_seats=request.requested_seats,
+#             status="pending",
+#             is_active=True,
+#             created_at=datetime.now(timezone.utc)
+#         )
+        
+#         db.add(new_mod_request)
+#         db.commit()
+#         db.refresh(new_mod_request)
+        
+#         # ============================================
+#         # IN-APP NOTIFICATION TO DRIVER
+#         # ============================================
+#         passenger_name = get_user_name(db, booking.passenger_phone)
+#         origin_short = ride.origin.split(",")[0].strip() if ride.origin else "pickup"
+#         dest_short = ride.destination.split(",")[0].strip() if ride.destination else "destination"
+        
+#         send_in_app_notification(
+#             db, ride.phone_number,
+#             title="Modification Request 🔄",
+#             message=f"{passenger_name} wants to change seats from {booking.seats_booked} to {request.requested_seats} seat(s) on ride from {origin_short} to {dest_short}.",
+#             action_type="modification",
+#             action_value=str(new_mod_request.id)
+#         )
+        
+#         # ============================================
+#         # EMAIL NOTIFICATION TO DRIVER
+#         # ============================================
+#         try:
+#             driver_email = get_user_email(db, ride.phone_number)
+#             if driver_email:
+#                 driver_name = get_user_name(db, ride.phone_number)
+                
+#                 email_ride_data = {
+#                     "origin": ride.origin,
+#                     "destination": ride.destination,
+#                     "departure_time_display": to_ist(ride.departure_time).strftime("%d %b %Y, %I:%M %p"),
+#                     "current_seats": booking.seats_booked,
+#                     "requested_seats": request.requested_seats,
+#                     "passenger_name": passenger_name
+#                 }
+#                 send_ride_notification_email(driver_email, driver_name, email_ride_data, "modification_request", booking.id, ride.id)
+#         except Exception as e:
+#             print(f"Failed to send modification request email to driver: {str(e)}")
+        
+#         # Socket event to driver
+#         emit_to_user(ride.phone_number, "modification-request", {
+#             "request_id": new_mod_request.id,
+#             "booking_id": booking_id,
+#             "current_seats": booking.seats_booked,
+#             "requested_seats": request.requested_seats,
+#             "passenger_name": passenger_name,
+#             "passenger_phone": booking.passenger_phone
+#         })
+        
+#         # In-app notification to passenger (confirmation)
+#         send_in_app_notification(
+#             db, booking.passenger_phone,
+#             title="Modification Request Sent 📝",
+#             message=f"Your request to change seats from {booking.seats_booked} to {request.requested_seats} has been sent to the driver.",
+#             action_type="modification",
+#             action_value=str(new_mod_request.id)
+#         )
+        
+#         return {
+#             "success": True, 
+#             "message": "Modification request sent to driver (one-time modification only)",
+#             "request": {
+#                 "id": new_mod_request.id,
+#                 "current_seats": new_mod_request.current_seats,
+#                 "requested_seats": new_mod_request.requested_seats,
+#                 "status": new_mod_request.status,
+#                 "created_at": new_mod_request.created_at.isoformat() if new_mod_request.created_at else None,
+#                 "is_active": new_mod_request.is_active
+#             }
+#         }
+        
+#     except Exception as e:
+#         print(f"Error in request_modification: {str(e)}")
+#         db.rollback()
+#         return {"success": False, "message": str(e)}
 
 
 @router.get("/booking/{booking_id}/modification-request")
@@ -12453,7 +12876,6 @@ def get_pending_modifications_for_ride(ride_id: int, db: Session = Depends(get_d
         print(f"Error in get_pending_modifications_for_ride: {str(e)}")
         return {"success": False, "message": str(e), "pending_requests": []}
 
-
 @router.put("/modification-request/{request_id}/approve")
 def approve_modification_request(request_id: int, db: Session = Depends(get_db)):
     """Approve a modification request - updates booking seats"""
@@ -12516,8 +12938,67 @@ def approve_modification_request(request_id: int, db: Session = Depends(get_db))
         )
         
         # ============================================
-        # IN-APP NOTIFICATION TO DRIVER (Confirmation)
+        # EMAIL TO RIDER (Passenger) - Approval Notification
         # ============================================
+        try:
+            rider_email = get_user_email(db, booking.passenger_phone)
+            if rider_email:
+                rider_name = get_user_name(db, booking.passenger_phone)
+                
+                rider_email_data = {
+                    "origin": ride.origin,
+                    "destination": ride.destination,
+                    "departure_time_display": to_ist(ride.departure_time).strftime("%d %b %Y, %I:%M %p"),
+                    "old_seats": old_seats,
+                    "new_seats": mod_request.requested_seats,
+                    "new_total": booking.total_amount,
+                    "ride_id": ride.id
+                }
+                send_ride_notification_email(
+                    rider_email, 
+                    rider_name, 
+                    rider_email_data, 
+                    "modification_approved_rider", 
+                    booking.id, 
+                    ride.id
+                )
+                print(f"📧 Modification approved email sent to rider: {rider_email}")
+        except Exception as e:
+            print(f"Failed to send modification approved email to rider: {str(e)}")
+        
+        # ============================================
+        # EMAIL TO DRIVER - Confirmation of approval
+        # ============================================
+        try:
+            driver_email = get_user_email(db, ride.phone_number)
+            if driver_email:
+                driver_name = get_user_name(db, ride.phone_number)
+                passenger_name = get_user_name(db, booking.passenger_phone)
+                
+                driver_email_data = {
+                    "origin": ride.origin,
+                    "destination": ride.destination,
+                    "departure_time_display": to_ist(ride.departure_time).strftime("%d %b %Y, %I:%M %p"),
+                    "old_seats": old_seats,
+                    "new_seats": mod_request.requested_seats,
+                    "new_total": booking.total_amount,
+                    "passenger_name": passenger_name,
+                    "passenger_phone": booking.passenger_phone,
+                    "ride_id": ride.id
+                }
+                send_ride_notification_email(
+                    driver_email, 
+                    driver_name, 
+                    driver_email_data, 
+                    "modification_approved_driver", 
+                    booking.id, 
+                    ride.id
+                )
+                print(f"📧 Modification approved confirmation email sent to driver: {driver_email}")
+        except Exception as e:
+            print(f"Failed to send modification approved email to driver: {str(e)}")
+        
+        # In-app notification to driver (Confirmation)
         passenger_name = get_user_name(db, booking.passenger_phone)
         send_in_app_notification(
             db, ride.phone_number,
@@ -12526,26 +13007,6 @@ def approve_modification_request(request_id: int, db: Session = Depends(get_db))
             action_type="modification",
             action_value=str(mod_request.id)
         )
-        
-        # ============================================
-        # EMAIL NOTIFICATION TO PASSENGER
-        # ============================================
-        try:
-            passenger_email = get_user_email(db, booking.passenger_phone)
-            if passenger_email:
-                passenger_name = get_user_name(db, booking.passenger_phone)
-                
-                ride_data = {
-                    "origin": ride.origin,
-                    "destination": ride.destination,
-                    "departure_time_display": to_ist(ride.departure_time).strftime("%d %b %Y, %I:%M %p"),
-                    "old_seats": old_seats,
-                    "new_seats": mod_request.requested_seats,
-                    "new_total": booking.total_amount
-                }
-                send_ride_notification_email(passenger_email, passenger_name, ride_data, "modification_approved", booking.id, ride.id)
-        except Exception as e:
-            print(f"Failed to send modification approval email: {str(e)}")
         
         # Socket events
         emit_to_user(booking.passenger_phone, "modification-approved", {
@@ -12575,6 +13036,127 @@ def approve_modification_request(request_id: int, db: Session = Depends(get_db))
         print(f"Error in approve_modification_request: {str(e)}")
         db.rollback()
         return {"success": False, "message": str(e)}
+# @router.put("/modification-request/{request_id}/approve")
+# def approve_modification_request(request_id: int, db: Session = Depends(get_db)):
+#     """Approve a modification request - updates booking seats"""
+#     try:
+#         mod_request = db.query(ModificationRequest).filter(
+#             ModificationRequest.id == request_id,
+#             ModificationRequest.is_active == True
+#         ).first()
+        
+#         if not mod_request:
+#             return {"success": False, "message": "Modification request not found"}
+        
+#         if mod_request.status != "pending":
+#             return {"success": False, "message": f"Request already {mod_request.status}"}
+        
+#         booking = db.query(RideBooking).filter(RideBooking.id == mod_request.booking_id).first()
+#         if not booking:
+#             return {"success": False, "message": "Booking not found"}
+        
+#         ride = db.query(Ride).filter(Ride.id == mod_request.ride_id).first()
+#         if not ride:
+#             return {"success": False, "message": "Ride not found"}
+        
+#         if ride.started_at:
+#             mod_request.status = "rejected"
+#             mod_request.rejection_reason = "Cannot modify - Ride has already started"
+#             mod_request.is_active = False
+#             db.commit()
+#             return {"success": False, "message": "Cannot approve - Ride has already started"}
+        
+#         total_booked = get_total_booked_seats(db, ride.id)
+#         other_booked = total_booked - booking.seats_booked
+#         available_seats = ride.available_seats - other_booked
+        
+#         if mod_request.requested_seats > available_seats:
+#             mod_request.status = "rejected"
+#             mod_request.rejection_reason = f"Only {available_seats} seats available"
+#             mod_request.is_active = False
+#             db.commit()
+#             return {"success": False, "message": f"Only {available_seats} seat(s) available"}
+        
+#         old_seats = booking.seats_booked
+#         booking.seats_booked = mod_request.requested_seats
+#         booking.total_amount = ride.price_per_seat * mod_request.requested_seats
+        
+#         mod_request.status = "approved"
+#         mod_request.approved_at = datetime.now(timezone.utc)
+        
+#         db.commit()
+        
+#         # ============================================
+#         # IN-APP NOTIFICATION TO PASSENGER
+#         # ============================================
+#         send_in_app_notification(
+#             db, booking.passenger_phone,
+#             title="Modification Approved ✅",
+#             message=f"Your seat change request from {old_seats} to {mod_request.requested_seats} seats has been approved!",
+#             action_type="modification",
+#             action_value=str(mod_request.id)
+#         )
+        
+#         # ============================================
+#         # IN-APP NOTIFICATION TO DRIVER (Confirmation)
+#         # ============================================
+#         passenger_name = get_user_name(db, booking.passenger_phone)
+#         send_in_app_notification(
+#             db, ride.phone_number,
+#             title="Modification Approved ✅",
+#             message=f"You approved {passenger_name}'s seat change request from {old_seats} to {mod_request.requested_seats} seats.",
+#             action_type="modification",
+#             action_value=str(mod_request.id)
+#         )
+        
+#         # ============================================
+#         # EMAIL NOTIFICATION TO PASSENGER
+#         # ============================================
+#         try:
+#             passenger_email = get_user_email(db, booking.passenger_phone)
+#             if passenger_email:
+#                 passenger_name = get_user_name(db, booking.passenger_phone)
+                
+#                 ride_data = {
+#                     "origin": ride.origin,
+#                     "destination": ride.destination,
+#                     "departure_time_display": to_ist(ride.departure_time).strftime("%d %b %Y, %I:%M %p"),
+#                     "old_seats": old_seats,
+#                     "new_seats": mod_request.requested_seats,
+#                     "new_total": booking.total_amount
+#                 }
+#                 send_ride_notification_email(passenger_email, passenger_name, ride_data, "modification_approved", booking.id, ride.id)
+#         except Exception as e:
+#             print(f"Failed to send modification approval email: {str(e)}")
+        
+#         # Socket events
+#         emit_to_user(booking.passenger_phone, "modification-approved", {
+#             "booking_id": booking.id,
+#             "old_seats": old_seats,
+#             "new_seats": mod_request.requested_seats,
+#             "message": f"Your seat change request from {old_seats} to {mod_request.requested_seats} seats has been approved!"
+#         })
+        
+#         emit_to_ride(ride.id, "modification-approved", {
+#             "booking_id": booking.id,
+#             "old_seats": old_seats,
+#             "new_seats": mod_request.requested_seats,
+#             "seats_change": mod_request.requested_seats - old_seats
+#         })
+        
+#         return {
+#             "success": True,
+#             "message": f"Modification request approved. Seats updated from {old_seats} to {mod_request.requested_seats}.",
+#             "booking_id": booking.id,
+#             "old_seats": old_seats,
+#             "new_seats": mod_request.requested_seats,
+#             "new_total": booking.total_amount
+#         }
+        
+#     except Exception as e:
+#         print(f"Error in approve_modification_request: {str(e)}")
+#         db.rollback()
+#         return {"success": False, "message": str(e)}
 
 
 @router.put("/modification-request/{request_id}/reject")
@@ -12746,7 +13328,63 @@ def reject_modification_request(request_id: int, db: Session = Depends(get_db)):
             print(f"   ✅ Sent modification-rejected to ride room: ride_{ride.id}")
         except Exception as e:
             print(f"   ⚠️ Socket error (modification-rejected): {e}")
-        
+        try:
+            passenger_email = get_user_email(db, booking.passenger_phone)
+            if passenger_email:
+                passenger_name = get_user_name(db, booking.passenger_phone)
+                
+                email_ride_data = {
+                    "origin": ride.origin,
+                    "destination": ride.destination,
+                    "departure_time_display": to_ist(ride.departure_time).strftime("%d %b %Y, %I:%M %p"),
+                    "current_seats": original_seats,
+                    "requested_seats": mod_request.requested_seats,
+                    "rejection_reason": mod_request.rejection_reason,
+                    "ride_id": ride.id
+                }
+                send_ride_notification_email(
+                    passenger_email, 
+                    passenger_name, 
+                    email_ride_data, 
+                    "modification_rejected_rider",  # This will send cancellation email
+                    booking.id, 
+                    ride.id
+                )
+                print(f"📧 Modification rejection & cancellation email sent to passenger: {passenger_email}")
+        except Exception as e:
+            print(f"Failed to send modification rejection email to passenger: {str(e)}")
+
+        # ============================================
+        # EMAIL TO DRIVER - Confirmation of rejection
+        # ============================================
+        try:
+            driver_email = get_user_email(db, ride.phone_number)
+            if driver_email:
+                driver_name = get_user_name(db, ride.phone_number)
+                passenger_name = get_user_name(db, booking.passenger_phone)
+                
+                driver_email_data = {
+                    "origin": ride.origin,
+                    "destination": ride.destination,
+                    "departure_time_display": to_ist(ride.departure_time).strftime("%d %b %Y, %I:%M %p"),
+                    "current_seats": original_seats,
+                    "requested_seats": mod_request.requested_seats,
+                    "rejection_reason": mod_request.rejection_reason,
+                    "passenger_name": passenger_name,
+                    "passenger_phone": booking.passenger_phone,
+                    "ride_id": ride.id
+                }
+                send_ride_notification_email(
+                    driver_email, 
+                    driver_name, 
+                    driver_email_data, 
+                    "modification_rejected_driver", 
+                    booking.id, 
+                    ride.id
+                )
+                print(f"📧 Modification rejection confirmation email sent to driver: {driver_email}")
+        except Exception as e:
+            print(f"Failed to send modification rejection email to driver: {str(e)}")
         try:
             if _sio:
                 _sio.emit("seat-availability-update", {
