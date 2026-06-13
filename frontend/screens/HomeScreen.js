@@ -4879,7 +4879,10 @@ const calculateEarningsFromMyRides = async () => {
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [seatCount, setSeatCount] = useState(1);
   const [unreadCount, setUnreadCount] = useState(0);
-  
+  const [fromAddress, setFromAddress] = useState('');
+const [toAddress, setToAddress] = useState('');
+const [fromPlaceName, setFromPlaceName] = useState('');
+const [toPlaceName, setToPlaceName] = useState('');
   const profileImageRef = useRef(
     user?.profile_picture || null
   );
@@ -5102,46 +5105,97 @@ const calculateEarningsFromMyRides = async () => {
         break;
     }
   };
+const handleAction = async () => {
+  if (!fromLocation || !toLocation || !fromCoords || !toCoords) {
+    showCustomAlert(
+      'Required Fields',
+      'Please select both pickup and destination from the map',
+      'warning'
+    );
+    return;
+  }
 
-  const handleAction = async () => {
-    if (!fromLocation || !toLocation || !fromCoords || !toCoords) {
-      showCustomAlert(
-        'Required Fields',
-        'Please select both pickup and destination from the map',
-        'warning'
-      );
-      return;
-    }
+  if (fromLocation === toLocation) {
+    showCustomAlert(
+      'Invalid Route',
+      'Pickup and destination locations cannot be the same. Please select different locations.',
+      'warning'
+    );
+    return;
+  }
 
-    if (fromLocation === toLocation) {
-      showCustomAlert(
-        'Invalid Route',
-        'Pickup and destination locations cannot be the same. Please select different locations.',
-        'warning'
-      );
-      return;
-    }
-
-    const searchData = {
-      type: activeTab,
-      from: fromLocation,
-      to: toLocation,
-      fromCoords,
-      toCoords,
-      dateTime: selectedDate,
-      seats: seatCount,
-    };
-
-    console.log('🔎 Search data:', searchData);
-
-    navigation.navigate('RideNext', {
-      searchData,
-    });
-    setFromLocation('');
-    setToLocation('');
-    setFromCoords(null);
-    setToCoords(null);
+  // ✅ Include all address fields in searchData
+  const searchData = {
+    type: activeTab,
+    from: fromLocation,
+    to: toLocation,
+    fromCoords,
+    toCoords,
+    dateTime: selectedDate,
+    seats: seatCount,
+    // ✅ ADD THESE ADDRESS FIELDS
+    fromAddress: fromAddress || fromLocation,
+    toAddress: toAddress || toLocation,
+    fromPlaceName: fromPlaceName || fromLocation?.split(',')[0],
+    toPlaceName: toPlaceName || toLocation?.split(',')[0],
   };
+
+  console.log('🔎 Search data with addresses:', JSON.stringify(searchData, null, 2));
+
+  navigation.navigate('RideNext', {
+    searchData,
+  });
+  
+  // Clear form after navigation
+  setFromLocation('');
+  setToLocation('');
+  setFromCoords(null);
+  setToCoords(null);
+  // ✅ Clear address states too
+  setFromAddress('');
+  setToAddress('');
+  setFromPlaceName('');
+  setToPlaceName('');
+};
+  // const handleAction = async () => {
+  //   if (!fromLocation || !toLocation || !fromCoords || !toCoords) {
+  //     showCustomAlert(
+  //       'Required Fields',
+  //       'Please select both pickup and destination from the map',
+  //       'warning'
+  //     );
+  //     return;
+  //   }
+
+  //   if (fromLocation === toLocation) {
+  //     showCustomAlert(
+  //       'Invalid Route',
+  //       'Pickup and destination locations cannot be the same. Please select different locations.',
+  //       'warning'
+  //     );
+  //     return;
+  //   }
+
+  //   const searchData = {
+  //     type: activeTab,
+  //     from: fromLocation,
+  //     to: toLocation,
+  //     fromCoords,
+  //     toCoords,
+  //     dateTime: selectedDate,
+  //     seats: seatCount,
+  //   };
+
+  //   console.log('🔎 Search data:', searchData);
+
+  //   navigation.navigate('RideNext', {
+  //     searchData,
+  //   });
+  //   setFromLocation('');
+  //   setToLocation('');
+  //   setFromCoords(null);
+  //   setToCoords(null);
+  // };
 
   const handleRecurring = () => {
     navigation.navigate('Recurring');
@@ -5332,36 +5386,65 @@ const calculateEarningsFromMyRides = async () => {
                     <Text style={styles.sectionTitle}>Where are you going?</Text>
                   </View>
 
-                  <TouchableOpacity
-                    style={styles.locationContainer}
-                    onPress={() =>
-                      navigation.navigate('LocationSearch', {
-                        type: 'from',
-                        onSelect: (location) => {
-                          setFromLocation(location.label);
-                          setFromCoords(location.coordinates);
-                        },
-                      })
-                    }
-                  >
+                 <TouchableOpacity
+  style={styles.locationContainer}
+  onPress={() =>
+    navigation.navigate('LocationSearch', {
+      type: 'from',
+      onSelect: (location) => {
+        // Store basic info
+        setFromLocation(location.label);
+        setFromCoords(location.coordinates);
+        
+        // ✅ STORE ADDRESS DETAILS
+        // location.label is usually the full address like "MG Road, Bangalore, Karnataka 560001"
+        setFromAddress(location.detailedAddress || location.label);
+        
+        // Extract short name/place name from the address
+        const placeName = location.placeName || location.label?.split(',')[0] || location.label;
+        setFromPlaceName(placeName);
+        
+        console.log('📍 Pickup Address:', {
+          full: location.label,
+          placeName: placeName,
+          coords: location.coordinates
+        });
+      },
+    })
+  }
+>
                     <Ionicons name="location-sharp" size={20} color={Colors.success} style={styles.inputIcon} />
                     <Text style={styles.locationInput} numberOfLines={1}>
                       {fromLocation || 'From'}
                     </Text>
                   </TouchableOpacity>
 
-                  <TouchableOpacity
-                    style={styles.locationContainer}
-                    onPress={() =>
-                      navigation.navigate('LocationSearch', {
-                        type: 'to',
-                        onSelect: (location) => {
-                          setToLocation(location.label);
-                          setToCoords(location.coordinates);
-                        },
-                      })
-                    }
-                  >
+                 <TouchableOpacity
+  style={styles.locationContainer}
+  onPress={() =>
+    navigation.navigate('LocationSearch', {
+      type: 'to',
+      onSelect: (location) => {
+        // Store basic info
+        setToLocation(location.label);
+        setToCoords(location.coordinates);
+        
+        // ✅ STORE ADDRESS DETAILS
+        setToAddress(location.detailedAddress || location.label);
+        
+        // Extract short name/place name
+        const placeName = location.placeName || location.label?.split(',')[0] || location.label;
+        setToPlaceName(placeName);
+        
+        console.log('📍 Dropoff Address:', {
+          full: location.label,
+          placeName: placeName,
+          coords: location.coordinates
+        });
+      },
+    })
+  }
+>
                     <Ionicons name="location-sharp" size={20} color={Colors.secondary} style={styles.inputIcon} />
                     <Text style={styles.locationInput} numberOfLines={1}>
                       {toLocation || 'To'}

@@ -864,7 +864,7 @@ const result = await DatabaseService.sendEmailOTP(
           ]}
           onBackdropPress={() => setShowValidationAlert(false)}
         />
-
+{/* 
         <CustomAlert
           visible={showSuccessAlert}
           title="Profile Created Successfully!"
@@ -893,8 +893,35 @@ const result = await DatabaseService.sendEmailOTP(
               }
             }
           ]}
-        />
-
+        /> */}
+<CustomAlert
+  visible={showSuccessAlert}
+  title="Profile Created Successfully!"
+  message={successData ? `Welcome to DRIVVE!\n\nYour User ID: ${successData.userId}\n\nAge: ${successData.age} years` : ''}
+  icon="check-circle"
+  iconColor="#10B981"
+  buttons={[
+    {
+      text: 'Continue',
+      onPress: () => {
+        setShowSuccessAlert(false);
+        login({
+          user: {
+            phone_number: fullPhoneNumber || (countryCode + phoneNumber),
+             id: successData?.user_id,// This might be undefined
+            ...successData?.profileData,
+          },
+          accessToken: successData?.accessToken,
+          refreshToken: successData?.refreshToken,
+        });
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'Home' }],
+        });
+      }
+    }
+  ]}
+/>
         <CustomAlert
           visible={showStateFirstAlert}
           title="Select State First"

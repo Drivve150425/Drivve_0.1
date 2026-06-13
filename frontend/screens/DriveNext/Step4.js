@@ -1890,6 +1890,7 @@ import LottieView from "lottie-react-native";
 import { Colors } from '../../constants/Colors';
 import CustomAlert from '../../components/CustomAlert';
 import Ridesuccessanimation from '../../components/Ridesuccessanimation';
+import SuccessAnimation from '../../components/Rideupdatedanimation'
 import { MaterialIcons } from '@expo/vector-icons';
 
 export default function Step4({
@@ -2103,228 +2104,462 @@ export default function Step4({
     );
   };
 
-  const handleSuccessComplete = () => {
-    setShowSuccess(false);
-    setPosting(false);
+  // const handleSuccessComplete = () => {
+  //   setShowSuccess(false);
+  //   setPosting(false);
     
-    if (navigation) {
-      navigation.reset({
-        index: 0,
-        routes: [
-          {
-            name: "Home",
-            params: { phoneNumber, userData, userId },
+  //   if (navigation) {
+  //     navigation.reset({
+  //       index: 0,
+  //       routes: [
+  //         {
+  //           name: "Home",
+  //           params: { phoneNumber, userData, userId },
+  //         },
+  //       ],
+  //     });
+  //   } else {
+  //     navigation?.goBack();
+  //   }
+  // };
+const handleSuccessComplete = () => {
+  setShowSuccess(false);
+  setPosting(false);
+  
+  if (navigation) {
+    // Navigate directly to MyRides with posted tab selected
+    navigation.reset({
+      index: 0,
+      routes: [
+        {
+          name: "MyRides",
+          params: { 
+            initialTab: "posted",  // This will show the posted rides tab
+            refresh: true,         // This will trigger a refresh in MyRides
+            forceReload: true      // Force reload data
           },
-        ],
-      });
-    } else {
-      navigation?.goBack();
-    }
-  };
+        },
+      ],
+    });
+  } else {
+    navigation?.goBack();
+  }
+};
+return (
+  <>
+    <View style={styles.container}>
+      <Text style={styles.title}>Seats & Pricing</Text>
 
-  return (
-    <>
-      <View style={styles.container}>
-        <Text style={styles.title}>Seats & Pricing</Text>
+      {isEdit && hasConfirmedBookings && (
+        <View style={styles.lockedWarningBanner}>
+          <MaterialIcons name="lock" size={20} color="#F59E0B" />
+          <Text style={styles.lockedWarningText}>
+            This ride has {totalBookedSeats} confirmed booking(s).
+          </Text>
+        </View>
+      )}
 
-        {isEdit && hasConfirmedBookings && (
-          <View style={styles.lockedWarningBanner}>
-            <MaterialIcons name="lock" size={20} color="#F59E0B" />
-            <Text style={styles.lockedWarningText}>
-              This ride has {totalBookedSeats} confirmed booking(s).
+      <View style={styles.seatSection}>
+        <Text style={styles.seatLabel}>Available Seats for Passengers</Text>
+        
+        {totalBookedSeats > 0 && (
+          <View style={styles.bookingSummary}>
+            <Text style={styles.bookingSummaryText}>
+              ✅ {totalBookedSeats} seat(s) already booked
             </Text>
+            <Text style={styles.remainingSummaryText}>
+              📍 {actualRemainingSeats} seat(s) still available
+            </Text>
+            {isSeatsLocked && (
+              <Text style={styles.lockedHint}>⚠️ You can only increase seats, not decrease</Text>
+            )}
           </View>
         )}
-
-        <View style={styles.seatSection}>
-          <Text style={styles.seatLabel}>Available Seats for Passengers</Text>
-          
-          {totalBookedSeats > 0 && (
-            <View style={styles.bookingSummary}>
-              <Text style={styles.bookingSummaryText}>
-                ✅ {totalBookedSeats} seat(s) already booked
-              </Text>
-              <Text style={styles.remainingSummaryText}>
-                📍 {actualRemainingSeats} seat(s) still available
-              </Text>
-              {isSeatsLocked && (
-                <Text style={styles.lockedHint}>⚠️ You can only increase seats, not decrease</Text>
-              )}
-            </View>
-          )}
-          
-          <View style={styles.seatRow}>
-            <TouchableOpacity
-              onPress={() => handleSeatChange(false)}
-              style={[styles.seatBtn, (!canDecreaseSeats || isSeatsLocked) && styles.seatBtnDisabled]}
-              disabled={posting || !canDecreaseSeats}
-            >
-              <Text style={[styles.seatBtnText, (!canDecreaseSeats || isSeatsLocked) && styles.seatBtnTextDisabled]}>-</Text>
-            </TouchableOpacity>
-
-            <View style={styles.seatInfo}>
-              <Text style={styles.seatCount}>{seatsAvailable}</Text>
-              <Text style={styles.seatSubtext}>total passenger seats</Text>
-              {totalBookedSeats > 0 && (
-                <Text style={styles.bookedSeatsText}>
-                  {totalBookedSeats} booked, {actualRemainingSeats} left
-                </Text>
-              )}
-            </View>
-
-            <TouchableOpacity
-              onPress={() => handleSeatChange(true)}
-              style={[
-                styles.seatBtn, 
-                (!canIncreaseSeats) && styles.seatBtnDisabled
-              ]}
-              disabled={posting || !canIncreaseSeats}
-            >
-              <Text style={styles.seatBtnText}>+</Text>
-            </TouchableOpacity>
-          </View>
-          
-          <View style={styles.seatDetails}>
-            <Text style={styles.maxSeatsHint}>
-              Total passenger seats: {maxSeatsDisplay}
-            </Text>
-            <Text style={styles.maxSeatsHint}>
-              Vehicle capacity: {maxSeats} seats total (including driver)
-            </Text>
-            {totalBookedSeats > 0 && (
-              <>
-                <Text style={styles.remainingSeatsHint}>
-                  ✅ You can add {passengerSeats - seatsAvailable} more seats
-                </Text>
-                <Text style={styles.noteText}>
-                  💡 You cannot reduce seats below {totalBookedSeats} (already booked)
-                </Text>
-              </>
-            )}
-            {!totalBookedSeats && (
-              <Text style={styles.noteText}>
-                💡 You can modify seat count anytime before the ride starts
-              </Text>
-            )}
-          </View>
-        </View>
-
-        <View style={{ marginTop: 18 }}>
-          <Text style={styles.estimateLabel}>
-            Estimated per seat (based on route):
-          </Text>
-          <Text style={styles.estimateValue}>
-            ₹ {Math.round(estimatedPrice)}
-          </Text>
-          <Text style={styles.rangeText}>
-            Allowed range: ₹{minAllowed} – ₹{maxAllowed}
-          </Text>
-          
-          {isPriceLocked && (
-            <View style={styles.lockedPriceWarning}>
-              <MaterialIcons name="lock" size={16} color={Colors.gray} />
-              <Text style={styles.lockedPriceText}>
-                Price is locked due to confirmed bookings
-              </Text>
-            </View>
-          )}
-        </View>
-
-        <View style={{ marginTop: 20 }}>
-          <Text style={styles.inputLabel}>Set Custom Price per Seat (₹)</Text>
-          <TextInput
-            value={pricePerSeat}
-            onChangeText={setPricePerSeat}
-            keyboardType="numeric"
-            style={[styles.input, isPriceLocked && styles.inputDisabled]}
-            editable={!posting && !isPriceLocked}
-            placeholder={`₹${Math.round(estimatedPrice)}`}
-            placeholderTextColor={Colors.gray}
-          />
-          {isPriceLocked && (
-            <Text style={styles.disabledHint}>
-              Price cannot be changed after confirmed bookings
-            </Text>
-          )}
-        </View>
-
-        {isEdit && hasConfirmedBookings && (
+        
+        <View style={styles.seatRow}>
           <TouchableOpacity
-            style={styles.cancelRideButton}
-            onPress={() => {
-              showCustomAlert(
-                "Cancel Ride",
-                "Are you sure you want to cancel this ride? This will notify all booked passengers and may apply cancellation fees.",
-                "warning",
-                () => {
-                  navigation.navigate("CancelRideScreen", { rideId: originalRideData?.id });
-                }
-              );
-            }}
+            onPress={() => handleSeatChange(false)}
+            style={[styles.seatBtn, (!canDecreaseSeats || isSeatsLocked) && styles.seatBtnDisabled]}
+            disabled={posting || !canDecreaseSeats}
           >
-            <Text style={styles.cancelRideText}>Cancel This Ride</Text>
+            <Text style={[styles.seatBtnText, (!canDecreaseSeats || isSeatsLocked) && styles.seatBtnTextDisabled]}>-</Text>
           </TouchableOpacity>
-        )}
 
-        <TouchableOpacity
-          style={[
-            styles.postBtn,
-            isPostDisabled && styles.postBtnDisabled
-          ]}
-          disabled={isPostDisabled}
-          onPress={handlePost}
-          activeOpacity={0.8}
-        >
-          {posting ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="small" color="#fff" />
-              <Text style={styles.postBtnText}>
-                {isEdit ? "Updating..." : "Posting..."}
+          <View style={styles.seatInfo}>
+            <Text style={styles.seatCount}>{seatsAvailable}</Text>
+            <Text style={styles.seatSubtext}>total passenger seats</Text>
+            {totalBookedSeats > 0 && (
+              <Text style={styles.bookedSeatsText}>
+                {totalBookedSeats} booked, {actualRemainingSeats} left
               </Text>
-            </View>
-          ) : (
-            <Text style={styles.postBtnText}>
-              {actualRemainingSeats === 0 && !isEdit ? "Ride Full" : buttonText}
+            )}
+          </View>
+
+          <TouchableOpacity
+            onPress={() => handleSeatChange(true)}
+            style={[
+              styles.seatBtn, 
+              (!canIncreaseSeats) && styles.seatBtnDisabled
+            ]}
+            disabled={posting || !canIncreaseSeats}
+          >
+            <Text style={styles.seatBtnText}>+</Text>
+          </TouchableOpacity>
+        </View>
+        
+        <View style={styles.seatDetails}>
+          <Text style={styles.maxSeatsHint}>
+            Total passenger seats: {maxSeatsDisplay}
+          </Text>
+          <Text style={styles.maxSeatsHint}>
+            Vehicle capacity: {maxSeats} seats total (including driver)
+          </Text>
+          {totalBookedSeats > 0 && (
+            <>
+              <Text style={styles.remainingSeatsHint}>
+                ✅ You can add {passengerSeats - seatsAvailable} more seats
+              </Text>
+              <Text style={styles.noteText}>
+                💡 You cannot reduce seats below {totalBookedSeats} (already booked)
+              </Text>
+            </>
+          )}
+          {!totalBookedSeats && (
+            <Text style={styles.noteText}>
+              💡 You can modify seat count anytime before the ride starts
             </Text>
           )}
-        </TouchableOpacity>
+        </View>
+      </View>
 
-        <CustomAlert
-          visible={alertVisible}
-          title={alertConfig.title}
-          message={alertConfig.message}
-          icon={alertConfig.icon}
-          iconColor={alertConfig.iconColor}
-          buttons={alertConfig.buttons}
-          onBackdropPress={() => setAlertVisible(false)}
+      <View style={{ marginTop: 18 }}>
+        <Text style={styles.estimateLabel}>
+          Estimated per seat (based on route):
+        </Text>
+        <Text style={styles.estimateValue}>
+          ₹ {Math.round(estimatedPrice)}
+        </Text>
+        <Text style={styles.rangeText}>
+          Allowed range: ₹{minAllowed} – ₹{maxAllowed}
+        </Text>
+        
+        {isPriceLocked && (
+          <View style={styles.lockedPriceWarning}>
+            <MaterialIcons name="lock" size={16} color={Colors.gray} />
+            <Text style={styles.lockedPriceText}>
+              Price is locked due to confirmed bookings
+            </Text>
+          </View>
+        )}
+      </View>
+
+      <View style={{ marginTop: 20 }}>
+        <Text style={styles.inputLabel}>Set Custom Price per Seat (₹)</Text>
+        <TextInput
+          value={pricePerSeat}
+          onChangeText={setPricePerSeat}
+          keyboardType="numeric"
+          style={[styles.input, isPriceLocked && styles.inputDisabled]}
+          editable={!posting && !isPriceLocked}
+          placeholder={`₹${Math.round(estimatedPrice)}`}
+          placeholderTextColor={Colors.gray}
         />
+        {isPriceLocked && (
+          <Text style={styles.disabledHint}>
+            Price cannot be changed after confirmed bookings
+          </Text>
+        )}
+      </View>
 
+      {isEdit && hasConfirmedBookings && (
+        <TouchableOpacity
+          style={styles.cancelRideButton}
+          onPress={() => {
+            showCustomAlert(
+              "Cancel Ride",
+              "Are you sure you want to cancel this ride? This will notify all booked passengers and may apply cancellation fees.",
+              "warning",
+              () => {
+                navigation.navigate("CancelRideScreen", { rideId: originalRideData?.id });
+              }
+            );
+          }}
+        >
+          <Text style={styles.cancelRideText}>Cancel This Ride</Text>
+        </TouchableOpacity>
+      )}
+
+      <TouchableOpacity
+        style={[
+          styles.postBtn,
+          isPostDisabled && styles.postBtnDisabled
+        ]}
+        disabled={isPostDisabled}
+        onPress={handlePost}
+        activeOpacity={0.8}
+      >
+        {posting ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="small" color="#fff" />
+            <Text style={styles.postBtnText}>
+              {isEdit ? "Updating..." : "Posting..."}
+            </Text>
+          </View>
+        ) : (
+          <Text style={styles.postBtnText}>
+            {actualRemainingSeats === 0 && !isEdit ? "Ride Full" : buttonText}
+          </Text>
+        )}
+      </TouchableOpacity>
+
+      <CustomAlert
+        visible={alertVisible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        icon={alertConfig.icon}
+        iconColor={alertConfig.iconColor}
+        buttons={alertConfig.buttons}
+        onBackdropPress={() => setAlertVisible(false)}
+      />
+
+      {/* ✅ Show different animation based on isEdit */}
+      {isEdit ? (
+        <SuccessAnimation 
+          visible={showSuccess} 
+          onComplete={handleSuccessComplete}
+          type="update"
+        />
+      ) : (
         <Ridesuccessanimation 
           visible={showSuccess} 
           onComplete={handleSuccessComplete}
           type="ride"
         />
-      </View>
+      )}
+    </View>
 
-      <Modal
-        transparent={true}
-        visible={posting && !showSuccess}
-        animationType="fade"
-        onRequestClose={() => {}}
-      >
-        <View style={styles.fullScreenLoader}>
-          <View style={styles.loaderContent}>
-            <LottieView
-              source={require("../../assets/loading.json")}
-              autoPlay
-              loop
-              style={{ width: 300, height: 300 }}
-            />
-          </View>
+    <Modal
+      transparent={true}
+      visible={posting && !showSuccess}
+      animationType="fade"
+      onRequestClose={() => {}}
+    >
+      <View style={styles.fullScreenLoader}>
+        <View style={styles.loaderContent}>
+          <LottieView
+            source={require("../../assets/loading.json")}
+            autoPlay
+            loop
+            style={{ width: 300, height: 300 }}
+          />
         </View>
-      </Modal>
-    </>
-  );
+      </View>
+    </Modal>
+  </>
+);
+  // return (
+  //   <>
+  //     <View style={styles.container}>
+  //       <Text style={styles.title}>Seats & Pricing</Text>
+
+  //       {isEdit && hasConfirmedBookings && (
+  //         <View style={styles.lockedWarningBanner}>
+  //           <MaterialIcons name="lock" size={20} color="#F59E0B" />
+  //           <Text style={styles.lockedWarningText}>
+  //             This ride has {totalBookedSeats} confirmed booking(s).
+  //           </Text>
+  //         </View>
+  //       )}
+
+  //       <View style={styles.seatSection}>
+  //         <Text style={styles.seatLabel}>Available Seats for Passengers</Text>
+          
+  //         {totalBookedSeats > 0 && (
+  //           <View style={styles.bookingSummary}>
+  //             <Text style={styles.bookingSummaryText}>
+  //               ✅ {totalBookedSeats} seat(s) already booked
+  //             </Text>
+  //             <Text style={styles.remainingSummaryText}>
+  //               📍 {actualRemainingSeats} seat(s) still available
+  //             </Text>
+  //             {isSeatsLocked && (
+  //               <Text style={styles.lockedHint}>⚠️ You can only increase seats, not decrease</Text>
+  //             )}
+  //           </View>
+  //         )}
+          
+  //         <View style={styles.seatRow}>
+  //           <TouchableOpacity
+  //             onPress={() => handleSeatChange(false)}
+  //             style={[styles.seatBtn, (!canDecreaseSeats || isSeatsLocked) && styles.seatBtnDisabled]}
+  //             disabled={posting || !canDecreaseSeats}
+  //           >
+  //             <Text style={[styles.seatBtnText, (!canDecreaseSeats || isSeatsLocked) && styles.seatBtnTextDisabled]}>-</Text>
+  //           </TouchableOpacity>
+
+  //           <View style={styles.seatInfo}>
+  //             <Text style={styles.seatCount}>{seatsAvailable}</Text>
+  //             <Text style={styles.seatSubtext}>total passenger seats</Text>
+  //             {totalBookedSeats > 0 && (
+  //               <Text style={styles.bookedSeatsText}>
+  //                 {totalBookedSeats} booked, {actualRemainingSeats} left
+  //               </Text>
+  //             )}
+  //           </View>
+
+  //           <TouchableOpacity
+  //             onPress={() => handleSeatChange(true)}
+  //             style={[
+  //               styles.seatBtn, 
+  //               (!canIncreaseSeats) && styles.seatBtnDisabled
+  //             ]}
+  //             disabled={posting || !canIncreaseSeats}
+  //           >
+  //             <Text style={styles.seatBtnText}>+</Text>
+  //           </TouchableOpacity>
+  //         </View>
+          
+  //         <View style={styles.seatDetails}>
+  //           <Text style={styles.maxSeatsHint}>
+  //             Total passenger seats: {maxSeatsDisplay}
+  //           </Text>
+  //           <Text style={styles.maxSeatsHint}>
+  //             Vehicle capacity: {maxSeats} seats total (including driver)
+  //           </Text>
+  //           {totalBookedSeats > 0 && (
+  //             <>
+  //               <Text style={styles.remainingSeatsHint}>
+  //                 ✅ You can add {passengerSeats - seatsAvailable} more seats
+  //               </Text>
+  //               <Text style={styles.noteText}>
+  //                 💡 You cannot reduce seats below {totalBookedSeats} (already booked)
+  //               </Text>
+  //             </>
+  //           )}
+  //           {!totalBookedSeats && (
+  //             <Text style={styles.noteText}>
+  //               💡 You can modify seat count anytime before the ride starts
+  //             </Text>
+  //           )}
+  //         </View>
+  //       </View>
+
+  //       <View style={{ marginTop: 18 }}>
+  //         <Text style={styles.estimateLabel}>
+  //           Estimated per seat (based on route):
+  //         </Text>
+  //         <Text style={styles.estimateValue}>
+  //           ₹ {Math.round(estimatedPrice)}
+  //         </Text>
+  //         <Text style={styles.rangeText}>
+  //           Allowed range: ₹{minAllowed} – ₹{maxAllowed}
+  //         </Text>
+          
+  //         {isPriceLocked && (
+  //           <View style={styles.lockedPriceWarning}>
+  //             <MaterialIcons name="lock" size={16} color={Colors.gray} />
+  //             <Text style={styles.lockedPriceText}>
+  //               Price is locked due to confirmed bookings
+  //             </Text>
+  //           </View>
+  //         )}
+  //       </View>
+
+  //       <View style={{ marginTop: 20 }}>
+  //         <Text style={styles.inputLabel}>Set Custom Price per Seat (₹)</Text>
+  //         <TextInput
+  //           value={pricePerSeat}
+  //           onChangeText={setPricePerSeat}
+  //           keyboardType="numeric"
+  //           style={[styles.input, isPriceLocked && styles.inputDisabled]}
+  //           editable={!posting && !isPriceLocked}
+  //           placeholder={`₹${Math.round(estimatedPrice)}`}
+  //           placeholderTextColor={Colors.gray}
+  //         />
+  //         {isPriceLocked && (
+  //           <Text style={styles.disabledHint}>
+  //             Price cannot be changed after confirmed bookings
+  //           </Text>
+  //         )}
+  //       </View>
+
+  //       {isEdit && hasConfirmedBookings && (
+  //         <TouchableOpacity
+  //           style={styles.cancelRideButton}
+  //           onPress={() => {
+  //             showCustomAlert(
+  //               "Cancel Ride",
+  //               "Are you sure you want to cancel this ride? This will notify all booked passengers and may apply cancellation fees.",
+  //               "warning",
+  //               () => {
+  //                 navigation.navigate("CancelRideScreen", { rideId: originalRideData?.id });
+  //               }
+  //             );
+  //           }}
+  //         >
+  //           <Text style={styles.cancelRideText}>Cancel This Ride</Text>
+  //         </TouchableOpacity>
+  //       )}
+
+  //       <TouchableOpacity
+  //         style={[
+  //           styles.postBtn,
+  //           isPostDisabled && styles.postBtnDisabled
+  //         ]}
+  //         disabled={isPostDisabled}
+  //         onPress={handlePost}
+  //         activeOpacity={0.8}
+  //       >
+  //         {posting ? (
+  //           <View style={styles.loadingContainer}>
+  //             <ActivityIndicator size="small" color="#fff" />
+  //             <Text style={styles.postBtnText}>
+  //               {isEdit ? "Updating..." : "Posting..."}
+  //             </Text>
+  //           </View>
+  //         ) : (
+  //           <Text style={styles.postBtnText}>
+  //             {actualRemainingSeats === 0 && !isEdit ? "Ride Full" : buttonText}
+  //           </Text>
+  //         )}
+  //       </TouchableOpacity>
+
+  //       <CustomAlert
+  //         visible={alertVisible}
+  //         title={alertConfig.title}
+  //         message={alertConfig.message}
+  //         icon={alertConfig.icon}
+  //         iconColor={alertConfig.iconColor}
+  //         buttons={alertConfig.buttons}
+  //         onBackdropPress={() => setAlertVisible(false)}
+  //       />
+
+  //       <Ridesuccessanimation 
+  //         visible={showSuccess} 
+  //         onComplete={handleSuccessComplete}
+  //         type="ride"
+  //       />
+  //     </View>
+
+  //     <Modal
+  //       transparent={true}
+  //       visible={posting && !showSuccess}
+  //       animationType="fade"
+  //       onRequestClose={() => {}}
+  //     >
+  //       <View style={styles.fullScreenLoader}>
+  //         <View style={styles.loaderContent}>
+  //           <LottieView
+  //             source={require("../../assets/loading.json")}
+  //             autoPlay
+  //             loop
+  //             style={{ width: 300, height: 300 }}
+  //           />
+  //         </View>
+  //       </View>
+  //     </Modal>
+  //   </>
+  // );
 }
 
 const styles = StyleSheet.create({

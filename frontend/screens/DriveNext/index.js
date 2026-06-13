@@ -1785,6 +1785,705 @@
 //   scrollContent: { padding: 16, paddingBottom: 20 },
 //   loaderContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.white },
 // });
+// import React, { useState, useEffect, useCallback } from 'react';
+// import {
+//   View,
+//   Text,
+//   ScrollView,
+//   TouchableOpacity,
+//   Platform,
+//   StyleSheet,
+//   StatusBar,
+//   ActivityIndicator
+// } from 'react-native';
+// import { SafeAreaView } from 'react-native-safe-area-context';
+// import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+// import LottieView from "lottie-react-native";
+// import { Colors, Typography } from '../../constants/Colors';
+// import Step1 from './Step1';
+// import Step2 from './Step2';
+// import Step3 from './Step3';
+// import Step4 from './Step4';
+// import CustomAlert from '../../components/CustomAlert';
+// import axios from 'axios';
+// import { useAuth } from '../../context/AuthContext';
+// import { API_BASE_URL } from "../../config/config_ip";
+
+// export default function DriveNextScreen({ navigation, route }) {
+//   const { user } = useAuth();
+  
+//   const phoneFromRoute = route?.params?.phoneNumber || null;
+//   const phoneFromAuth = user?.phone_number || user?.phoneNumber || user?.phone || null;
+//   const phoneNumber = phoneFromRoute || phoneFromAuth || 
+//     navigation?.getState()?.routes
+//       ?.find(r => r.params?.phoneNumber)
+//       ?.params?.phoneNumber || null;
+  
+//   const userId = user?.id || route?.params?.userId || null;
+//   const userData = user || route?.params?.userData || null;
+//   const userGender = user?.gender || route?.params?.gender || null;
+  
+//   const { rideData, isEdit, rideId } = route?.params || {};
+//   const { 
+//     from: initFrom, 
+//     to: initTo, 
+//     dateTime: initDateTime, 
+//     seatsAvailable: initSeatsAvailable,
+//     pricePerSeat: initPricePerSeat,
+//     vehicleId: initVehicleId,
+//     originCoords: initOriginCoords,
+//     destinationCoords: initDestinationCoords 
+//   } = rideData || {};
+
+//   const [step, setStep] = useState(1);
+//   const [from, setFrom] = useState(initFrom || '');
+//   const [to, setTo] = useState(initTo || '');
+//   const [dateTime, setDateTime] = useState(initDateTime ? new Date(initDateTime) : new Date());
+//   const [vehicleId, setVehicleId] = useState(initVehicleId || null);
+//   const [maxSeats, setMaxSeats] = useState(4);
+//   const [routeOptions, setRouteOptions] = useState([]);
+//   const [selectedRouteIndex, setSelectedRouteIndex] = useState(0);
+//   const selectedRoute = routeOptions?.[selectedRouteIndex];
+  
+//   const [prefs, setPrefs] = useState({ 
+//     womenOnly: false, 
+//     instantBooking: true, 
+//     luggage: true, 
+//     smoking: false, 
+//     pets: false 
+//   });
+  
+//   const [seatsAvailable, setSeatsAvailable] = useState(initSeatsAvailable || 1);
+//   const [pricePerSeat, setPricePerSeat] = useState(initPricePerSeat ? initPricePerSeat.toString() : '');
+//   const [fromCoords, setFromCoords] = useState(initOriginCoords ? 
+//     (Array.isArray(initOriginCoords) ? { latitude: initOriginCoords[1], longitude: initOriginCoords[0] } : initOriginCoords) : null);
+//   const [toCoords, setToCoords] = useState(initDestinationCoords ? 
+//     (Array.isArray(initDestinationCoords) ? { latitude: initDestinationCoords[1], longitude: initDestinationCoords[0] } : initDestinationCoords) : null);
+//   const [loadingRoute, setLoadingRoute] = useState(false);
+//   const [submitting, setSubmitting] = useState(false);
+//   const [routeFetchAttempted, setRouteFetchAttempted] = useState(false);
+//   const [rideBookings, setRideBookings] = useState(null);
+//   const [lockedFields, setLockedFields] = useState([]);
+//   const [originalRideData, setOriginalRideData] = useState(null);
+//   const [loadingRideDetails, setLoadingRideDetails] = useState(false);
+//   const [totalBookedSeats, setTotalBookedSeats] = useState(0);
+
+//   const [alertVisible, setAlertVisible] = useState(false);
+//   const [alertConfig, setAlertConfig] = useState({
+//     title: "",
+//     message: "",
+//     icon: "check-circle",
+//     iconColor: "#10B981",
+//     buttons: []
+//   });
+
+//   const showCustomAlert = (title, message, type = 'success', onConfirm = null, onCancel = null) => {
+//     let icon = "check-circle";
+//     let iconColor = "#10B981";
+    
+//     if (type === 'error') {
+//       icon = "error";
+//       iconColor = "#EF4444";
+//     } else if (type === 'warning') {
+//       icon = "warning";
+//       iconColor = "#F59E0B";
+//     } else if (type === 'info') {
+//       icon = "info";
+//       iconColor = Colors.primary;
+//     }
+    
+//     const buttons = [];
+    
+//     if (onCancel) {
+//       buttons.push({ 
+//         text: 'Cancel', 
+//         onPress: () => {
+//           setAlertVisible(false);
+//           if (onCancel) onCancel();
+//         }, 
+//         style: 'cancel' 
+//       });
+//     }
+    
+//     if (onConfirm) {
+//       buttons.push({ 
+//         text: onConfirm.text || 'Confirm', 
+//         onPress: () => {
+//           setAlertVisible(false);
+//           if (onConfirm.onPress) onConfirm.onPress();
+//         }
+//       });
+//     } else {
+//       buttons.push({ text: 'OK', onPress: () => setAlertVisible(false) });
+//     }
+    
+//     setAlertConfig({
+//       title,
+//       message,
+//       icon,
+//       iconColor,
+//       buttons
+//     });
+//     setAlertVisible(true);
+//   };
+
+//   // Load ride details if in edit mode
+//   useEffect(() => {
+//     if (isEdit && rideId) {
+//       loadRideDetails();
+//     }
+//   }, [isEdit, rideId]);
+
+//   const loadRideDetails = async () => {
+//     setLoadingRideDetails(true);
+//     try {
+//       const response = await axios.get(`${API_BASE_URL}/ride/${rideId}/details`);
+//       const rideDetails = response.data;
+      
+//       setRideBookings(rideDetails.bookings);
+//       setOriginalRideData(rideDetails);
+//       setTotalBookedSeats(rideDetails.total_booked_seats || 0);
+      
+//       // Set the correct seatsAvailable from the ride data (total seats)
+//       if (rideDetails.available_seats) {
+//         setSeatsAvailable(rideDetails.available_seats);
+//       }
+      
+//       const hasConfirmedBookings = rideDetails.bookings?.some(b => b.status === 'accepted');
+      
+//       if (hasConfirmedBookings) {
+//         const locked = [];
+        
+//         // Lock origin and destination if there are confirmed bookings
+//         if (rideDetails.bookings?.length > 0) {
+//           locked.push('origin');
+//           locked.push('destination');
+//           locked.push('route');
+//         }
+        
+//         // Lock price if there are confirmed bookings
+//         if (rideDetails.bookings?.length > 0) {
+//           locked.push('price');
+//         }
+        
+//         // Lock seats if there are confirmed bookings (can only increase, not decrease)
+//         if (rideDetails.bookings?.length > 0) {
+//           locked.push('seats');
+//         }
+        
+//         setLockedFields(locked);
+//       }
+//     } catch (error) {
+//       console.log('Error loading ride details:', error);
+//     } finally {
+//       setLoadingRideDetails(false);
+//     }
+//   };
+
+//   // Check driver overlapping rides
+//   const checkOverlappingRides = async (departureTime, estimatedDuration) => {
+//     try {
+//       console.log('🔍 Checking driver overlap for:', { phoneNumber, departureTime, estimatedDuration });
+      
+//       const response = await axios.get(`${API_BASE_URL}/check-overlapping-rides`, {
+//         params: {
+//           phone_number: phoneNumber,
+//           departure_time: departureTime,
+//           duration_minutes: estimatedDuration,
+//           exclude_ride_id: isEdit ? rideId : null
+//         }
+//       });
+      
+//       console.log('📡 Driver overlap response:', response.data);
+//       return response.data;
+//     } catch (error) {
+//       console.log('❌ Error checking driver overlapping rides:', error);
+//       return { has_overlap: false };
+//     }
+//   };
+
+//   // Check passenger overlapping bookings (user has accepted booking as passenger)
+//   const checkPassengerOverlap = async (departureTime, estimatedDuration) => {
+//     try {
+//       console.log('🔍 Checking passenger overlap for:', { phoneNumber, departureTime, estimatedDuration });
+      
+//       const response = await axios.get(`${API_BASE_URL}/check-passenger-overlap`, {
+//         params: {
+//           phone_number: phoneNumber,
+//           departure_time: departureTime,
+//           duration_minutes: estimatedDuration,
+//         }
+//       });
+      
+//       console.log('📡 Passenger overlap response:', response.data);
+//       return response.data;
+//     } catch (error) {
+//       console.log('❌ Error checking passenger overlap:', error);
+//       return { has_overlap: false };
+//     }
+//   };
+
+//   // Validate distance between locations
+//   const validateDistance = (fromCoord, toCoord) => {
+//     const R = 6371;
+//     const dLat = (toCoord.latitude - fromCoord.latitude) * Math.PI / 180;
+//     const dLon = (toCoord.longitude - fromCoord.longitude) * Math.PI / 180;
+//     const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+//               Math.cos(fromCoord.latitude * Math.PI / 180) * Math.cos(toCoord.latitude * Math.PI / 180) *
+//               Math.sin(dLon/2) * Math.sin(dLon/2);
+//     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+//     const distance = R * c;
+    
+//     const MIN_DISTANCE_KM = 3;
+//     const MAX_DISTANCE_KM = 300;
+    
+//     if (distance < MIN_DISTANCE_KM) {
+//       return { valid: false, message: `Pickup and destination are too close (${distance.toFixed(1)} km). Minimum distance is ${MIN_DISTANCE_KM} km.` };
+//     }
+//     if (distance > MAX_DISTANCE_KM) {
+//       return { valid: false, message: `Distance too far (${distance.toFixed(1)} km). Maximum allowed is ${MAX_DISTANCE_KM} km for daily commutes.` };
+//     }
+//     return { valid: true, distance };
+//   };
+
+//   // Validate time (minimum 30 minutes from now)
+//   const validateDateTime = (selectedDateTime) => {
+//     const now = new Date();
+//     const minTime = new Date(now.getTime() + 30 * 60000);
+    
+//     if (selectedDateTime < now) {
+//       return { 
+//         valid: false, 
+//         message: `Cannot select past date and time. Please select a future time.` 
+//       };
+//     }
+    
+//     if (selectedDateTime < minTime) {
+//       return { 
+//         valid: false, 
+//         message: `Departure time must be at least 30 minutes from now. Please select a later time.` 
+//       };
+//     }
+//     return { valid: true };
+//   };
+
+//   useEffect(() => {
+//     if (route.params?.selectedLocation) {
+//       const { selectedLocation, type } = route.params;
+//       if (type === 'from') {
+//         setFrom(selectedLocation.label || selectedLocation.name);
+//         setFromCoords({
+//           latitude: selectedLocation.latitude || selectedLocation.coords?.latitude,
+//           longitude: selectedLocation.longitude || selectedLocation.coords?.longitude
+//         });
+//       } else {
+//         setTo(selectedLocation.label);
+//         setToCoords({
+//           latitude: selectedLocation.latitude || selectedLocation.coords?.latitude,
+//           longitude: selectedLocation.longitude || selectedLocation.coords?.longitude
+//         });
+//       }
+//       setRouteOptions([]);
+//       setSelectedRouteIndex(0);
+//     }
+//   }, [route.params?.selectedLocation]);
+
+//   const calculateDistance = (lat1, lon1, lat2, lon2) => {
+//     const R = 6371;
+//     const dLat = (lat2 - lat1) * Math.PI / 180;
+//     const dLon = (lon2 - lon1) * Math.PI / 180;
+//     const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+//               Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+//               Math.sin(dLon/2) * Math.sin(dLon/2);
+//     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+//     return R * c;
+//   };
+
+//   const parseDurationToMinutes = (durationStr) => {
+//     if (!durationStr) return 60;
+//     let mins = 0;
+//     const hrMatch = durationStr.match(/(\d+)\s*Hr/i);
+//     const minMatch = durationStr.match(/(\d+)\s*Min/i);
+//     if (hrMatch) mins += parseInt(hrMatch[1], 10) * 60;
+//     if (minMatch) mins += parseInt(minMatch[1], 10);
+//     return mins || 60;
+//   };
+
+//   const fetchRoute = useCallback(async () => {
+//     if (!fromCoords || !toCoords) {
+//       setRouteOptions([]);
+//       return;
+//     }
+
+//     if (routeFetchAttempted && routeOptions.length > 0) {
+//       return;
+//     }
+    
+//     const sameLocation = Math.abs(fromCoords.latitude - toCoords.latitude) < 0.0001 &&
+//       Math.abs(fromCoords.longitude - toCoords.longitude) < 0.0001;
+
+//     if (sameLocation) {
+//       setRouteOptions([]);
+//       return;
+//     }
+
+//     const distanceValidation = validateDistance(fromCoords, toCoords);
+//     if (!distanceValidation.valid) {
+//       showCustomAlert("Invalid Route", distanceValidation.message, "warning");
+//       setRouteOptions([]);
+//       return;
+//     }
+
+//     try {
+//       setLoadingRoute(true);
+//       setRouteFetchAttempted(true);
+
+//       const requestPayload = {
+//         from_coords: [fromCoords.longitude, fromCoords.latitude],
+//         to_coords: [toCoords.longitude, toCoords.latitude]
+//       };
+
+//       console.log('Fetching route with payload:', requestPayload);
+
+//       const response = await axios.post(`${API_BASE_URL}/get-route`, requestPayload, {
+//         timeout: 30000,
+//         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }
+//       });
+
+//       const routesFromAPI = response.data.routes;
+
+//       if (!routesFromAPI || routesFromAPI.length === 0) {
+//         throw new Error("No routes found from API");
+//       }
+
+//       const formattedRoutes = routesFromAPI.map((route, index) => ({
+//         id: index,
+//         geometry: route.coordinates.map(coord => ({
+//           latitude: coord[1],
+//           longitude: coord[0]
+//         })),
+//         distance: route.distance_km,
+//         duration: route.duration,
+//         price: route.price,
+//         duration_minutes: parseDurationToMinutes(route.duration)
+//       }));
+
+//       setRouteOptions(formattedRoutes);
+//       setSelectedRouteIndex(0);
+
+//     } catch (error) {
+//       console.log('❌ Route fetch error:', error);
+//       let errorMsg = "Failed to fetch route. Please try again.";
+//       if (error.response?.data?.detail) {
+//         errorMsg = error.response.data.detail;
+//       } else if (error.message) {
+//         errorMsg = error.message;
+//       }
+//       showCustomAlert("Route Error", errorMsg, "error");
+//       setRouteOptions([]);
+//     } finally {
+//       setLoadingRoute(false);
+//     }
+//   }, [fromCoords, toCoords, routeFetchAttempted, routeOptions.length]);
+
+//   useEffect(() => {
+//     if (fromCoords && toCoords && !loadingRoute && !routeFetchAttempted) {
+//       fetchRoute();
+//     }
+//   }, [fromCoords, toCoords, fetchRoute, loadingRoute, routeFetchAttempted]);
+
+//   const goNext = () => setStep(s => Math.min(4, s + 1));
+//   const goBack = () => { if (step > 1) setStep(s => s - 1); else navigation.goBack(); };
+
+//   const handleSubmitRide = async ({ seatsAvailable: newSeats, pricePerSeat: newPrice }) => {
+//     if (!phoneNumber) {
+//       showCustomAlert("Missing Info", "Phone number not found. Please login again.", "warning");
+//       throw new Error("Missing phone number");
+//     }
+
+//     if (!fromCoords || !toCoords) {
+//       showCustomAlert("Missing Location", "Please select both pickup and destination locations.", "warning");
+//       throw new Error("Missing location");
+//     }
+
+//     const timeValidation = validateDateTime(dateTime);
+//     if (!timeValidation.valid) {
+//       showCustomAlert("Invalid Time", timeValidation.message, "warning");
+//       throw new Error("Invalid time");
+//     }
+
+//     const distanceValidation = validateDistance(fromCoords, toCoords);
+//     if (!distanceValidation.valid) {
+//       showCustomAlert("Invalid Distance", distanceValidation.message, "warning");
+//       throw new Error("Invalid distance");
+//     }
+
+//     // For edit mode with confirmed bookings, check if trying to reduce seats below booked count
+//     if (isEdit && totalBookedSeats > 0 && newSeats < totalBookedSeats) {
+//       showCustomAlert(
+//         "Cannot Reduce Seats",
+//         `You have ${totalBookedSeats} confirmed passenger(s). You cannot reduce total seats below ${totalBookedSeats}. You can increase seats to ${newSeats} or keep at ${seatsAvailable}.`,
+//         "warning"
+//       );
+//       throw new Error("Cannot reduce seats below booked count");
+//     }
+
+//     setSubmitting(true);
+    
+//     try {
+//       // Only check overlaps for new rides (not for edit)
+//       if (!isEdit && selectedRoute) {
+//         // CHECK PASSENGER OVERLAP FIRST - User has accepted booking as passenger
+//         console.log("🔍 Checking for passenger overlapping bookings before posting...");
+        
+//         const passengerOverlapCheck = await checkPassengerOverlap(
+//           new Date(dateTime).toISOString(),
+//           selectedRoute.duration_minutes || 60
+//         );
+        
+//         console.log("📊 Passenger overlap check result:", JSON.stringify(passengerOverlapCheck));
+        
+//         if (passengerOverlapCheck && passengerOverlapCheck.has_overlap === true) {
+//           const overlappingBooking = passengerOverlapCheck.overlapping_booking;
+          
+//           console.log("❌ PASSENGER OVERLAP DETECTED! Stopping ride post.");
+          
+//           setSubmitting(false);
+          
+//           showCustomAlert(
+//             "Cannot Post Ride - You Have a Confirmed Booking ⚠️",
+//             `You already have a confirmed booking as a passenger from "${overlappingBooking.origin}" to "${overlappingBooking.destination}" at ${new Date(overlappingBooking.departure_time).toLocaleTimeString()}.\n\nPlease complete that ride before offering another ride.\n\nThis ride was NOT posted.`,
+//             "warning",
+//             {
+//               text: "OK",
+//               onPress: () => {
+//                 navigation.reset({
+//                   index: 0,
+//                   routes: [{ name: "Home", params: { phoneNumber, userData, userId } }],
+//                 });
+//               }
+//             }
+//           );
+          
+//           throw new Error("PASSENGER_OVERLAP_DETECTED");
+//         }
+        
+//         // CHECK DRIVER OVERLAP SECOND
+//         console.log("🔍 Checking for driver overlapping rides before posting...");
+        
+//         const driverOverlapCheck = await checkOverlappingRides(
+//           new Date(dateTime).toISOString(),
+//           selectedRoute.duration_minutes || 60
+//         );
+        
+//         console.log("📊 Driver overlap check result:", JSON.stringify(driverOverlapCheck));
+        
+//         if (driverOverlapCheck && driverOverlapCheck.has_overlap === true) {
+//           const overlappingRide = driverOverlapCheck.overlapping_ride;
+//           const endTime = overlappingRide.expected_end_time 
+//             ? new Date(overlappingRide.expected_end_time).toLocaleTimeString()
+//             : "later";
+          
+//           console.log("❌ DRIVER OVERLAP DETECTED! Stopping ride post.");
+          
+//           setSubmitting(false);
+          
+//           showCustomAlert(
+//             "Cannot Post Ride - You Have an Active Ride ⚠️",
+//             `You already have an active ride from "${overlappingRide.origin}" to "${overlappingRide.destination}" at ${new Date(overlappingRide.departure_time).toLocaleTimeString()}.\n\nPlease wait until ${endTime} to post another ride.\n\nThis ride was NOT posted.`,
+//             "warning",
+//             {
+//               text: "OK",
+//               onPress: () => {
+//                 navigation.reset({
+//                   index: 0,
+//                   routes: [{ name: "Home", params: { phoneNumber, userData, userId } }],
+//                 });
+//               }
+//             }
+//           );
+          
+//           throw new Error("DRIVER_OVERLAP_DETECTED");
+//         }
+//       }
+      
+//       console.log("✅ No overlap found, proceeding to post/update ride...");
+      
+//       const payload = {
+//         phone_number: phoneNumber,
+//         origin: from,
+//         destination: to,
+//         departure_time: new Date(dateTime).toISOString(),
+//         available_seats: newSeats,
+//         price_per_seat: Number(newPrice),
+//         vehicle_id: vehicleId,
+//         origin_coords: [fromCoords.longitude, fromCoords.latitude],
+//         destination_coords: [toCoords.longitude, toCoords.latitude],
+//         route_coordinates: selectedRoute?.geometry.map((p) => [p.longitude, p.latitude]) || [],
+//         distance_km: selectedRoute?.distance,
+//         duration_text: selectedRoute?.duration,
+//         total_estimated_price: selectedRoute?.price,
+//         preferences: { ...prefs, womenOnly: prefs.womenOnly },
+//         women_only: prefs.womenOnly
+//       };
+      
+//       let response;
+//       if (isEdit && rideId) {
+//         response = await axios.put(`${API_BASE_URL}/update-ride/${rideId}`, payload);
+//       } else {
+//         response = await axios.post(`${API_BASE_URL}/post-ride`, payload);
+//       }
+      
+//       setSubmitting(false);
+//       return response.data;
+      
+//     } catch (error) {
+//       console.log("❌ Error in handleSubmitRide:", error);
+//       setSubmitting(false);
+      
+//       let errorMsg = error.response?.data?.detail || error.message;
+      
+//       if (error.response?.status === 409) {
+//         if (errorMsg.includes("confirmed booking as a passenger")) {
+//           errorMsg = "⚠️ You have a confirmed booking as a passenger at this time. Please complete that ride before offering another ride.\n\nThis ride was NOT posted.";
+//         } else {
+//           errorMsg = "⚠️ You already have an overlapping active ride. Please wait for it to complete before posting another ride.\n\nThis ride was NOT posted.";
+//         }
+        
+//         showCustomAlert(
+//           "Cannot Post Ride",
+//           errorMsg,
+//           "warning",
+//           {
+//             text: "OK",
+//             onPress: () => {
+//               navigation.reset({
+//                 index: 0,
+//                 routes: [{ name: "Home", params: { phoneNumber, userData, userId } }],
+//               });
+//             }
+//           }
+//         );
+//       } else if (error.response?.status === 400 && errorMsg.includes("Cannot reduce seats")) {
+//         showCustomAlert("Cannot Reduce Seats", errorMsg, "warning");
+//       } else if (error.response?.status === 403) {
+//         errorMsg = "Cannot modify this ride as it has confirmed bookings.";
+//         showCustomAlert("Error", errorMsg, "error");
+//       } else if (error.message !== "PASSENGER_OVERLAP_DETECTED" && error.message !== "DRIVER_OVERLAP_DETECTED") {
+//         showCustomAlert("Error", errorMsg, "error");
+//       }
+      
+//       throw error;
+//     }
+//   };
+
+//   if (loadingRideDetails) {
+//     return (
+//       <SafeAreaView style={styles.container}>
+//         <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
+//         <View style={styles.loaderContainer}>
+//           <LottieView source={require("../../assets/loading.json")} autoPlay loop style={{ width: 300, height: 300 }} />
+//         </View>
+//       </SafeAreaView>
+//     );
+//   }
+
+//   return (
+//     <SafeAreaView style={styles.container}>
+//       <StatusBar backgroundColor={Colors.white} barStyle="dark-content" />
+      
+//       <View style={styles.header}>
+//         <TouchableOpacity style={styles.backButton} onPress={goBack}>
+//           <MaterialIcons name="arrow-back-ios" size={24} color="#ED7117" />
+//         </TouchableOpacity>
+//         <Text style={styles.headerTitle}>{isEdit ? 'Edit Ride' : 'Offer a Ride'}</Text>
+//         <View style={styles.headerSpacer} />
+//       </View>
+
+//       <View style={styles.progressContainer}>
+//         {[1, 2, 3, 4].map((n) => (
+//           <View key={n} style={[styles.progressBar, { backgroundColor: n === step ? Colors.primary : '#e6eef8' }]} />
+//         ))}
+//       </View>
+
+//       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+//         {step === 1 && (
+//           <Step1 
+//             from={from} to={to} setFrom={setFrom} setTo={setTo}
+//             setFromCoords={setFromCoords} setToCoords={setToCoords}
+//             dateTime={dateTime} setDateTime={setDateTime}
+//             onNext={goNext} navigation={navigation} route={route}
+//             phoneNumber={phoneNumber} fromCoords={fromCoords} toCoords={toCoords}
+//             setRouteOptions={setRouteOptions} setSelectedRouteIndex={setSelectedRouteIndex}
+//             isEdit={isEdit} lockedFields={lockedFields}
+//             validateDateTime={validateDateTime}
+//           />
+//         )}
+        
+//         {step === 2 && (
+//           <Step2 
+//             routeOptions={routeOptions} selectedRouteIndex={selectedRouteIndex}
+//             setSelectedRouteIndex={setSelectedRouteIndex} onNext={goNext}
+//             isEdit={isEdit} lockedFields={lockedFields}
+//             loadingRoute={loadingRoute}
+//           />
+//         )}
+        
+//         {step === 3 && (
+//           <Step3 
+//             phoneNumber={phoneNumber} navigation={navigation}
+//             vehicleId={vehicleId} setVehicleId={setVehicleId}
+//             onNext={({ preferences, vehicleId: selectedVehicleId, maxSeats: vehicleMaxSeats }) => { 
+//               setPrefs(preferences || {}); 
+//               setVehicleId(selectedVehicleId); 
+//               setMaxSeats(vehicleMaxSeats || 4); 
+//               goNext(); 
+//             }}
+//             isEdit={isEdit} lockedFields={lockedFields}
+//             userGender={userGender}
+//           />
+//         )}
+        
+//         {step === 4 && (
+//           <Step4 
+//             seatsAvailable={seatsAvailable} setSeatsAvailable={setSeatsAvailable}
+//             pricePerSeat={pricePerSeat} setPricePerSeat={setPricePerSeat}
+//             selectedRoute={selectedRoute} vehicleId={vehicleId} maxSeats={maxSeats}
+//             onPost={handleSubmitRide} isEdit={isEdit}
+//             navigation={navigation} phoneNumber={phoneNumber}
+//             userData={userData} userId={userId}
+//             rideBookings={rideBookings} lockedFields={lockedFields}
+//             originalRideData={originalRideData}
+//             totalBookedSeats={totalBookedSeats}
+//           />
+//         )}
+//       </ScrollView>
+
+//       <CustomAlert
+//         visible={alertVisible}
+//         title={alertConfig.title}
+//         message={alertConfig.message}
+//         icon={alertConfig.icon}
+//         iconColor={alertConfig.iconColor}
+//         buttons={alertConfig.buttons}
+//         onBackdropPress={() => setAlertVisible(false)}
+//       />
+//     </SafeAreaView>
+//   );
+// }
+
+// const styles = StyleSheet.create({
+//   container: { flex: 1, backgroundColor: Colors.white },
+//   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 0.5, borderBottomColor: '#F3F4F6' },
+//   backButton: { width: 44, height: 44, justifyContent: 'center' },
+//   headerTitle: { fontSize: 28, fontWeight: '700', color: Colors.primary, flex: 1, textAlign: 'center' },
+//   headerSpacer: { width: 44 },
+//   progressContainer: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 24, paddingVertical: 12 },
+//   progressBar: { height: 6, flex: 1, marginHorizontal: 6, borderRadius: 4 },
+//   scrollView: { flex: 1 },
+//   scrollContent: { padding: 16, paddingBottom: 20 },
+//   loaderContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.white },
+// });
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
@@ -1944,7 +2643,6 @@ export default function DriveNextScreen({ navigation, route }) {
       setOriginalRideData(rideDetails);
       setTotalBookedSeats(rideDetails.total_booked_seats || 0);
       
-      // Set the correct seatsAvailable from the ride data (total seats)
       if (rideDetails.available_seats) {
         setSeatsAvailable(rideDetails.available_seats);
       }
@@ -1953,24 +2651,13 @@ export default function DriveNextScreen({ navigation, route }) {
       
       if (hasConfirmedBookings) {
         const locked = [];
-        
-        // Lock origin and destination if there are confirmed bookings
         if (rideDetails.bookings?.length > 0) {
           locked.push('origin');
           locked.push('destination');
           locked.push('route');
-        }
-        
-        // Lock price if there are confirmed bookings
-        if (rideDetails.bookings?.length > 0) {
           locked.push('price');
-        }
-        
-        // Lock seats if there are confirmed bookings (can only increase, not decrease)
-        if (rideDetails.bookings?.length > 0) {
           locked.push('seats');
         }
-        
         setLockedFields(locked);
       }
     } catch (error) {
@@ -2002,7 +2689,7 @@ export default function DriveNextScreen({ navigation, route }) {
     }
   };
 
-  // Check passenger overlapping bookings (user has accepted booking as passenger)
+  // Check passenger overlapping bookings
   const checkPassengerOverlap = async (departureTime, estimatedDuration) => {
     try {
       console.log('🔍 Checking passenger overlap for:', { phoneNumber, departureTime, estimatedDuration });
@@ -2083,8 +2770,7 @@ export default function DriveNextScreen({ navigation, route }) {
           longitude: selectedLocation.longitude || selectedLocation.coords?.longitude
         });
       }
-      setRouteOptions([]);
-      setSelectedRouteIndex(0);
+      resetRouteData();
     }
   }, [route.params?.selectedLocation]);
 
@@ -2109,13 +2795,37 @@ export default function DriveNextScreen({ navigation, route }) {
     return mins || 60;
   };
 
+  // Reset route data function
+  const resetRouteData = () => {
+    console.log('🔄 Resetting route data...');
+    setRouteOptions([]);
+    setSelectedRouteIndex(0);
+    setRouteFetchAttempted(false);
+    setLoadingRoute(false);
+  };
+
+  // Handle location change from Step1
+  const handleLocationChange = () => {
+    console.log('📍 Location changed, resetting route data...');
+    resetRouteData();
+  };
+
+  // Go back to step 1 with route data reset
+  const goBackToStep1 = () => {
+    setStep(1);
+    resetRouteData();
+  };
+
+  // Retry fetching routes
+  const retryFetchRoutes = () => {
+    console.log('🔄 Retrying route fetch...');
+    resetRouteData();
+  };
+
+  // Fetch route function
   const fetchRoute = useCallback(async () => {
     if (!fromCoords || !toCoords) {
       setRouteOptions([]);
-      return;
-    }
-
-    if (routeFetchAttempted && routeOptions.length > 0) {
       return;
     }
     
@@ -2134,9 +2844,14 @@ export default function DriveNextScreen({ navigation, route }) {
       return;
     }
 
+    // Prevent multiple simultaneous fetches
+    if (loadingRoute) {
+      console.log('Already fetching route, skipping...');
+      return;
+    }
+
     try {
       setLoadingRoute(true);
-      setRouteFetchAttempted(true);
 
       const requestPayload = {
         from_coords: [fromCoords.longitude, fromCoords.latitude],
@@ -2170,6 +2885,7 @@ export default function DriveNextScreen({ navigation, route }) {
 
       setRouteOptions(formattedRoutes);
       setSelectedRouteIndex(0);
+      setRouteFetchAttempted(true);
 
     } catch (error) {
       console.log('❌ Route fetch error:', error);
@@ -2181,19 +2897,34 @@ export default function DriveNextScreen({ navigation, route }) {
       }
       showCustomAlert("Route Error", errorMsg, "error");
       setRouteOptions([]);
+      setRouteFetchAttempted(false);
     } finally {
       setLoadingRoute(false);
     }
-  }, [fromCoords, toCoords, routeFetchAttempted, routeOptions.length]);
+  }, [fromCoords, toCoords]);
 
+  // Fetch route when coordinates change with debounce
   useEffect(() => {
     if (fromCoords && toCoords && !loadingRoute && !routeFetchAttempted) {
-      fetchRoute();
+      const timer = setTimeout(() => {
+        fetchRoute();
+      }, 500);
+      
+      return () => clearTimeout(timer);
     }
-  }, [fromCoords, toCoords, fetchRoute, loadingRoute, routeFetchAttempted]);
+  }, [fromCoords, toCoords, loadingRoute, routeFetchAttempted, fetchRoute]);
 
   const goNext = () => setStep(s => Math.min(4, s + 1));
-  const goBack = () => { if (step > 1) setStep(s => s - 1); else navigation.goBack(); };
+  const goBack = () => { 
+    if (step > 1) {
+      if (step === 2) {
+        resetRouteData();
+      }
+      setStep(s => s - 1);
+    } else {
+      navigation.goBack();
+    }
+  };
 
   const handleSubmitRide = async ({ seatsAvailable: newSeats, pricePerSeat: newPrice }) => {
     if (!phoneNumber) {
@@ -2218,11 +2949,10 @@ export default function DriveNextScreen({ navigation, route }) {
       throw new Error("Invalid distance");
     }
 
-    // For edit mode with confirmed bookings, check if trying to reduce seats below booked count
     if (isEdit && totalBookedSeats > 0 && newSeats < totalBookedSeats) {
       showCustomAlert(
         "Cannot Reduce Seats",
-        `You have ${totalBookedSeats} confirmed passenger(s). You cannot reduce total seats below ${totalBookedSeats}. You can increase seats to ${newSeats} or keep at ${seatsAvailable}.`,
+        `You have ${totalBookedSeats} confirmed passenger(s). You cannot reduce total seats below ${totalBookedSeats}.`,
         "warning"
       );
       throw new Error("Cannot reduce seats below booked count");
@@ -2231,9 +2961,7 @@ export default function DriveNextScreen({ navigation, route }) {
     setSubmitting(true);
     
     try {
-      // Only check overlaps for new rides (not for edit)
       if (!isEdit && selectedRoute) {
-        // CHECK PASSENGER OVERLAP FIRST - User has accepted booking as passenger
         console.log("🔍 Checking for passenger overlapping bookings before posting...");
         
         const passengerOverlapCheck = await checkPassengerOverlap(
@@ -2268,7 +2996,6 @@ export default function DriveNextScreen({ navigation, route }) {
           throw new Error("PASSENGER_OVERLAP_DETECTED");
         }
         
-        // CHECK DRIVER OVERLAP SECOND
         console.log("🔍 Checking for driver overlapping rides before posting...");
         
         const driverOverlapCheck = await checkOverlappingRides(
@@ -2335,6 +3062,22 @@ export default function DriveNextScreen({ navigation, route }) {
       }
       
       setSubmitting(false);
+      
+      // showCustomAlert(
+      //   "Success", 
+      //   isEdit ? "Ride updated successfully!" : "Ride posted successfully!", 
+      //   "success",
+      //   {
+      //     text: "OK",
+      //     onPress: () => {
+      //       navigation.reset({
+      //         index: 0,
+      //         routes: [{ name: "Home", params: { phoneNumber, userData, userId } }],
+      //       });
+      //     }
+      //   }
+      // );
+      
       return response.data;
       
     } catch (error) {
@@ -2417,6 +3160,7 @@ export default function DriveNextScreen({ navigation, route }) {
             setRouteOptions={setRouteOptions} setSelectedRouteIndex={setSelectedRouteIndex}
             isEdit={isEdit} lockedFields={lockedFields}
             validateDateTime={validateDateTime}
+            onLocationChange={handleLocationChange}
           />
         )}
         
@@ -2426,6 +3170,8 @@ export default function DriveNextScreen({ navigation, route }) {
             setSelectedRouteIndex={setSelectedRouteIndex} onNext={goNext}
             isEdit={isEdit} lockedFields={lockedFields}
             loadingRoute={loadingRoute}
+            goBackToStep1={goBackToStep1}
+            onRetryFetch={retryFetchRoutes}
           />
         )}
         
