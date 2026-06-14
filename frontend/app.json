@@ -37,7 +37,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#184080"
       },
-      "package": "com.drivve.app",
+      "package": "in.drivve.app",
       "versionCode": 2,
       "googleServicesFile": "./google-services.json",
       "config": {
