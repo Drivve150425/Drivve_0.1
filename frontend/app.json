@@ -2,7 +2,7 @@
   "expo": {
     "name": "DRIVVE",
     "slug": "drivve",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/main.png",
     "userInterfaceStyle": "light",  
@@ -38,7 +38,7 @@
         "backgroundColor": "#184080"
       },
       "package": "com.drivve.app",
-      "versionCode": 2,
+      "versionCode": 3,
       "googleServicesFile": "./google-services.json",
       "config": {
         "googleMaps": {
@@ -95,7 +95,7 @@
     "extra": {
       "apiUrl": "https://drivve-0-1.onrender.com",
       "eas": {
-        "projectId": "65cf8431-128a-4317-9c88-aa9c1791a36f"
+        "projectId": "3d6754ce-9386-40dc-b3d9-21c84b8c39cd"
       }
     },
 
@@ -104,7 +104,7 @@
     },
 
     "updates": {
-      "url": "https://u.expo.dev/65cf8431-128a-4317-9c88-aa9c1791a36f",
+      "url": "https://u.expo.dev/3d6754ce-9386-40dc-b3d9-21c84b8c39cd",
       "fallbackToCacheTimeout": 0,
       "checkAutomatically": "ON_LOAD"
     }
